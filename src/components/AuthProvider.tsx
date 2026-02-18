@@ -23,7 +23,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      // getUser() é mais seguro que getSession() pois valida com o servidor
       const { data: { user }, error } = await supabase.auth.getUser();
       
       if (error || !user) {
@@ -44,7 +43,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(currentSession?.user ?? null);
       setLoading(false);
 
-      if (event === 'SIGNED_IN' && currentSession) {
+      // Só redireciona automaticamente se o usuário estiver nas páginas de Auth
+      const isAuthPage = ['/login', '/register', '/forgot-password'].includes(window.location.pathname);
+
+      if (event === 'SIGNED_IN' && currentSession && isAuthPage) {
         const userType = currentSession.user?.user_metadata?.account_type;
         if (userType === 'admin') {
           navigate('/admin');
@@ -56,7 +58,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
-        navigate('/login');
+        if (!window.location.pathname.includes('/login')) {
+          navigate('/login');
+        }
       }
     });
 
@@ -65,7 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    localStorage.clear(); // Limpeza extra para garantir
+    localStorage.clear();
     setSession(null);
     setUser(null);
     navigate('/login');
