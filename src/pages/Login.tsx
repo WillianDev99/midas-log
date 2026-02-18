@@ -22,21 +22,22 @@ const Login = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!supabase) {
+      showError("Sistema de autenticação não configurado.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Lógica especial para o ADM Principal no primeiro acesso
       if (email === ADMIN_EMAIL && !isFirstLogin) {
-        // Verificamos se o usuário já existe
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
-          password: 'temporary_password_placeholder' // Tentativa inicial
+          password: 'temporary_password_placeholder'
         });
 
         if (signInError && signInError.message.includes("Invalid login credentials")) {
-          // Se falhar por credenciais inválidas, pode ser o primeiro acesso
-          // No Supabase, o ideal é que o ADM já tenha sido criado via Dashboard ou convite
-          // Para simular o seu pedido de "criar senha no primeiro acesso":
           setIsFirstLogin(true);
           setLoading(false);
           return;
@@ -50,7 +51,6 @@ const Login = () => {
           return;
         }
         
-        // No primeiro acesso real, usaríamos signUp ou updatePassword
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -58,7 +58,7 @@ const Login = () => {
         });
 
         if (error) throw error;
-        showSuccess("Senha configurada! Verifique seu e-mail para confirmar.");
+        showSuccess("Senha configurada! Verifique seu e-mail.");
         setIsFirstLogin(false);
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -69,11 +69,11 @@ const Login = () => {
 
         if (userType === 'admin' && !isApproved) {
           await supabase.auth.signOut();
-          showError("Sua conta ADM ainda aguarda aprovação do administrador principal.");
+          showError("Sua conta ADM aguarda aprovação.");
           return;
         }
 
-        showSuccess("Bem-vindo de volta!");
+        showSuccess("Bem-vindo!");
         navigate(userType === 'admin' ? '/admin' : '/');
       }
     } catch (error: any) {
