@@ -1,13 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Buscando as variáveis de ambiente do Vite
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Só inicializa se as variáveis existirem, caso contrário exporta um mock ou erro controlado
+// Inicialização segura
 export const supabase = (supabaseUrl && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey)
-  : null as any;
+  : null;
 
 if (!supabase) {
-  console.warn("Supabase não configurado. As funcionalidades de login não funcionarão até que as variáveis de ambiente sejam adicionadas.");
+  console.error("ERRO: Chaves do Supabase não encontradas. Certifique-se de que VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão configuradas.");
 }
