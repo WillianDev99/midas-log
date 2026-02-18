@@ -1,13 +1,11 @@
 "use client";
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   FileSpreadsheet, 
   Truck, 
   MapPin, 
-  LogOut, 
   ChevronRight,
   Database,
   Settings
@@ -15,17 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { showSuccess } from '@/utils/toast';
-import { useAuth } from '@/components/AuthProvider';
+import UserNav from '@/components/UserNav';
 
 const AdminDashboard = () => {
-  const { signOut, user } = useAuth();
-
-  const handleLogout = async () => {
-    await signOut();
-    showSuccess("Sessão encerrada.");
-  };
-
   const ToolCard = ({ title, description, icon: Icon }: { title: string, description: string, icon: any }) => (
     <Card className="hover:shadow-md transition-all cursor-pointer group border-slate-200">
       <CardHeader className="flex flex-row items-center gap-4 pb-2">
@@ -74,17 +64,6 @@ const AdminDashboard = () => {
             Configurações
           </a>
         </nav>
-        
-        <div className="p-4 border-t border-slate-800">
-          <Button 
-            variant="ghost" 
-            className="w-full justify-start gap-3 text-slate-400 hover:text-white hover:bg-red-900/20"
-            onClick={handleLogout}
-          >
-            <LogOut size={20} />
-            Sair do Sistema
-          </Button>
-        </div>
       </aside>
 
       {/* Main Content */}
@@ -94,15 +73,7 @@ const AdminDashboard = () => {
             <h1 className="text-3xl font-bold text-slate-900">Painel de Logística</h1>
             <p className="text-slate-500">Gerencie suas operações e processe dados de transporte.</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden md:block">
-              <p className="text-sm font-medium text-slate-900">{user?.user_metadata?.full_name || 'Administrador'}</p>
-              <p className="text-xs text-slate-500">Midas Logística</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-              ADM
-            </div>
-          </div>
+          <UserNav />
         </header>
 
         <Tabs defaultValue="hidracor" className="space-y-8">
