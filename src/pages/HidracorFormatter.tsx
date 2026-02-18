@@ -8,18 +8,21 @@ import {
   Plus, 
   Trash2, 
   Edit2, 
-  Save, 
   ArrowLeft,
   Search,
   Loader2,
   MoreVertical,
-  ArrowRightLeft
+  ArrowRightLeft,
+  UserClock,
+  PackageCheck,
+  MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -45,10 +48,17 @@ interface City {
   city_name: string;
 }
 
+interface ClientBase {
+  id: string;
+  client_name: string;
+}
+
 const HidracorFormatter = () => {
   const { user } = useAuth();
   const [routes, setRoutes] = useState<Route[]>([]);
   const [cities, setCities] = useState<City[]>([]);
+  const [awaitingClients, setAwaitingClients] = useState<ClientBase[]>([]);
+  const [pickupClients, setPickupClients] = useState<ClientBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   
@@ -61,18 +71,17 @@ const HidracorFormatter = () => {
 
   const fetchBaseData = async () => {
     try {
-      const { data: routesData } = await supabase
-        .from('hidracor_routes')
-        .select('*')
-        .order('name');
-      
-      const { data: citiesData } = await supabase
-        .from('hidracor_cities')
-        .select('*')
-        .order('city_name');
+      const [r, c, a, p] = await Promise.all([
+        supabase.from('hidracor_routes').select('*').order('name'),
+        supabase.from('hidracor_cities').select('*').order('city_name'),
+        supabase.from('hidracor_awaiting_clients').select('*').order('client_name'),
+        supabase.from('hidracor_pickup_clients').select('*').order('client_name')
+      ]);
 
-      setRoutes(routesData || []);
-      setCities(citiesData || []);
+      setRoutes(r.data || []);
+      setCities(c.data || []);
+      setAwaitingClients(a.data || []);
+      setPickupClients(p.data || []);
     } catch (error) {
       showError("Erro ao carregar base de dados.");
     } finally {
@@ -123,64 +132,48 @@ const HidracorFormatter = () => {
   const addCity = async (routeId: string) => {
     const input = prompt("Nomes das cidades (separe por vírgula ou cole uma lista):");
     if (!input) return;
-    
-    // Divide por vírgula ou quebra de linha, limpa espaços e remove vazios
-    const cityNames = input
-      .split(/[,\n]/)
-      .map(name => name.trim().toUpperCase())
-      .filter(name => name.length > 0);
-
+    const cityNames = input.split(/[,\n]/).map(name => name.trim().toUpperCase()).filter(name => name.length > 0);
     if (cityNames.length === 0) return;
-
-    const newCitiesData = cityNames.map(name => ({
-      route_id: routeId,
-      city_name: name,
-      user_id: user?.id
-    }));
 
     const { data, error } = await supabase
       .from('hidracor_cities')
-      .insert(newCitiesData)
+      .insert(cityNames.map(name => ({ route_id: routeId, city_name: name, user_id: user?.id })))
       .select();
 
     if (error) showError(error.message);
     else {
       setCities([...cities, ...(data || [])]);
-      showSuccess(`${data.length} cidades adicionadas com sucesso!`);
+      showSuccess(`${data.length} cidades adicionadas!`);
     }
   };
 
-  const renameCity = async (id: string, currentName: string) => {
-    const newName = prompt("Novo nome para a cidade:", currentName);
-    if (!newName || newName === currentName) return;
-    const { error } = await supabase
-      .from('hidracor_cities')
-      .update({ city_name: newName.toUpperCase() })
-      .eq('id', id);
+  const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
+    const input = prompt("Nomes dos clientes (separe por vírgula ou cole uma lista):");
+    if (!input) return;
+    const names = input.split(/[,\n]/).map(name => name.trim().toUpperCase()).filter(name => name.length > 0);
+    if (names.length === 0) return;
+
+    const { data, error } = await supabase
+      .from(table)
+      .insert(names.map(name => ({ client_name: name, user_id: user?.id })))
+      .select();
+
     if (error) showError(error.message);
     else {
-      setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
-      showSuccess("Cidade renomeada!");
+      if (table === 'hidracor_awaiting_clients') setAwaitingClients([...awaitingClients, ...(data || [])]);
+      else setPickupClients([...pickupClients, ...(data || [])]);
+      showSuccess(`${data.length} clientes adicionados!`);
     }
   };
 
-  const moveCity = async (cityId: string, newRouteId: string) => {
-    const { error } = await supabase
-      .from('hidracor_cities')
-      .update({ route_id: newRouteId })
-      .eq('id', cityId);
+  const deleteClientFromBase = async (id: string, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
+    if (!confirm("Excluir este cliente da base?")) return;
+    const { error } = await supabase.from(table).delete().eq('id', id);
     if (error) showError(error.message);
     else {
-      setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
-      showSuccess("Cidade movida!");
+      if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.filter(c => c.id !== id));
+      else setPickupClients(pickupClients.filter(c => c.id !== id));
     }
-  };
-
-  const deleteCity = async (id: string) => {
-    if (!confirm("Excluir esta cidade?")) return;
-    const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
-    if (error) showError(error.message);
-    else setCities(cities.filter(c => c.id !== id));
   };
 
   // --- Lógica de Processamento da Carteira ---
@@ -202,6 +195,10 @@ const HidracorFormatter = () => {
 
   const processWallet = (data: any[]) => {
     setProcessing(true);
+    
+    // Mapas para busca rápida
+    const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
+    const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
     const cityToRouteMap: Record<string, string> = {};
     cities.forEach(c => {
       const route = routes.find(r => r.id === c.route_id);
@@ -209,16 +206,33 @@ const HidracorFormatter = () => {
     });
 
     const formatted = data.map(row => {
+      const clientInRow = (row['Cliente'] || row['NOME'] || '').toString().toUpperCase().trim();
       const cityInRow = (row['Cidade'] || row['CIDADE'] || '').toString().toUpperCase().trim();
+
+      let finalRoute = 'NÃO ENCONTRADA';
+
+      // PRIORIDADE 1: Aguardando Confirmação
+      if (awaitingSet.has(clientInRow)) {
+        finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
+      } 
+      // PRIORIDADE 2: Retira
+      else if (pickupSet.has(clientInRow)) {
+        finalRoute = 'RETIRA';
+      }
+      // PRIORIDADE 3: Rota por Cidade
+      else if (cityToRouteMap[cityInRow]) {
+        finalRoute = cityToRouteMap[cityInRow];
+      }
+
       return {
         ...row,
-        'ROTA': cityToRouteMap[cityInRow] || 'NÃO ENCONTRADA'
+        'ROTA': finalRoute
       };
     });
 
     setFormattedData(formatted);
     setProcessing(false);
-    showSuccess("Carteira processada!");
+    showSuccess("Carteira processada com prioridades aplicadas!");
   };
 
   const handleCellEdit = (index: number, field: string, value: string) => {
@@ -258,79 +272,118 @@ const HidracorFormatter = () => {
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8">
-        {/* Coluna da Esquerda: Gestão da Base */}
+        {/* Coluna da Esquerda: Gestão das Bases */}
         <div className="lg:col-span-4 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-lg">Base de Rotas</CardTitle>
-                <Button size="sm" variant="outline" onClick={addRoute} className="h-8 gap-1">
-                  <Plus size={14} /> Rota
-                </Button>
-              </div>
-              <CardDescription>Gerencie rotas e cidades.</CardDescription>
+              <CardTitle className="text-lg">Gerenciar Bases</CardTitle>
+              <CardDescription>Configure as prioridades de marcação.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[600px] pr-4">
-                <div className="space-y-4">
-                  {routes.map(route => (
-                    <div key={route.id} className="border rounded-lg p-3 bg-white shadow-sm">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="font-bold text-amber-700 text-sm uppercase tracking-tight">{route.name}</span>
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-7 w-7 p-0 text-green-600">
-                            <Plus size={14} />
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-7 w-7 p-0"><MoreVertical size={14} /></Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => renameRoute(route.id, route.name)}>
-                                <Edit2 className="mr-2 h-4 w-4" /> Renomear Rota
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => deleteRoute(route.id)} className="text-red-600">
-                                <Trash2 className="mr-2 h-4 w-4" /> Excluir Rota
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {cities.filter(c => c.route_id === route.id).map(city => (
-                          <DropdownMenu key={city.id}>
-                            <DropdownMenuTrigger asChild>
-                              <button className="group flex items-center gap-1 bg-slate-50 hover:bg-amber-50 px-2 py-1 rounded text-xs border border-slate-200 transition-colors">
-                                {city.city_name}
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              <DropdownMenuLabel className="text-[10px] uppercase text-slate-400">Ações para {city.city_name}</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => renameCity(city.id, city.city_name)}>
-                                <Edit2 className="mr-2 h-4 w-4" /> Renomear
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuLabel className="text-[10px] uppercase text-slate-400">Mover para Rota</DropdownMenuLabel>
-                              <ScrollArea className="h-32">
-                                {routes.filter(r => r.id !== route.id).map(r => (
-                                  <DropdownMenuItem key={r.id} onClick={() => moveCity(city.id, r.id)}>
-                                    <ArrowRightLeft className="mr-2 h-4 w-4" /> {r.name}
+            <CardContent className="p-0">
+              <Tabs defaultValue="routes" className="w-full">
+                <TabsList className="w-full grid grid-cols-3 rounded-none border-b bg-transparent h-12">
+                  <TabsTrigger value="routes" className="data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none">
+                    <MapPin size={16} className="mr-2" /> Rotas
+                  </TabsTrigger>
+                  <TabsTrigger value="awaiting" className="data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none">
+                    <UserClock size={16} className="mr-2" /> Aguard.
+                  </TabsTrigger>
+                  <TabsTrigger value="pickup" className="data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none">
+                    <PackageCheck size={16} className="mr-2" /> Retira
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="routes" className="p-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Base de Cidades</span>
+                    <Button size="sm" variant="outline" onClick={addRoute} className="h-8 gap-1">
+                      <Plus size={14} /> Rota
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[500px] pr-4">
+                    <div className="space-y-4">
+                      {routes.map(route => (
+                        <div key={route.id} className="border rounded-lg p-3 bg-white shadow-sm">
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="font-bold text-amber-700 text-sm uppercase">{route.name}</span>
+                            <div className="flex items-center gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-7 w-7 p-0 text-green-600">
+                                <Plus size={14} />
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-7 w-7 p-0"><MoreVertical size={14} /></Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => renameRoute(route.id, route.name)}>
+                                    <Edit2 className="mr-2 h-4 w-4" /> Renomear
                                   </DropdownMenuItem>
-                                ))}
-                              </ScrollArea>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600">
-                                <Trash2 className="mr-2 h-4 w-4" /> Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ))}
-                      </div>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => deleteRoute(route.id)} className="text-red-600">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {cities.filter(c => c.route_id === route.id).map(city => (
+                              <div key={city.id} className="group flex items-center gap-1 bg-slate-50 px-2 py-1 rounded text-[10px] border border-slate-200">
+                                {city.city_name}
+                                <button onClick={() => deleteCity(city.id)} className="text-slate-400 hover:text-red-500">
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </ScrollArea>
+                  </ScrollArea>
+                </TabsContent>
+
+                <TabsContent value="awaiting" className="p-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Prioridade 1</span>
+                    <Button size="sm" variant="outline" onClick={() => addClientsToBase('hidracor_awaiting_clients')} className="h-8 gap-1">
+                      <Plus size={14} /> Cliente
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[500px] pr-4">
+                    <div className="space-y-2">
+                      {awaitingClients.map(client => (
+                        <div key={client.id} className="flex justify-between items-center p-2 bg-white border rounded-md text-xs">
+                          <span className="font-medium">{client.client_name}</span>
+                          <Button size="sm" variant="ghost" onClick={() => deleteClientFromBase(client.id, 'hidracor_awaiting_clients')} className="h-6 w-6 p-0 text-red-500">
+                            <Trash2 size={12} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </TabsContent>
+
+                <TabsContent value="pickup" className="p-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Prioridade 2</span>
+                    <Button size="sm" variant="outline" onClick={() => addClientsToBase('hidracor_pickup_clients')} className="h-8 gap-1">
+                      <Plus size={14} /> Cliente
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[500px] pr-4">
+                    <div className="space-y-2">
+                      {pickupClients.map(client => (
+                        <div key={client.id} className="flex justify-between items-center p-2 bg-white border rounded-md text-xs">
+                          <span className="font-medium">{client.client_name}</span>
+                          <Button size="sm" variant="ghost" onClick={() => deleteClientFromBase(client.id, 'hidracor_pickup_clients')} className="h-6 w-6 p-0 text-red-500">
+                            <Trash2 size={12} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
@@ -360,7 +413,7 @@ const HidracorFormatter = () => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-lg">Preview Editável</CardTitle>
-                  <CardDescription>{formattedData.length} linhas.</CardDescription>
+                  <CardDescription>{formattedData.length} linhas processadas.</CardDescription>
                 </div>
                 <div className="relative w-64">
                   <Search className="absolute left-2 top-2.5 text-slate-400" size={16} />
@@ -377,7 +430,7 @@ const HidracorFormatter = () => {
                   <Table>
                     <TableHeader className="bg-slate-50 sticky top-0 z-10">
                       <TableRow>
-                        <TableHead className="w-[150px]">Rota</TableHead>
+                        <TableHead className="w-[180px]">Marcação (ROTA)</TableHead>
                         <TableHead>Cidade</TableHead>
                         <TableHead>Cliente</TableHead>
                         <TableHead>Peso</TableHead>
@@ -397,7 +450,11 @@ const HidracorFormatter = () => {
                             <Input 
                               value={row['ROTA']} 
                               onChange={(e) => handleCellEdit(idx, 'ROTA', e.target.value)}
-                              className={`h-8 text-xs font-bold ${row['ROTA'] === 'NÃO ENCONTRADA' ? 'text-red-500 border-red-200' : 'text-amber-700'}`}
+                              className={`h-8 text-[10px] font-bold ${
+                                row['ROTA'] === 'AGUARDANDO CONFIRMAÇÃO' ? 'text-blue-600 border-blue-200 bg-blue-50' :
+                                row['ROTA'] === 'RETIRA' ? 'text-green-600 border-green-200 bg-green-50' :
+                                row['ROTA'] === 'NÃO ENCONTRADA' ? 'text-red-500 border-red-200' : 'text-amber-700'
+                              }`}
                             />
                           </TableCell>
                           <TableCell className="text-xs">{row['Cidade'] || row['CIDADE']}</TableCell>
