@@ -6,6 +6,7 @@ import {
   FileSpreadsheet, 
   Truck, 
   MapPin, 
+  LogOut, 
   ChevronRight,
   Database,
   Settings
@@ -13,10 +14,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import UserNav from '@/components/UserNav';
+import { showSuccess } from '@/utils/toast';
+import { useAuth } from '@/components/AuthProvider';
+import { Link } from 'react-router-dom';
 
 const AdminDashboard = () => {
-  const ToolCard = ({ title, description, icon: Icon }: { title: string, description: string, icon: any }) => (
+  const { signOut, user } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+    showSuccess("Sessão encerrada.");
+  };
+
+  const ToolCard = ({ title, description, icon: Icon, href }: { title: string, description: string, icon: any, href?: string }) => (
     <Card className="hover:shadow-md transition-all cursor-pointer group border-slate-200">
       <CardHeader className="flex flex-row items-center gap-4 pb-2">
         <div className="bg-amber-50 p-2 rounded-lg group-hover:bg-amber-500 transition-colors">
@@ -28,17 +38,25 @@ const AdminDashboard = () => {
       </CardHeader>
       <CardContent>
         <CardDescription className="mb-4">{description}</CardDescription>
-        <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
-          Acessar Ferramenta
-          <ChevronRight size={16} />
-        </Button>
+        {href ? (
+          <Link to={href}>
+            <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
+              Acessar Ferramenta
+              <ChevronRight size={16} />
+            </Button>
+          </Link>
+        ) : (
+          <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
+            Acessar Ferramenta
+            <ChevronRight size={16} />
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white hidden lg:flex flex-col">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-2">
@@ -64,16 +82,34 @@ const AdminDashboard = () => {
             Configurações
           </a>
         </nav>
+        
+        <div className="p-4 border-t border-slate-800">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start gap-3 text-slate-400 hover:text-white hover:bg-red-900/20"
+            onClick={handleLogout}
+          >
+            <LogOut size={20} />
+            Sair do Sistema
+          </Button>
+        </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 p-8 overflow-y-auto">
         <header className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Painel de Logística</h1>
             <p className="text-slate-500">Gerencie suas operações e processe dados de transporte.</p>
           </div>
-          <UserNav />
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden md:block">
+              <p className="text-sm font-medium text-slate-900">{user?.user_metadata?.full_name || 'Administrador'}</p>
+              <p className="text-xs text-slate-500">Midas Logística</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+              ADM
+            </div>
+          </div>
         </header>
 
         <Tabs defaultValue="hidracor" className="space-y-8">
@@ -92,6 +128,7 @@ const AdminDashboard = () => {
                 title="Formatar Carteira Hidracor" 
                 description="Upload de planilha base para formatação automática de acordo com os parâmetros da Hidracor."
                 icon={FileSpreadsheet}
+                href="/admin/hidracor-formatter"
               />
               <ToolCard 
                 title="Cargas Externas Hidracor" 
