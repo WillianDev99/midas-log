@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Truck, User } from 'lucide-react';
+import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const Navbar = () => {
@@ -10,10 +10,8 @@ const Navbar = () => {
     <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <div className="bg-amber-500 p-1.5 rounded-lg">
-            <Truck className="text-white" size={24} />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
+          <img src="/logo.jpg" alt="Midas Log" className="h-10 w-auto rounded shadow-sm" />
+          <span className="text-xl font-bold tracking-tight text-slate-900 hidden sm:inline-block">
             MIDAS <span className="text-amber-600">LOGÍSTICA</span>
           </span>
         </Link>

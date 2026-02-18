@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Truck, Lock, Mail, ArrowLeft } from 'lucide-react';
+import { Lock, Mail, ArrowLeft, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,11 +12,33 @@ import { showSuccess } from '@/utils/toast';
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isFirstLogin, setIsFirstLogin] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
   const navigate = useNavigate();
+  const ADMIN_EMAIL = "7por4oficial@gmail.com";
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulação de login
+    
+    // Lógica especial para o ADM Principal
+    if (email === ADMIN_EMAIL && !isFirstLogin) {
+      // Simula verificação se é o primeiro login no banco
+      setIsFirstLogin(true);
+      return;
+    }
+
+    if (isFirstLogin) {
+      if (password !== confirmPassword) {
+        alert("As senhas não coincidem!");
+        return;
+      }
+      showSuccess("Senha configurada! Bem-vindo, Administrador Principal.");
+      navigate('/admin');
+      return;
+    }
+
+    // Login normal
     if (email.includes('admin')) {
       showSuccess("Bem-vindo, Administrador!");
       navigate('/admin');
@@ -36,36 +58,45 @@ const Login = () => {
       <Card className="w-full max-w-md shadow-xl border-none">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="bg-amber-500 p-3 rounded-2xl">
-              <Truck className="text-white" size={32} />
-            </div>
+            <img src="/logo.jpg" alt="Midas Log" className="h-16 w-auto rounded-lg shadow-sm" />
           </div>
-          <CardTitle className="text-2xl font-bold">Acesso ao Sistema</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            {isFirstLogin ? "Configurar Senha ADM" : "Acesso ao Sistema"}
+          </CardTitle>
           <CardDescription>
-            Entre com suas credenciais para acessar sua área exclusiva.
+            {isFirstLogin 
+              ? "Este é seu primeiro acesso. Defina uma senha para o administrador principal." 
+              : "Entre com suas credenciais para acessar sua área exclusiva."}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 text-slate-400" size={18} />
-                <Input 
-                  id="email" 
-                  type="email" 
-                  placeholder="seu@email.com" 
-                  className="pl-10"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required 
-                />
+            {!isFirstLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="email">E-mail</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 text-slate-400" size={18} />
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    placeholder="seu@email.com" 
+                    className="pl-10"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required 
+                  />
+                </div>
               </div>
-            </div>
+            )}
+            
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Senha</Label>
-                <a href="#" className="text-xs text-amber-600 hover:underline">Esqueceu a senha?</a>
+                <Label htmlFor="password">{isFirstLogin ? "Nova Senha" : "Senha"}</Label>
+                {!isFirstLogin && (
+                  <Link to="/forgot-password" size="sm" className="text-xs text-amber-600 hover:underline">
+                    Esqueceu a senha?
+                  </Link>
+                )}
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
@@ -79,14 +110,40 @@ const Login = () => {
                 />
               </div>
             </div>
+
+            {isFirstLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirmar Senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
+                  <Input 
+                    id="confirmPassword" 
+                    type="password" 
+                    className="pl-10"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required 
+                  />
+                </div>
+              </div>
+            )}
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
             <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white h-11">
-              Entrar no Sistema
+              {isFirstLogin ? "Salvar e Entrar" : "Entrar no Sistema"}
             </Button>
-            <p className="text-sm text-center text-slate-500">
-              Dica: Use um e-mail com "admin" para acessar a área ADM.
-            </p>
+            
+            {!isFirstLogin && (
+              <div className="text-center space-y-2">
+                <p className="text-sm text-slate-500">Não tem uma conta?</p>
+                <Link to="/register">
+                  <Button variant="outline" className="w-full flex items-center gap-2">
+                    <UserPlus size={18} />
+                    Criar Conta
+                  </Button>
+                </Link>
+              </div>
+            )}
           </CardFooter>
         </form>
       </Card>
