@@ -121,16 +121,32 @@ const HidracorFormatter = () => {
   };
 
   const addCity = async (routeId: string) => {
-    const cityName = prompt("Nome da cidade:");
-    if (!cityName) return;
+    const input = prompt("Nomes das cidades (separe por vírgula ou cole uma lista):");
+    if (!input) return;
+    
+    // Divide por vírgula ou quebra de linha, limpa espaços e remove vazios
+    const cityNames = input
+      .split(/[,\n]/)
+      .map(name => name.trim().toUpperCase())
+      .filter(name => name.length > 0);
+
+    if (cityNames.length === 0) return;
+
+    const newCitiesData = cityNames.map(name => ({
+      route_id: routeId,
+      city_name: name,
+      user_id: user?.id
+    }));
+
     const { data, error } = await supabase
       .from('hidracor_cities')
-      .insert([{ route_id: routeId, city_name: cityName.toUpperCase(), user_id: user?.id }])
+      .insert(newCitiesData)
       .select();
+
     if (error) showError(error.message);
     else {
-      setCities([...cities, data[0]]);
-      showSuccess("Cidade adicionada!");
+      setCities([...cities, ...(data || [])]);
+      showSuccess(`${data.length} cidades adicionadas com sucesso!`);
     }
   };
 
