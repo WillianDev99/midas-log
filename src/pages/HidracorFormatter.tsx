@@ -29,7 +29,11 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuLabel
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
@@ -83,13 +87,13 @@ const HidracorFormatter = () => {
       setAwaitingClients(a.data || []);
       setPickupClients(p.data || []);
     } catch (error) {
-      showError("Erro ao carregar base de dados.");
+      console.error("Erro ao carregar base:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Lógica de Gestão da Base ---
+  // --- Gestão de Rotas ---
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -129,6 +133,7 @@ const HidracorFormatter = () => {
     }
   };
 
+  // --- Gestão de Cidades ---
   const addCity = async (routeId: string) => {
     const input = prompt("Nomes das cidades (separe por vírgula ou cole uma lista):");
     if (!input) return;
@@ -147,6 +152,32 @@ const HidracorFormatter = () => {
     }
   };
 
+  const renameCity = async (id: string, currentName: string) => {
+    const newName = prompt("Novo nome para a cidade:", currentName);
+    if (!newName || newName === currentName) return;
+    const { error } = await supabase
+      .from('hidracor_cities')
+      .update({ city_name: newName.toUpperCase() })
+      .eq('id', id);
+    if (error) showError(error.message);
+    else {
+      setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
+      showSuccess("Cidade renomeada!");
+    }
+  };
+
+  const moveCity = async (cityId: string, newRouteId: string) => {
+    const { error } = await supabase
+      .from('hidracor_cities')
+      .update({ route_id: newRouteId })
+      .eq('id', cityId);
+    if (error) showError(error.message);
+    else {
+      setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
+      showSuccess("Cidade movida!");
+    }
+  };
+
   const deleteCity = async (id: string) => {
     if (!confirm("Excluir esta cidade?")) return;
     const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
@@ -154,6 +185,7 @@ const HidracorFormatter = () => {
     else setCities(cities.filter(c => c.id !== id));
   };
 
+  // --- Gestão de Clientes (Aguardando/Retira) ---
   const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
     const input = prompt("Nomes dos clientes (separe por vírgula ou cole uma lista):");
     if (!input) return;
@@ -165,8 +197,10 @@ const HidracorFormatter = () => {
       .insert(names.map(name => ({ client_name: name, user_id: user?.id })))
       .select();
 
-    if (error) showError(error.message);
-    else {
+    if (error) {
+      showError("Erro ao salvar. Verifique se as tabelas foram criadas no Supabase.");
+      console.error(error);
+    } else {
       if (table === 'hidracor_awaiting_clients') setAwaitingClients([...awaitingClients, ...(data || [])]);
       else setPickupClients([...pickupClients, ...(data || [])]);
       showSuccess(`${data.length} clientes adicionados!`);
@@ -183,7 +217,7 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Lógica de Processamento da Carteira ---
+  // --- Processamento ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -202,7 +236,6 @@ const HidracorFormatter = () => {
 
   const processWallet = (data: any[]) => {
     setProcessing(true);
-    
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
     const cityToRouteMap: Record<string, string> = {};
@@ -214,28 +247,18 @@ const HidracorFormatter = () => {
     const formatted = data.map(row => {
       const clientInRow = (row['Cliente'] || row['NOME'] || '').toString().toUpperCase().trim();
       const cityInRow = (row['Cidade'] || row['CIDADE'] || '').toString().toUpperCase().trim();
-
       let finalRoute = 'NÃO ENCONTRADA';
 
-      if (awaitingSet.has(clientInRow)) {
-        finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
-      } 
-      else if (pickupSet.has(clientInRow)) {
-        finalRoute = 'RETIRA';
-      }
-      else if (cityToRouteMap[cityInRow]) {
-        finalRoute = cityToRouteMap[cityInRow];
-      }
+      if (awaitingSet.has(clientInRow)) finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
+      else if (pickupSet.has(clientInRow)) finalRoute = 'RETIRA';
+      else if (cityToRouteMap[cityInRow]) finalRoute = cityToRouteMap[cityInRow];
 
-      return {
-        ...row,
-        'ROTA': finalRoute
-      };
+      return { ...row, 'ROTA': finalRoute };
     });
 
     setFormattedData(formatted);
     setProcessing(false);
-    showSuccess("Carteira processada com prioridades aplicadas!");
+    showSuccess("Carteira processada!");
   };
 
   const handleCellEdit = (index: number, field: string, value: string) => {
@@ -318,11 +341,11 @@ const HidracorFormatter = () => {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuItem onClick={() => renameRoute(route.id, route.name)}>
-                                    <Edit2 className="mr-2 h-4 w-4" /> Renomear
+                                    <Edit2 className="mr-2 h-4 w-4" /> Renomear Rota
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => deleteRoute(route.id)} className="text-red-600">
-                                    <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                                    <Trash2 className="mr-2 h-4 w-4" /> Excluir Rota
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -330,12 +353,37 @@ const HidracorFormatter = () => {
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {cities.filter(c => c.route_id === route.id).map(city => (
-                              <div key={city.id} className="group flex items-center gap-1 bg-slate-50 px-2 py-1 rounded text-[10px] border border-slate-200">
-                                {city.city_name}
-                                <button onClick={() => deleteCity(city.id)} className="text-slate-400 hover:text-red-500">
-                                  <Trash2 size={10} />
-                                </button>
-                              </div>
+                              <DropdownMenu key={city.id}>
+                                <DropdownMenuTrigger asChild>
+                                  <button className="group flex items-center gap-1 bg-slate-50 px-2 py-1 rounded text-[10px] border border-slate-200 hover:border-amber-500 transition-colors">
+                                    {city.city_name}
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                  <DropdownMenuLabel className="text-[10px]">Ações para {city.city_name}</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => renameCity(city.id, city.city_name)}>
+                                    <Edit2 className="mr-2 h-3 w-3" /> Renomear
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger>
+                                      <ArrowRightLeft className="mr-2 h-3 w-3" /> Mover para...
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuPortal>
+                                      <DropdownMenuSubContent>
+                                        {routes.filter(r => r.id !== route.id).map(r => (
+                                          <DropdownMenuItem key={r.id} onClick={() => moveCity(city.id, r.id)}>
+                                            {r.name}
+                                          </DropdownMenuItem>
+                                        ))}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuPortal>
+                                  </DropdownMenuSub>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600">
+                                    <Trash2 className="mr-2 h-3 w-3" /> Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             ))}
                           </div>
                         </div>
