@@ -11,17 +11,23 @@ import {
   Save, 
   ArrowLeft,
   Search,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
-  MoveHorizontal
+  MoreVertical,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -46,8 +52,6 @@ const HidracorFormatter = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   
-  // Estados para a Carteira
-  const [rawWalletData, setRawWalletData] = useState<any[]>([]);
   const [formattedData, setFormattedData] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -82,12 +86,37 @@ const HidracorFormatter = () => {
     if (!name) return;
     const { data, error } = await supabase
       .from('hidracor_routes')
-      .insert([{ name, user_id: user?.id }])
+      .insert([{ name: name.toUpperCase(), user_id: user?.id }])
       .select();
     if (error) showError(error.message);
     else {
       setRoutes([...routes, data[0]]);
       showSuccess("Rota adicionada!");
+    }
+  };
+
+  const renameRoute = async (id: string, currentName: string) => {
+    const newName = prompt("Novo nome para a rota:", currentName);
+    if (!newName || newName === currentName) return;
+    const { error } = await supabase
+      .from('hidracor_routes')
+      .update({ name: newName.toUpperCase() })
+      .eq('id', id);
+    if (error) showError(error.message);
+    else {
+      setRoutes(routes.map(r => r.id === id ? { ...r, name: newName.toUpperCase() } : r));
+      showSuccess("Rota renomeada!");
+    }
+  };
+
+  const deleteRoute = async (id: string) => {
+    if (!confirm("ATENÇÃO: Isso excluirá a rota e TODAS as cidades vinculadas a ela. Confirmar?")) return;
+    const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
+    if (error) showError(error.message);
+    else {
+      setRoutes(routes.filter(r => r.id !== id));
+      setCities(cities.filter(c => c.route_id !== id));
+      showSuccess("Rota excluída!");
     }
   };
 
@@ -102,6 +131,32 @@ const HidracorFormatter = () => {
     else {
       setCities([...cities, data[0]]);
       showSuccess("Cidade adicionada!");
+    }
+  };
+
+  const renameCity = async (id: string, currentName: string) => {
+    const newName = prompt("Novo nome para a cidade:", currentName);
+    if (!newName || newName === currentName) return;
+    const { error } = await supabase
+      .from('hidracor_cities')
+      .update({ city_name: newName.toUpperCase() })
+      .eq('id', id);
+    if (error) showError(error.message);
+    else {
+      setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
+      showSuccess("Cidade renomeada!");
+    }
+  };
+
+  const moveCity = async (cityId: string, newRouteId: string) => {
+    const { error } = await supabase
+      .from('hidracor_cities')
+      .update({ route_id: newRouteId })
+      .eq('id', cityId);
+    if (error) showError(error.message);
+    else {
+      setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
+      showSuccess("Cidade movida!");
     }
   };
 
@@ -124,7 +179,6 @@ const HidracorFormatter = () => {
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json(ws);
-      setRawWalletData(data);
       processWallet(data);
     };
     reader.readAsBinaryString(file);
@@ -132,7 +186,6 @@ const HidracorFormatter = () => {
 
   const processWallet = (data: any[]) => {
     setProcessing(true);
-    // Mapeamento de cidade -> rota para busca rápida
     const cityToRouteMap: Record<string, string> = {};
     cities.forEach(c => {
       const route = routes.find(r => r.id === c.route_id);
@@ -140,7 +193,6 @@ const HidracorFormatter = () => {
     });
 
     const formatted = data.map(row => {
-      // Tenta encontrar a cidade na linha (ajuste o nome da coluna conforme seu CARTEIRA.xlsx)
       const cityInRow = (row['Cidade'] || row['CIDADE'] || '').toString().toUpperCase().trim();
       return {
         ...row,
@@ -150,7 +202,7 @@ const HidracorFormatter = () => {
 
     setFormattedData(formatted);
     setProcessing(false);
-    showSuccess("Carteira processada com sucesso!");
+    showSuccess("Carteira processada!");
   };
 
   const handleCellEdit = (index: number, field: string, value: string) => {
@@ -163,7 +215,7 @@ const HidracorFormatter = () => {
     const ws = XLSX.utils.json_to_sheet(formattedData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Carteira Formatada");
-    XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_FORMATADA_${new Date().toLocaleDateString()}.xlsx`);
+    XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_${new Date().toLocaleDateString()}.xlsx`);
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
@@ -177,7 +229,7 @@ const HidracorFormatter = () => {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-            <p className="text-slate-500 text-sm">Gerencie sua base e processe planilhas.</p>
+            <p className="text-slate-500 text-sm">Gestão de base e processamento inteligente.</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -200,27 +252,63 @@ const HidracorFormatter = () => {
                   <Plus size={14} /> Rota
                 </Button>
               </div>
-              <CardDescription>Cidades organizadas por rota.</CardDescription>
+              <CardDescription>Gerencie rotas e cidades.</CardDescription>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[600px] pr-4">
                 <div className="space-y-4">
                   {routes.map(route => (
-                    <div key={route.id} className="border rounded-lg p-3 bg-white">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-bold text-amber-700 text-sm uppercase">{route.name}</span>
-                        <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-7 w-7 p-0">
-                          <Plus size={14} />
-                        </Button>
+                    <div key={route.id} className="border rounded-lg p-3 bg-white shadow-sm">
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="font-bold text-amber-700 text-sm uppercase tracking-tight">{route.name}</span>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-7 w-7 p-0 text-green-600">
+                            <Plus size={14} />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-7 w-7 p-0"><MoreVertical size={14} /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => renameRoute(route.id, route.name)}>
+                                <Edit2 className="mr-2 h-4 w-4" /> Renomear Rota
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => deleteRoute(route.id)} className="text-red-600">
+                                <Trash2 className="mr-2 h-4 w-4" /> Excluir Rota
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {cities.filter(c => c.route_id === route.id).map(city => (
-                          <div key={city.id} className="group flex items-center gap-1 bg-slate-100 px-2 py-1 rounded text-xs border border-slate-200">
-                            {city.city_name}
-                            <button onClick={() => deleteCity(city.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Trash2 size={10} />
-                            </button>
-                          </div>
+                          <DropdownMenu key={city.id}>
+                            <DropdownMenuTrigger asChild>
+                              <button className="group flex items-center gap-1 bg-slate-50 hover:bg-amber-50 px-2 py-1 rounded text-xs border border-slate-200 transition-colors">
+                                {city.city_name}
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuLabel className="text-[10px] uppercase text-slate-400">Ações para {city.city_name}</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => renameCity(city.id, city.city_name)}>
+                                <Edit2 className="mr-2 h-4 w-4" /> Renomear
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuLabel className="text-[10px] uppercase text-slate-400">Mover para Rota</DropdownMenuLabel>
+                              <ScrollArea className="h-32">
+                                {routes.filter(r => r.id !== route.id).map(r => (
+                                  <DropdownMenuItem key={r.id} onClick={() => moveCity(city.id, r.id)}>
+                                    <ArrowRightLeft className="mr-2 h-4 w-4" /> {r.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </ScrollArea>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600">
+                                <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         ))}
                       </div>
                     </div>
@@ -236,15 +324,14 @@ const HidracorFormatter = () => {
           <Card className="border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg">Upload da Carteira</CardTitle>
-              <CardDescription>Selecione o arquivo CARTEIRA.xlsx para formatar.</CardDescription>
+              <CardDescription>Selecione o arquivo CARTEIRA.xlsx.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-center w-full">
                 <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                    <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span> ou arraste o arquivo</p>
-                    <p className="text-xs text-slate-400">XLSX, XLS (Máx. 10MB)</p>
+                    <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
                   </div>
                   <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
                 </label>
@@ -256,14 +343,14 @@ const HidracorFormatter = () => {
             <Card className="border-none shadow-sm overflow-hidden">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="text-lg">Preview da Carteira</CardTitle>
-                  <CardDescription>{formattedData.length} linhas processadas.</CardDescription>
+                  <CardTitle className="text-lg">Preview Editável</CardTitle>
+                  <CardDescription>{formattedData.length} linhas.</CardDescription>
                 </div>
                 <div className="relative w-64">
                   <Search className="absolute left-2 top-2.5 text-slate-400" size={16} />
-                  <Input 
+                  <input 
                     placeholder="Filtrar preview..." 
-                    className="pl-8 h-9"
+                    className="pl-8 h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -278,7 +365,6 @@ const HidracorFormatter = () => {
                         <TableHead>Cidade</TableHead>
                         <TableHead>Cliente</TableHead>
                         <TableHead>Peso</TableHead>
-                        <TableHead>Valor</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -288,7 +374,7 @@ const HidracorFormatter = () => {
                             val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
                           )
                         )
-                        .slice(0, 100) // Limitamos o preview para performance
+                        .slice(0, 100)
                         .map((row, idx) => (
                         <TableRow key={idx}>
                           <TableCell>
@@ -301,16 +387,10 @@ const HidracorFormatter = () => {
                           <TableCell className="text-xs">{row['Cidade'] || row['CIDADE']}</TableCell>
                           <TableCell className="text-xs truncate max-w-[200px]">{row['Cliente'] || row['NOME']}</TableCell>
                           <TableCell className="text-xs">{row['Peso'] || row['PESO']}</TableCell>
-                          <TableCell className="text-xs">{row['Valor'] || row['VALOR']}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                  {formattedData.length > 100 && (
-                    <div className="p-4 text-center text-xs text-slate-500 bg-slate-50">
-                      Exibindo as primeiras 100 linhas. O arquivo final conterá todas as {formattedData.length} linhas.
-                    </div>
-                  )}
                 </ScrollArea>
               </CardContent>
             </Card>
