@@ -13,7 +13,7 @@ import {
   Loader2,
   MoreVertical,
   ArrowRightLeft,
-  UserClock,
+  Clock,
   PackageCheck,
   MapPin
 } from 'lucide-react';
@@ -147,6 +147,13 @@ const HidracorFormatter = () => {
     }
   };
 
+  const deleteCity = async (id: string) => {
+    if (!confirm("Excluir esta cidade?")) return;
+    const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
+    if (error) showError(error.message);
+    else setCities(cities.filter(c => c.id !== id));
+  };
+
   const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
     const input = prompt("Nomes dos clientes (separe por vírgula ou cole uma lista):");
     if (!input) return;
@@ -196,7 +203,6 @@ const HidracorFormatter = () => {
   const processWallet = (data: any[]) => {
     setProcessing(true);
     
-    // Mapas para busca rápida
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
     const cityToRouteMap: Record<string, string> = {};
@@ -211,15 +217,12 @@ const HidracorFormatter = () => {
 
       let finalRoute = 'NÃO ENCONTRADA';
 
-      // PRIORIDADE 1: Aguardando Confirmação
       if (awaitingSet.has(clientInRow)) {
         finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
       } 
-      // PRIORIDADE 2: Retira
       else if (pickupSet.has(clientInRow)) {
         finalRoute = 'RETIRA';
       }
-      // PRIORIDADE 3: Rota por Cidade
       else if (cityToRouteMap[cityInRow]) {
         finalRoute = cityToRouteMap[cityInRow];
       }
@@ -272,7 +275,6 @@ const HidracorFormatter = () => {
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8">
-        {/* Coluna da Esquerda: Gestão das Bases */}
         <div className="lg:col-span-4 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
@@ -286,7 +288,7 @@ const HidracorFormatter = () => {
                     <MapPin size={16} className="mr-2" /> Rotas
                   </TabsTrigger>
                   <TabsTrigger value="awaiting" className="data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none">
-                    <UserClock size={16} className="mr-2" /> Aguard.
+                    <Clock size={16} className="mr-2" /> Aguard.
                   </TabsTrigger>
                   <TabsTrigger value="pickup" className="data-[state=active]:border-b-2 data-[state=active]:border-amber-500 rounded-none">
                     <PackageCheck size={16} className="mr-2" /> Retira
@@ -388,7 +390,6 @@ const HidracorFormatter = () => {
           </Card>
         </div>
 
-        {/* Coluna da Direita: Processamento */}
         <div className="lg:col-span-8 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader>
