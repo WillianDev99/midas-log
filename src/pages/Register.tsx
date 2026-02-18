@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Mail, Lock, ArrowLeft, ShieldCheck, Users } from 'lucide-react';
+import { User, Mail, Lock, ArrowLeft, ShieldCheck, Users, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { showSuccess, showError } from '@/utils/toast';
+import { supabase } from '@/lib/supabase';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -18,9 +19,10 @@ const Register = () => {
     confirmPassword: '',
     accountType: 'client'
   });
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (formData.password !== formData.confirmPassword) {
@@ -28,13 +30,34 @@ const Register = () => {
       return;
     }
 
-    if (formData.accountType === 'admin') {
-      showSuccess("Solicitação enviada! Um administrador principal precisa aprovar seu acesso.");
-    } else {
-      showSuccess("Conta criada com sucesso! Bem-vindo à Midas Logística.");
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+            account_type: formData.accountType,
+            approved: formData.accountType === 'client' // Clientes são auto-aprovados
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      if (formData.accountType === 'admin') {
+        showSuccess("Solicitação enviada! O administrador principal precisa aprovar seu acesso.");
+      } else {
+        showSuccess("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+      }
+      
+      navigate('/login');
+    } catch (error: any) {
+      showError(error.message || "Erro ao criar conta.");
+    } finally {
+      setLoading(false);
     }
-    
-    navigate('/login');
   };
 
   return (
@@ -145,8 +168,8 @@ const Register = () => {
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white h-11">
-              Criar Conta
+            <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white h-11" disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : "Criar Conta"}
             </Button>
           </CardFooter>
         </form>

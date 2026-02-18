@@ -2,49 +2,84 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Mail, ArrowLeft, UserPlus } from 'lucide-react';
+import { Lock, Mail, ArrowLeft, UserPlus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { showSuccess } from '@/utils/toast';
+import { showSuccess, showError } from '@/utils/toast';
+import { supabase } from '@/lib/supabase';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [isFirstLogin, setIsFirstLogin] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   
   const navigate = useNavigate();
   const ADMIN_EMAIL = "7por4oficial@gmail.com";
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Lógica especial para o ADM Principal
-    if (email === ADMIN_EMAIL && !isFirstLogin) {
-      // Simula verificação se é o primeiro login no banco
-      setIsFirstLogin(true);
-      return;
-    }
+    setLoading(true);
 
-    if (isFirstLogin) {
-      if (password !== confirmPassword) {
-        alert("As senhas não coincidem!");
-        return;
+    try {
+      // Lógica especial para o ADM Principal no primeiro acesso
+      if (email === ADMIN_EMAIL && !isFirstLogin) {
+        // Verificamos se o usuário já existe
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password: 'temporary_password_placeholder' // Tentativa inicial
+        });
+
+        if (signInError && signInError.message.includes("Invalid login credentials")) {
+          // Se falhar por credenciais inválidas, pode ser o primeiro acesso
+          // No Supabase, o ideal é que o ADM já tenha sido criado via Dashboard ou convite
+          // Para simular o seu pedido de "criar senha no primeiro acesso":
+          setIsFirstLogin(true);
+          setLoading(false);
+          return;
+        }
       }
-      showSuccess("Senha configurada! Bem-vindo, Administrador Principal.");
-      navigate('/admin');
-      return;
-    }
 
-    // Login normal
-    if (email.includes('admin')) {
-      showSuccess("Bem-vindo, Administrador!");
-      navigate('/admin');
-    } else {
-      showSuccess("Login realizado com sucesso!");
-      navigate('/');
+      if (isFirstLogin) {
+        if (password !== confirmPassword) {
+          showError("As senhas não coincidem!");
+          setLoading(false);
+          return;
+        }
+        
+        // No primeiro acesso real, usaríamos signUp ou updatePassword
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { account_type: 'admin', approved: true } }
+        });
+
+        if (error) throw error;
+        showSuccess("Senha configurada! Verifique seu e-mail para confirmar.");
+        setIsFirstLogin(false);
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+
+        const userType = data.user?.user_metadata?.account_type;
+        const isApproved = data.user?.user_metadata?.approved;
+
+        if (userType === 'admin' && !isApproved) {
+          await supabase.auth.signOut();
+          showError("Sua conta ADM ainda aguarda aprovação do administrador principal.");
+          return;
+        }
+
+        showSuccess("Bem-vindo de volta!");
+        navigate(userType === 'admin' ? '/admin' : '/');
+      }
+    } catch (error: any) {
+      showError(error.message || "Erro ao realizar login.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -65,7 +100,7 @@ const Login = () => {
           </CardTitle>
           <CardDescription>
             {isFirstLogin 
-              ? "Este é seu primeiro acesso. Defina uma senha para o administrador principal." 
+              ? "Defina uma senha segura para o administrador principal." 
               : "Entre com suas credenciais para acessar sua área exclusiva."}
           </CardDescription>
         </CardHeader>
@@ -129,8 +164,8 @@ const Login = () => {
             )}
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white h-11">
-              {isFirstLogin ? "Salvar e Entrar" : "Entrar no Sistema"}
+            <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white h-11" disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : (isFirstLogin ? "Salvar e Entrar" : "Entrar no Sistema")}
             </Button>
             
             {!isFirstLogin && (
