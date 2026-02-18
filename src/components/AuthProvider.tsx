@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 
@@ -19,23 +19,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    // Verificar sessão inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    const initializeAuth = async () => {
+      // getUser() é mais seguro que getSession() pois valida com o servidor
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
+        setSession(null);
+        setUser(null);
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(user);
+      }
       setLoading(false);
-    });
+    };
 
-    // Escutar mudanças na autenticação (Login, Logout, Confirmação de E-mail)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
       setLoading(false);
 
-      if (event === 'SIGNED_IN') {
-        const userType = session?.user?.user_metadata?.account_type;
+      if (event === 'SIGNED_IN' && currentSession) {
+        const userType = currentSession.user?.user_metadata?.account_type;
         if (userType === 'admin') {
           navigate('/admin');
         } else {
@@ -44,6 +54,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
         navigate('/login');
       }
     });
@@ -53,6 +65,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    localStorage.clear(); // Limpeza extra para garantir
+    setSession(null);
+    setUser(null);
+    navigate('/login');
   };
 
   return (

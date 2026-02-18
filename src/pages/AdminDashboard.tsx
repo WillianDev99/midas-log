@@ -16,13 +16,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { showSuccess } from '@/utils/toast';
+import { useAuth } from '@/components/AuthProvider';
 
 const AdminDashboard = () => {
-  const navigate = useNavigate();
+  const { signOut, user } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
     showSuccess("Sessão encerrada.");
-    navigate('/login');
   };
 
   const ToolCard = ({ title, description, icon: Icon }: { title: string, description: string, icon: any }) => (
@@ -95,7 +96,7 @@ const AdminDashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden md:block">
-              <p className="text-sm font-medium text-slate-900">Gerente de Logística</p>
+              <p className="text-sm font-medium text-slate-900">{user?.user_metadata?.full_name || 'Administrador'}</p>
               <p className="text-xs text-slate-500">Midas Logística</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
