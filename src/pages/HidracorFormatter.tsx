@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   DropdownMenu, 
@@ -94,7 +94,14 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Gestão de Bases (Rotas, Cidades, Clientes) ---
+  // --- Funções Auxiliares ---
+  const excelDateToJSDate = (serial: any) => {
+    if (!serial || isNaN(serial)) return serial;
+    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+    return date.toLocaleDateString('pt-BR');
+  };
+
+  // --- Gestão de Bases ---
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -194,6 +201,19 @@ const HidracorFormatter = () => {
       return;
     }
 
+    // Mapeamento baseado na planilha CARTEIRA padrão
+    // Col C (2): Data Emissão
+    // Col D (3): Frete
+    // Col E (4): Município
+    // Col F (5): Estado
+    // Col G (6): Pedido
+    // Col H (7): Cód.Cliente
+    // Col I (8): Nome Cliente
+    // Col J (9): peso possível
+    // Col K (10): valor possível
+    // Col L (11): peso total
+    // Col M (12): valor total
+
     const dataRows = rows.slice(1);
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
@@ -204,9 +224,9 @@ const HidracorFormatter = () => {
     });
 
     const formatted = dataRows.map((row) => {
-      const freightType = (row[1] || '').toString().toUpperCase().trim(); // Col B
-      const cityName = (row[3] || '').toString().toUpperCase().trim();    // Col D
-      const clientName = (row[7] || '').toString().toUpperCase().trim();   // Col H
+      const freightType = (row[3] || '').toString().toUpperCase().trim(); 
+      const cityName = (row[4] || '').toString().toUpperCase().trim();    
+      const clientName = (row[8] || '').toString().toUpperCase().trim();   
       
       let finalRoute = 'NÃO ENCONTRADA';
 
@@ -223,20 +243,19 @@ const HidracorFormatter = () => {
         }
       }
 
-      // Mapeamento das 12 colunas de saída
       return {
-        'Data Emissão': row[0],
-        'Frete': row[1],
+        'Data Emissão': excelDateToJSDate(row[2]),
+        'Frete': row[3],
         'ROTA': finalRoute,
-        'Município': row[3],
-        'Estado': row[4],
-        'Pedido': row[5],
-        'Cód.Cliente': row[6],
-        'Nome Cliente': row[7],
-        'peso possível': row[8],
-        'valor possível': row[9],
-        'peso total': row[10],
-        'valor total': row[11]
+        'Município': row[4],
+        'Estado': row[5],
+        'Pedido': row[6],
+        'Cód.Cliente': row[7],
+        'Nome Cliente': row[8],
+        'peso possível': row[9],
+        'valor possível': row[10],
+        'peso total': row[11],
+        'valor total': row[12]
       };
     });
 
@@ -261,7 +280,10 @@ const HidracorFormatter = () => {
     
     filteredData.forEach(row => {
       numericCols.forEach(col => {
-        const val = parseFloat(row[col]?.toString().replace('.', '').replace(',', '.') || '0');
+        let val = row[col];
+        if (typeof val === 'string') {
+          val = parseFloat(val.replace('.', '').replace(',', '.'));
+        }
         if (!isNaN(val)) {
           result[col] = (result[col] || 0) + val;
         }
@@ -467,17 +489,17 @@ const HidracorFormatter = () => {
 
           {formattedData.length > 0 && (
             <Card className="border-none shadow-sm overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between bg-slate-50/50 border-b">
+              <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4">
                 <div>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Filter size={18} className="text-amber-600" /> Preview com Filtros
                   </CardTitle>
                   <CardDescription>Mostrando {filteredData.length} registros.</CardDescription>
                 </div>
-                <div className="flex items-center gap-4 bg-white p-2 rounded-lg border shadow-sm">
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
                   <Calculator size={16} className="text-slate-400" />
                   {Object.entries(totals).map(([col, val]) => (
-                    <div key={col} className="text-[10px]">
+                    <div key={col} className="text-[10px] border-r last:border-0 pr-2 last:pr-0">
                       <span className="text-slate-500 font-medium uppercase">{col}:</span>
                       <span className="ml-1 font-bold text-amber-700">
                         {val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -487,49 +509,56 @@ const HidracorFormatter = () => {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[600px]">
-                  <Table>
-                    <TableHeader className="bg-white sticky top-0 z-20 shadow-sm">
-                      <TableRow>
-                        {Object.keys(formattedData[0]).map(col => (
-                          <TableHead key={col} className="min-w-[150px] py-4">
-                            <div className="space-y-2">
-                              <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
-                              <Input 
-                                placeholder={`Filtrar...`}
-                                className="h-7 text-[10px] bg-slate-50 border-slate-200"
-                                value={columnFilters[col] || ''}
-                                onChange={(e) => handleFilterChange(col, e.target.value)}
-                              />
-                            </div>
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredData.slice(0, 200).map((row, idx) => (
-                        <TableRow key={idx} className="hover:bg-slate-50/50">
-                          {Object.keys(row).map(col => (
-                            <TableCell key={col} className="text-[11px] py-2">
-                              {col === 'ROTA' ? (
-                                <div className={`px-2 py-1 rounded font-bold text-center border ${
-                                  row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white border-slate-900' :
-                                  row[col] === 'AG. CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                  row[col] === 'CLIENTE RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
-                                  row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
-                                  'bg-amber-50 text-amber-700 border-amber-200'
-                                }`}>
-                                  {row[col]}
-                                </div>
-                              ) : (
-                                <span className="truncate block max-w-[200px]">{row[col]}</span>
-                              )}
-                            </TableCell>
+                <ScrollArea className="w-full whitespace-nowrap">
+                  <div className="min-w-max">
+                    <Table>
+                      <TableHeader className="bg-white sticky top-0 z-20 shadow-sm">
+                        <TableRow>
+                          {Object.keys(formattedData[0]).map(col => (
+                            <TableHead key={col} className="min-w-[180px] py-4 px-4">
+                              <div className="space-y-2">
+                                <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
+                                <Input 
+                                  placeholder={`Filtrar...`}
+                                  className="h-7 text-[10px] bg-slate-50 border-slate-200"
+                                  value={columnFilters[col] || ''}
+                                  onChange={(e) => handleFilterChange(col, e.target.value)}
+                                />
+                              </div>
+                            </TableHead>
                           ))}
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredData.slice(0, 500).map((row, idx) => (
+                          <TableRow key={idx} className="hover:bg-slate-50/50">
+                            {Object.keys(row).map(col => (
+                              <TableCell key={col} className="text-[11px] py-2 px-4">
+                                {col === 'ROTA' ? (
+                                  <div className={`px-2 py-1 rounded font-bold text-center border ${
+                                    row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white border-slate-900' :
+                                    row[col] === 'AG. CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                    row[col] === 'CLIENTE RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
+                                    row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
+                                    'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    {row[col]}
+                                  </div>
+                                ) : (
+                                  <span className="block">
+                                    {typeof row[col] === 'number' && (col.includes('peso') || col.includes('valor')) 
+                                      ? row[col].toLocaleString('pt-BR', { minimumFractionDigits: 2 }) 
+                                      : row[col]}
+                                  </span>
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               </CardContent>
             </Card>
