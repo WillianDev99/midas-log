@@ -14,10 +14,7 @@ const Navbar = () => {
     <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <img src="/logo.jpg" alt="Midas Log" className="h-10 w-auto rounded shadow-sm" />
-          <span className="text-xl font-bold tracking-tight text-slate-900 hidden sm:inline-block">
-            MIDAS <span className="text-amber-600">LOGÍSTICA</span>
-          </span>
+          <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
         </Link>
         
         <div className="flex items-center gap-6">

@@ -9,7 +9,8 @@ import {
   LogOut, 
   ChevronRight,
   Database,
-  Settings
+  Settings,
+  Home
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,10 +60,8 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-slate-50 flex">
       <aside className="w-64 bg-slate-900 text-white hidden lg:flex flex-col">
         <div className="p-6 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <div className="bg-amber-500 p-1.5 rounded-lg">
-              <Truck className="text-white" size={20} />
-            </div>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto brightness-0 invert" />
             <span className="font-bold tracking-tight">MIDAS ADM</span>
           </div>
         </div>
@@ -73,6 +72,10 @@ const AdminDashboard = () => {
             <LayoutDashboard size={20} />
             Dashboard
           </a>
+          <Link to="/" className="flex items-center gap-3 px-4 py-2 text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition-colors">
+            <Home size={20} />
+            Voltar ao Site
+          </Link>
           <a href="#" className="flex items-center gap-3 px-4 py-2 text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition-colors">
             <Database size={20} />
             Base de Dados

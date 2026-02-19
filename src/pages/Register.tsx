@@ -67,7 +67,7 @@ const Register = () => {
       <Card className="w-full max-w-md shadow-xl border-none">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <img src="/logo.jpg" alt="Midas Log" className="h-12 w-auto rounded-lg" />
+            <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
           </div>
           <CardTitle className="text-2xl font-bold">Criar Conta</CardTitle>
           <CardDescription>Escolha seu perfil e preencha os dados.</CardDescription>

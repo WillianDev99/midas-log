@@ -20,7 +20,10 @@ import {
   Settings2,
   ChevronDown,
   ChevronUp,
-  RefreshCw
+  RefreshCw,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -74,6 +77,11 @@ interface ClientBase {
   client_name: string;
 }
 
+type SortConfig = {
+  key: string;
+  direction: 'asc' | 'desc' | null;
+};
+
 const HidracorFormatter = () => {
   const { user } = useAuth();
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -86,6 +94,7 @@ const HidracorFormatter = () => {
   
   const [formattedData, setFormattedData] = useState<any[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
 
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -303,14 +312,43 @@ const HidracorFormatter = () => {
     showSuccess("Carteira formatada!");
   };
 
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' | null = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedData = useMemo(() => {
+    let sortableItems = [...formattedData];
+    if (sortConfig.direction !== null) {
+      sortableItems.sort((a, b) => {
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [formattedData, sortConfig]);
+
   const filteredData = useMemo(() => {
-    return formattedData.filter(row => {
+    return sortedData.filter(row => {
       return Object.entries(columnFilters).every(([col, value]) => {
         if (!value) return true;
         return row[col]?.toString().toLowerCase().includes(value.toLowerCase());
       });
     });
-  }, [formattedData, columnFilters]);
+  }, [sortedData, columnFilters]);
 
   const totals = useMemo(() => {
     const result: Record<string, number> = {};
@@ -350,9 +388,12 @@ const HidracorFormatter = () => {
           <Link to="/admin">
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-            <p className="text-slate-500 text-xs hidden sm:block">Saída com 12 colunas e lógica de prioridade ROTA.</p>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+            <div className="hidden sm:block">
+              <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
+              <p className="text-slate-500 text-xs">Saída com 12 colunas e lógica de prioridade ROTA.</p>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -576,7 +617,17 @@ const HidracorFormatter = () => {
                         {Object.keys(formattedData[0]).map(col => (
                           <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                             <div className="space-y-2">
-                              <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
+                              <div 
+                                className="flex items-center justify-between cursor-pointer hover:text-amber-600 transition-colors"
+                                onClick={() => handleSort(col)}
+                              >
+                                <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
+                                {sortConfig.key === col ? (
+                                  sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                                ) : (
+                                  <ArrowUpDown size={12} className="text-slate-300" />
+                                )}
+                              </div>
                               <Input 
                                 placeholder={`Filtrar...`}
                                 className="h-7 text-[10px] bg-slate-50 border-slate-200"
