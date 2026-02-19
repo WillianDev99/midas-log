@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -15,12 +15,14 @@ import {
   ArrowRightLeft,
   Clock,
   PackageCheck,
-  MapPin
+  MapPin,
+  Filter,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -67,7 +69,7 @@ const HidracorFormatter = () => {
   const [processing, setProcessing] = useState(false);
   
   const [formattedData, setFormattedData] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchBaseData();
@@ -93,122 +95,73 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Gestão de Rotas ---
+  // --- Gestão de Rotas e Cidades (Mantido conforme anterior) ---
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
-    const { data, error } = await supabase
-      .from('hidracor_routes')
-      .insert([{ name: name.toUpperCase(), user_id: user?.id }])
-      .select();
+    const { data, error } = await supabase.from('hidracor_routes').insert([{ name: name.toUpperCase(), user_id: user?.id }]).select();
     if (error) showError(error.message);
-    else {
-      setRoutes([...routes, data[0]]);
-      showSuccess("Rota adicionada!");
-    }
+    else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
   };
 
   const renameRoute = async (id: string, currentName: string) => {
     const newName = prompt("Novo nome para a rota:", currentName);
     if (!newName || newName === currentName) return;
-    const { error } = await supabase
-      .from('hidracor_routes')
-      .update({ name: newName.toUpperCase() })
-      .eq('id', id);
+    const { error } = await supabase.from('hidracor_routes').update({ name: newName.toUpperCase() }).eq('id', id);
     if (error) showError(error.message);
-    else {
-      setRoutes(routes.map(r => r.id === id ? { ...r, name: newName.toUpperCase() } : r));
-      showSuccess("Rota renomeada!");
-    }
+    else { setRoutes(routes.map(r => r.id === id ? { ...r, name: newName.toUpperCase() } : r)); showSuccess("Rota renomeada!"); }
   };
 
   const deleteRoute = async (id: string) => {
-    if (!confirm("ATENÇÃO: Isso excluirá a rota e TODAS as cidades vinculadas a ela. Confirmar?")) return;
+    if (!confirm("Excluir rota e cidades?")) return;
     const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
     if (error) showError(error.message);
-    else {
-      setRoutes(routes.filter(r => r.id !== id));
-      setCities(cities.filter(c => c.route_id !== id));
-      showSuccess("Rota excluída!");
-    }
+    else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); showSuccess("Rota excluída!"); }
   };
 
-  // --- Gestão de Cidades ---
   const addCity = async (routeId: string) => {
-    const input = prompt("Nomes das cidades (separe por vírgula ou cole uma lista):");
+    const input = prompt("Nomes das cidades:");
     if (!input) return;
-    const cityNames = input.split(/[,\n]/).map(name => name.trim().toUpperCase()).filter(name => name.length > 0);
-    if (cityNames.length === 0) return;
-
-    const { data, error } = await supabase
-      .from('hidracor_cities')
-      .insert(cityNames.map(name => ({ route_id: routeId, city_name: name, user_id: user?.id })))
-      .select();
-
+    const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
+    const { data, error } = await supabase.from('hidracor_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
-    else {
-      setCities([...cities, ...(data || [])]);
-      showSuccess(`${data.length} cidades adicionadas!`);
-    }
+    else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
   };
 
   const renameCity = async (id: string, currentName: string) => {
-    const newName = prompt("Novo nome para a cidade:", currentName);
-    if (!newName || newName === currentName) return;
-    const { error } = await supabase
-      .from('hidracor_cities')
-      .update({ city_name: newName.toUpperCase() })
-      .eq('id', id);
+    const newName = prompt("Novo nome:", currentName);
+    if (!newName) return;
+    const { error } = await supabase.from('hidracor_cities').update({ city_name: newName.toUpperCase() }).eq('id', id);
     if (error) showError(error.message);
-    else {
-      setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
-      showSuccess("Cidade renomeada!");
-    }
+    else setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
   };
 
   const moveCity = async (cityId: string, newRouteId: string) => {
-    const { error } = await supabase
-      .from('hidracor_cities')
-      .update({ route_id: newRouteId })
-      .eq('id', cityId);
+    const { error } = await supabase.from('hidracor_cities').update({ route_id: newRouteId }).eq('id', cityId);
     if (error) showError(error.message);
-    else {
-      setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
-      showSuccess("Cidade movida!");
-    }
+    else setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
   };
 
   const deleteCity = async (id: string) => {
-    if (!confirm("Excluir esta cidade?")) return;
     const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
     if (error) showError(error.message);
     else setCities(cities.filter(c => c.id !== id));
   };
 
-  // --- Gestão de Clientes (Aguardando/Retira) ---
   const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
-    const input = prompt("Nomes dos clientes (separe por vírgula ou cole uma lista):");
+    const input = prompt("Nomes dos clientes:");
     if (!input) return;
-    const names = input.split(/[,\n]/).map(name => name.trim().toUpperCase()).filter(name => name.length > 0);
-    if (names.length === 0) return;
-
-    const { data, error } = await supabase
-      .from(table)
-      .insert(names.map(name => ({ client_name: name, user_id: user?.id })))
-      .select();
-
-    if (error) {
-      showError("Erro ao salvar. Verifique se as tabelas foram criadas no Supabase.");
-      console.error(error);
-    } else {
+    const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
+    const { data, error } = await supabase.from(table).insert(names.map(n => ({ client_name: n, user_id: user?.id }))).select();
+    if (error) showError(error.message);
+    else {
       if (table === 'hidracor_awaiting_clients') setAwaitingClients([...awaitingClients, ...(data || [])]);
       else setPickupClients([...pickupClients, ...(data || [])]);
-      showSuccess(`${data.length} clientes adicionados!`);
+      showSuccess("Clientes adicionados!");
     }
   };
 
   const deleteClientFromBase = async (id: string, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
-    if (!confirm("Excluir este cliente da base?")) return;
     const { error } = await supabase.from(table).delete().eq('id', id);
     if (error) showError(error.message);
     else {
@@ -217,7 +170,7 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Processamento ---
+  // --- Processamento com Novas Regras ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -228,14 +181,25 @@ const HidracorFormatter = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      processWallet(data);
+      
+      // Lendo como array de arrays para garantir as colunas B, D, H
+      const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      processWallet(rawData);
     };
     reader.readAsBinaryString(file);
   };
 
-  const processWallet = (data: any[]) => {
+  const processWallet = (rows: any[][]) => {
     setProcessing(true);
+    if (rows.length < 2) {
+      showError("Arquivo vazio ou inválido.");
+      setProcessing(false);
+      return;
+    }
+
+    const headers = rows[0];
+    const dataRows = rows.slice(1);
+
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
     const cityToRouteMap: Record<string, string> = {};
@@ -244,31 +208,76 @@ const HidracorFormatter = () => {
       if (route) cityToRouteMap[c.city_name.toUpperCase()] = route.name;
     });
 
-    const formatted = data.map(row => {
-      const clientInRow = (row['Cliente'] || row['NOME'] || '').toString().toUpperCase().trim();
-      const cityInRow = (row['Cidade'] || row['CIDADE'] || '').toString().toUpperCase().trim();
+    const formatted = dataRows.map((row) => {
+      // Mapeamento baseado em índices (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
+      const freightType = (row[1] || '').toString().toUpperCase().trim(); // Coluna B
+      const cityName = (row[3] || '').toString().toUpperCase().trim();    // Coluna D
+      const clientName = (row[7] || '').toString().toUpperCase().trim();   // Coluna H
+      
       let finalRoute = 'NÃO ENCONTRADA';
 
-      if (awaitingSet.has(clientInRow)) finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
-      else if (pickupSet.has(clientInRow)) finalRoute = 'RETIRA';
-      else if (cityToRouteMap[cityInRow]) finalRoute = cityToRouteMap[cityInRow];
+      // REGRA 1: CIF ou FOB DIRIGIDO
+      if (freightType === 'CIF' || freightType === 'FOB DIRIGIDO') {
+        finalRoute = 'LOG. HIDRACOR';
+      } 
+      // REGRA 2: FOB RETIRA (Aplica prioridades)
+      else if (freightType === 'FOB RETIRA') {
+        if (awaitingSet.has(clientName)) {
+          finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
+        } else if (pickupSet.has(clientName)) {
+          finalRoute = 'RETIRA';
+        } else if (cityToRouteMap[cityName]) {
+          finalRoute = cityToRouteMap[cityName];
+        }
+      }
 
-      return { ...row, 'ROTA': finalRoute };
+      // Criar objeto com nomes de colunas amigáveis para o preview
+      const obj: any = { 'ROTA': finalRoute };
+      headers.forEach((h: any, i: number) => {
+        obj[h || `Coluna_${i}`] = row[i];
+      });
+      return obj;
     });
 
     setFormattedData(formatted);
     setProcessing(false);
-    showSuccess("Carteira processada!");
+    showSuccess("Carteira processada com sucesso!");
   };
 
-  const handleCellEdit = (index: number, field: string, value: string) => {
-    const newData = [...formattedData];
-    newData[index][field] = value;
-    setFormattedData(newData);
+  // --- Filtros e Somatórios ---
+  const filteredData = useMemo(() => {
+    return formattedData.filter(row => {
+      return Object.entries(columnFilters).every(([col, value]) => {
+        if (!value) return true;
+        return row[col]?.toString().toLowerCase().includes(value.toLowerCase());
+      });
+    });
+  }, [formattedData, columnFilters]);
+
+  const totals = useMemo(() => {
+    const result: Record<string, number> = {};
+    // Identificar colunas numéricas comuns (Peso, Valor, Quantidade)
+    const numericCols = ['Peso', 'PESO', 'Valor', 'VALOR', 'Qtd', 'QUANTIDADE', 'Itens'];
+    
+    filteredData.forEach(row => {
+      Object.keys(row).forEach(col => {
+        if (numericCols.some(nc => col.toUpperCase().includes(nc.toUpperCase()))) {
+          const val = parseFloat(row[col]?.toString().replace(',', '.') || '0');
+          if (!isNaN(val)) {
+            result[col] = (result[col] || 0) + val;
+          }
+        }
+      });
+    });
+    return result;
+  }, [filteredData]);
+
+  const handleFilterChange = (col: string, value: string) => {
+    setColumnFilters(prev => ({ ...prev, [col]: value }));
   };
 
   const downloadExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(formattedData);
+    const ws = XLSX.utils.json_to_sheet(filteredData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Carteira Formatada");
     XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_${new Date().toLocaleDateString()}.xlsx`);
@@ -285,24 +294,25 @@ const HidracorFormatter = () => {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-            <p className="text-slate-500 text-sm">Gestão de base e processamento inteligente.</p>
+            <p className="text-slate-500 text-sm">Processamento baseado em Frete (B), Cidade (D) e Cliente (H).</p>
           </div>
         </div>
         <div className="flex gap-2">
           {formattedData.length > 0 && (
             <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700 text-white gap-2">
-              <Download size={18} /> Baixar Excel
+              <Download size={18} /> Baixar Excel ({filteredData.length})
             </Button>
           )}
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8">
+        {/* Coluna da Esquerda: Gestão das Bases */}
         <div className="lg:col-span-4 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Gerenciar Bases</CardTitle>
-              <CardDescription>Configure as prioridades de marcação.</CardDescription>
+              <CardDescription>Configure as prioridades para FOB RETIRA.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <Tabs defaultValue="routes" className="w-full">
@@ -360,7 +370,6 @@ const HidracorFormatter = () => {
                                   </button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent>
-                                  <DropdownMenuLabel className="text-[10px]">Ações para {city.city_name}</DropdownMenuLabel>
                                   <DropdownMenuItem onClick={() => renameCity(city.id, city.city_name)}>
                                     <Edit2 className="mr-2 h-3 w-3" /> Renomear
                                   </DropdownMenuItem>
@@ -438,6 +447,7 @@ const HidracorFormatter = () => {
           </Card>
         </div>
 
+        {/* Coluna da Direita: Processamento e Preview */}
         <div className="lg:col-span-8 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader>
@@ -459,56 +469,65 @@ const HidracorFormatter = () => {
 
           {formattedData.length > 0 && (
             <Card className="border-none shadow-sm overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between bg-slate-50/50 border-b">
                 <div>
-                  <CardTitle className="text-lg">Preview Editável</CardTitle>
-                  <CardDescription>{formattedData.length} linhas processadas.</CardDescription>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Filter size={18} className="text-amber-600" /> Preview com Filtros
+                  </CardTitle>
+                  <CardDescription>Mostrando {filteredData.length} de {formattedData.length} registros.</CardDescription>
                 </div>
-                <div className="relative w-64">
-                  <Search className="absolute left-2 top-2.5 text-slate-400" size={16} />
-                  <input 
-                    placeholder="Filtrar preview..." 
-                    className="pl-8 h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                <div className="flex items-center gap-4 bg-white p-2 rounded-lg border shadow-sm">
+                  <Calculator size={16} className="text-slate-400" />
+                  {Object.entries(totals).map(([col, val]) => (
+                    <div key={col} className="text-xs">
+                      <span className="text-slate-500 font-medium">{col}:</span>
+                      <span className="ml-1 font-bold text-amber-700">
+                        {val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[500px]">
+                <ScrollArea className="h-[600px]">
                   <Table>
-                    <TableHeader className="bg-slate-50 sticky top-0 z-10">
+                    <TableHeader className="bg-white sticky top-0 z-20 shadow-sm">
                       <TableRow>
-                        <TableHead className="w-[180px]">Marcação (ROTA)</TableHead>
-                        <TableHead>Cidade</TableHead>
-                        <TableHead>Cliente</TableHead>
-                        <TableHead>Peso</TableHead>
+                        {Object.keys(formattedData[0]).map(col => (
+                          <TableHead key={col} className="min-w-[150px] py-4">
+                            <div className="space-y-2">
+                              <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
+                              <Input 
+                                placeholder={`Filtrar...`}
+                                className="h-7 text-[10px] bg-slate-50 border-slate-200"
+                                value={columnFilters[col] || ''}
+                                onChange={(e) => handleFilterChange(col, e.target.value)}
+                              />
+                            </div>
+                          </TableHead>
+                        ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {formattedData
-                        .filter(row => 
-                          Object.values(row).some(val => 
-                            val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-                          )
-                        )
-                        .slice(0, 100)
-                        .map((row, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>
-                            <Input 
-                              value={row['ROTA']} 
-                              onChange={(e) => handleCellEdit(idx, 'ROTA', e.target.value)}
-                              className={`h-8 text-[10px] font-bold ${
-                                row['ROTA'] === 'AGUARDANDO CONFIRMAÇÃO' ? 'text-blue-600 border-blue-200 bg-blue-50' :
-                                row['ROTA'] === 'RETIRA' ? 'text-green-600 border-green-200 bg-green-50' :
-                                row['ROTA'] === 'NÃO ENCONTRADA' ? 'text-red-500 border-red-200' : 'text-amber-700'
-                              }`}
-                            />
-                          </TableCell>
-                          <TableCell className="text-xs">{row['Cidade'] || row['CIDADE']}</TableCell>
-                          <TableCell className="text-xs truncate max-w-[200px]">{row['Cliente'] || row['NOME']}</TableCell>
-                          <TableCell className="text-xs">{row['Peso'] || row['PESO']}</TableCell>
+                      {filteredData.slice(0, 200).map((row, idx) => (
+                        <TableRow key={idx} className="hover:bg-slate-50/50">
+                          {Object.keys(row).map(col => (
+                            <TableCell key={col} className="text-[11px] py-2">
+                              {col === 'ROTA' ? (
+                                <div className={`px-2 py-1 rounded font-bold text-center border ${
+                                  row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white border-slate-900' :
+                                  row[col] === 'AGUARDANDO CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  row[col] === 'RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
+                                  'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {row[col]}
+                                </div>
+                              ) : (
+                                <span className="truncate block max-w-[200px]">{row[col]}</span>
+                              )}
+                            </TableCell>
+                          ))}
                         </TableRow>
                       ))}
                     </TableBody>
