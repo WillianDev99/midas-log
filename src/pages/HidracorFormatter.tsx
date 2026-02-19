@@ -344,22 +344,34 @@ const HidracorFormatter = () => {
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 lg:p-8">
-      <header className="max-w-full mx-auto flex justify-between items-center mb-6">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
+      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
         <div className="flex items-center gap-4">
           <Link to="/admin">
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-            <p className="text-slate-500 text-sm">Saída com 12 colunas e lógica de prioridade ROTA.</p>
+            <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
+            <p className="text-slate-500 text-xs hidden sm:block">Saída com 12 colunas e lógica de prioridade ROTA.</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {formattedData.length > 0 && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setIsUploadOpen(!isUploadOpen)}
+              className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
+            >
+              <RefreshCw size={14} /> 
+              <span className="hidden sm:inline">{isUploadOpen ? "Fechar Upload" : "Novo Upload"}</span>
+            </Button>
+          )}
+          
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" className="gap-2 border-amber-200 hover:bg-amber-50">
-                <Settings2 size={18} /> Gerenciar Bases
+              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
+                <Settings2 size={16} /> <span className="hidden sm:inline">Gerenciar Bases</span>
               </Button>
             </SheetTrigger>
             <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
@@ -482,27 +494,15 @@ const HidracorFormatter = () => {
           </Sheet>
 
           {formattedData.length > 0 && (
-            <Button onClick={downloadExcel} className="bg-green-600 hover:bg-green-700 text-white gap-2">
-              <Download size={18} /> Baixar Excel ({filteredData.length})
+            <Button onClick={downloadExcel} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
+              <Download size={16} /> <span className="hidden sm:inline">Baixar Excel</span>
             </Button>
           )}
         </div>
       </header>
 
-      <main className="max-w-full mx-auto space-y-4">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 gap-4 overflow-hidden">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full">
-          <div className="flex items-center justify-between mb-2">
-            {!isUploadOpen && formattedData.length > 0 && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setIsUploadOpen(true)}
-                className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
-              >
-                <RefreshCw size={14} /> Novo Upload / Trocar Arquivo
-              </Button>
-            )}
-          </div>
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between py-4">
@@ -532,7 +532,7 @@ const HidracorFormatter = () => {
         </Collapsible>
 
         {formattedData.length > 0 && (
-          <Card className="border-none shadow-sm overflow-hidden flex flex-col h-[calc(100vh-250px)]">
+          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2">
