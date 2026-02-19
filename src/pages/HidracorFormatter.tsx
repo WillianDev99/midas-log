@@ -18,7 +18,9 @@ import {
   Filter,
   Calculator,
   Settings2,
-  ChevronRight
+  ChevronDown,
+  ChevronUp,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -45,6 +47,11 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
+import { 
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -75,11 +82,11 @@ const HidracorFormatter = () => {
   const [pickupClients, setPickupClients] = useState<ClientBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(true);
   
   const [formattedData, setFormattedData] = useState<any[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
-  // Refs para sincronizar scroll horizontal superior e inferior
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
 
@@ -107,7 +114,6 @@ const HidracorFormatter = () => {
     }
   };
 
-  // Sincronização de scroll
   const handleTopScroll = () => {
     if (topScrollRef.current && tableScrollRef.current) {
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
@@ -120,14 +126,12 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Funções Auxiliares ---
   const excelDateToJSDate = (serial: any) => {
     if (!serial || isNaN(serial)) return serial;
     const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
     return date.toLocaleDateString('pt-BR');
   };
 
-  // --- Gestão de Bases ---
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -202,7 +206,6 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Processamento ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -264,19 +267,15 @@ const HidracorFormatter = () => {
       
       let finalRoute = 'NÃO ENCONTRADA';
 
-      // Lógica de Prioridade
       if (freightType === 'CIF' || freightType === 'FOB DIRIGIDO') {
         finalRoute = 'LOG. HIDRACOR';
       } else if (freightType === 'FOB RETIRA') {
-        // Prioridade 1: Aguardando Confirmação
         if (awaitingSet.has(clientName)) {
           finalRoute = 'AG. CONFIRMAÇÃO';
         } 
-        // Prioridade 2: Cliente Retira
         else if (pickupSet.has(clientName)) {
           finalRoute = 'CLIENTE RETIRA';
         } 
-        // Prioridade 3: Rotas por Cidade
         else if (cityToRouteMap[cityName]) {
           finalRoute = cityToRouteMap[cityName];
         }
@@ -300,10 +299,10 @@ const HidracorFormatter = () => {
 
     setFormattedData(formatted);
     setProcessing(false);
+    setIsUploadOpen(false); // Fecha o upload após processar
     showSuccess("Carteira formatada!");
   };
 
-  // --- Filtros e Somatórios ---
   const filteredData = useMemo(() => {
     return formattedData.filter(row => {
       return Object.entries(columnFilters).every(([col, value]) => {
@@ -346,7 +345,7 @@ const HidracorFormatter = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 lg:p-8">
-      <header className="max-w-full mx-auto flex justify-between items-center mb-8">
+      <header className="max-w-full mx-auto flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
           <Link to="/admin">
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
@@ -490,33 +489,58 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="max-w-full mx-auto space-y-6">
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Upload da Carteira</CardTitle>
-            <CardDescription>Selecione o arquivo CARTEIRA.xlsx para processamento.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-center w-full">
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                  <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
+      <main className="max-w-full mx-auto space-y-4">
+        <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full">
+          <div className="flex items-center justify-between mb-2">
+            {!isUploadOpen && formattedData.length > 0 && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsUploadOpen(true)}
+                className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
+              >
+                <RefreshCw size={14} /> Novo Upload / Trocar Arquivo
+              </Button>
+            )}
+          </div>
+          <CollapsibleContent className="space-y-4">
+            <Card className="border-none shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between py-4">
+                <div>
+                  <CardTitle className="text-lg">Upload da Carteira</CardTitle>
+                  <CardDescription>Selecione o arquivo CARTEIRA.xlsx para processamento.</CardDescription>
                 </div>
-                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-              </label>
-            </div>
-          </CardContent>
-        </Card>
+                {formattedData.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => setIsUploadOpen(false)}>
+                    <ChevronUp size={18} /> Recolher
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="pb-6">
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <Upload className="w-8 h-8 mb-3 text-slate-400" />
+                      <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
 
         {formattedData.length > 0 && (
-          <Card className="border-none shadow-sm overflow-hidden flex flex-col h-[calc(100vh-350px)]">
+          <Card className="border-none shadow-sm overflow-hidden flex flex-col h-[calc(100vh-250px)]">
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
-              <div>
+              <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Filter size={18} className="text-amber-600" /> Preview com Filtros
                 </CardTitle>
-                <CardDescription>Mostrando {filteredData.length} registros.</CardDescription>
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">
+                  {filteredData.length} registros
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
                 <Calculator size={16} className="text-slate-400" />
@@ -531,7 +555,6 @@ const HidracorFormatter = () => {
               </div>
             </CardHeader>
 
-            {/* Barra de Scroll Superior */}
             <div 
               ref={topScrollRef}
               onScroll={handleTopScroll}
