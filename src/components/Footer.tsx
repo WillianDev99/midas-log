@@ -5,7 +5,7 @@ import React from 'react';
 const Footer = () => {
   return (
     <footer className="bg-slate-900 text-slate-400 py-12 border-t border-slate-800">
-      <div className="container mx-auto px-4">
+      <div className="container mx-auto px-4 lg:pr-24">
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="text-center md:text-left">
             <h3 className="text-white font-bold text-lg mb-2">Midas Logística</h3>

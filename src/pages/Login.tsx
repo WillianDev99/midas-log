@@ -18,7 +18,8 @@ const Login = () => {
   const { session } = useAuth();
   const navigate = useNavigate();
 
-  // Se já estiver logado, redireciona para fora da tela de login
+  const ADMIN_EMAIL = '7por4oficial@gmail.com';
+
   useEffect(() => {
     if (session) {
       const userType = session.user?.user_metadata?.account_type;
@@ -36,15 +37,16 @@ const Login = () => {
 
       const userType = data.user?.user_metadata?.account_type;
       const isApproved = data.user?.user_metadata?.approved;
+      const isMainAdmin = data.user?.email === ADMIN_EMAIL;
 
-      if (userType === 'admin' && !isApproved) {
+      // Se for ADM mas não estiver aprovado E não for o ADM principal
+      if (userType === 'admin' && !isApproved && !isMainAdmin) {
         await supabase.auth.signOut();
         showError("Sua conta ADM aguarda aprovação.");
         return;
       }
 
       showSuccess("Bem-vindo!");
-      // O AuthProvider cuidará do redirecionamento automático
     } catch (error: any) {
       showError(error.message || "Erro ao realizar login.");
     } finally {
