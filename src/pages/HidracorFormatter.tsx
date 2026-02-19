@@ -1,3 +1,4 @@
+Retira > Cidades).">
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -9,7 +10,6 @@ import {
   Trash2, 
   Edit2, 
   ArrowLeft,
-  Search,
   Loader2,
   MoreVertical,
   ArrowRightLeft,
@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -95,7 +95,7 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Gestão de Rotas e Cidades (Mantido conforme anterior) ---
+  // --- Gestão de Bases (Rotas, Cidades, Clientes) ---
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -170,7 +170,7 @@ const HidracorFormatter = () => {
     }
   };
 
-  // --- Processamento com Novas Regras ---
+  // --- Processamento ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -181,8 +181,6 @@ const HidracorFormatter = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      
-      // Lendo como array de arrays para garantir as colunas B, D, H
       const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
       processWallet(rawData);
     };
@@ -192,14 +190,12 @@ const HidracorFormatter = () => {
   const processWallet = (rows: any[][]) => {
     setProcessing(true);
     if (rows.length < 2) {
-      showError("Arquivo vazio ou inválido.");
+      showError("Arquivo inválido.");
       setProcessing(false);
       return;
     }
 
-    const headers = rows[0];
     const dataRows = rows.slice(1);
-
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
     const cityToRouteMap: Record<string, string> = {};
@@ -209,39 +205,45 @@ const HidracorFormatter = () => {
     });
 
     const formatted = dataRows.map((row) => {
-      // Mapeamento baseado em índices (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
-      const freightType = (row[1] || '').toString().toUpperCase().trim(); // Coluna B
-      const cityName = (row[3] || '').toString().toUpperCase().trim();    // Coluna D
-      const clientName = (row[7] || '').toString().toUpperCase().trim();   // Coluna H
+      const freightType = (row[1] || '').toString().toUpperCase().trim(); // Col B
+      const cityName = (row[3] || '').toString().toUpperCase().trim();    // Col D
+      const clientName = (row[7] || '').toString().toUpperCase().trim();   // Col H
       
       let finalRoute = 'NÃO ENCONTRADA';
 
-      // REGRA 1: CIF ou FOB DIRIGIDO
+      // Lógica de Prioridade
       if (freightType === 'CIF' || freightType === 'FOB DIRIGIDO') {
         finalRoute = 'LOG. HIDRACOR';
-      } 
-      // REGRA 2: FOB RETIRA (Aplica prioridades)
-      else if (freightType === 'FOB RETIRA') {
+      } else if (freightType === 'FOB RETIRA') {
         if (awaitingSet.has(clientName)) {
-          finalRoute = 'AGUARDANDO CONFIRMAÇÃO';
+          finalRoute = 'AG. CONFIRMAÇÃO';
         } else if (pickupSet.has(clientName)) {
-          finalRoute = 'RETIRA';
+          finalRoute = 'CLIENTE RETIRA';
         } else if (cityToRouteMap[cityName]) {
           finalRoute = cityToRouteMap[cityName];
         }
       }
 
-      // Criar objeto com nomes de colunas amigáveis para o preview
-      const obj: any = { 'ROTA': finalRoute };
-      headers.forEach((h: any, i: number) => {
-        obj[h || `Coluna_${i}`] = row[i];
-      });
-      return obj;
+      // Mapeamento das 12 colunas de saída
+      return {
+        'Data Emissão': row[0],
+        'Frete': row[1],
+        'ROTA': finalRoute,
+        'Município': row[3],
+        'Estado': row[4],
+        'Pedido': row[5],
+        'Cód.Cliente': row[6],
+        'Nome Cliente': row[7],
+        'peso possível': row[8],
+        'valor possível': row[9],
+        'peso total': row[10],
+        'valor total': row[11]
+      };
     });
 
     setFormattedData(formatted);
     setProcessing(false);
-    showSuccess("Carteira processada com sucesso!");
+    showSuccess("Carteira formatada!");
   };
 
   // --- Filtros e Somatórios ---
@@ -256,16 +258,13 @@ const HidracorFormatter = () => {
 
   const totals = useMemo(() => {
     const result: Record<string, number> = {};
-    // Identificar colunas numéricas comuns (Peso, Valor, Quantidade)
-    const numericCols = ['Peso', 'PESO', 'Valor', 'VALOR', 'Qtd', 'QUANTIDADE', 'Itens'];
+    const numericCols = ['peso possível', 'valor possível', 'peso total', 'valor total'];
     
     filteredData.forEach(row => {
-      Object.keys(row).forEach(col => {
-        if (numericCols.some(nc => col.toUpperCase().includes(nc.toUpperCase()))) {
-          const val = parseFloat(row[col]?.toString().replace(',', '.') || '0');
-          if (!isNaN(val)) {
-            result[col] = (result[col] || 0) + val;
-          }
+      numericCols.forEach(col => {
+        const val = parseFloat(row[col]?.toString().replace('.', '').replace(',', '.') || '0');
+        if (!isNaN(val)) {
+          result[col] = (result[col] || 0) + val;
         }
       });
     });
@@ -279,7 +278,7 @@ const HidracorFormatter = () => {
   const downloadExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Carteira Formatada");
+    XLSX.utils.book_append_sheet(wb, ws, "Carteira Hidracor");
     XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_${new Date().toLocaleDateString()}.xlsx`);
   };
 
@@ -294,7 +293,7 @@ const HidracorFormatter = () => {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-            <p className="text-slate-500 text-sm">Processamento baseado em Frete (B), Cidade (D) e Cliente (H).</p>
+            <p className="text-slate-500 text-sm">Saída com 12 colunas e lógica de prioridade ROTA.</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -307,7 +306,7 @@ const HidracorFormatter = () => {
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8">
-        {/* Coluna da Esquerda: Gestão das Bases */}
+        {/* Gestão de Bases */}
         <div className="lg:col-span-4 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
@@ -447,7 +446,7 @@ const HidracorFormatter = () => {
           </Card>
         </div>
 
-        {/* Coluna da Direita: Processamento e Preview */}
+        {/* Preview e Processamento */}
         <div className="lg:col-span-8 space-y-6">
           <Card className="border-none shadow-sm">
             <CardHeader>
@@ -474,13 +473,13 @@ const HidracorFormatter = () => {
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Filter size={18} className="text-amber-600" /> Preview com Filtros
                   </CardTitle>
-                  <CardDescription>Mostrando {filteredData.length} de {formattedData.length} registros.</CardDescription>
+                  <CardDescription>Mostrando {filteredData.length} registros.</CardDescription>
                 </div>
                 <div className="flex items-center gap-4 bg-white p-2 rounded-lg border shadow-sm">
                   <Calculator size={16} className="text-slate-400" />
                   {Object.entries(totals).map(([col, val]) => (
-                    <div key={col} className="text-xs">
-                      <span className="text-slate-500 font-medium">{col}:</span>
+                    <div key={col} className="text-[10px]">
+                      <span className="text-slate-500 font-medium uppercase">{col}:</span>
                       <span className="ml-1 font-bold text-amber-700">
                         {val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
@@ -516,8 +515,8 @@ const HidracorFormatter = () => {
                               {col === 'ROTA' ? (
                                 <div className={`px-2 py-1 rounded font-bold text-center border ${
                                   row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white border-slate-900' :
-                                  row[col] === 'AGUARDANDO CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                  row[col] === 'RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  row[col] === 'AG. CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  row[col] === 'CLIENTE RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
                                   row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
                                   'bg-amber-50 text-amber-700 border-amber-200'
                                 }`}>
