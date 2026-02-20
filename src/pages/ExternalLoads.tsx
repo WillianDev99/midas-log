@@ -177,19 +177,15 @@ const ExternalLoads = () => {
   const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
     
-    // Função para separar Cidade e UF de forma agressiva
     const splitCityUF = (str: string) => {
       let raw = str.trim();
       let uf = defaultUF;
       
-      // Divide por traço, barra ou espaço e pega a última parte
       const parts = raw.split(/[-–—/ ]+/);
       if (parts.length > 1) {
         const lastPart = parts[parts.length - 1].toUpperCase();
-        // Se a última parte tem 2 letras, assumimos que é a UF
         if (lastPart.length === 2 && /^[A-Z]{2}$/.test(lastPart)) {
           uf = lastPart;
-          // Reconstrói o nome da cidade sem a UF
           raw = parts.slice(0, -1).join(' ').trim();
         }
       }
@@ -197,15 +193,15 @@ const ExternalLoads = () => {
       return { city: raw, uf };
     };
 
-    // Divisor de blocos robusto (ignora vírgulas dentro de parênteses)
     const blocks: string[] = [];
     let currentBlock = "";
     let parenLevel = 0;
+    // Divide por vírgula ou ponto (comum na aba CARGAS)
     for (let i = 0; i < rotaStr.length; i++) {
       const char = rotaStr[i];
       if (char === '(') parenLevel++;
       if (char === ')') parenLevel--;
-      if (char === ',' && parenLevel === 0) {
+      if ((char === ',' || char === '.') && parenLevel === 0) {
         if (currentBlock.trim()) blocks.push(currentBlock.trim());
         currentBlock = "";
       } else {
@@ -217,9 +213,8 @@ const ExternalLoads = () => {
     const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
 
     blocks.forEach(block => {
-      const isAgendamento = block.toUpperCase().includes("AGENDAMENTO");
+      const isAgendamento = block.toUpperCase().includes("AGENDAMENTO") || block.toUpperCase().includes("AGENDA");
       
-      // Tenta encontrar o padrão: Cidade (Detalhes)
       const match = block.match(/^(.*?)\s*\((.*)\)$/);
       
       if (match) {
@@ -227,8 +222,7 @@ const ExternalLoads = () => {
         const details = match[2].trim();
         const { city, uf } = splitCityUF(rawCity);
         
-        if (isAgendamento || details.toUpperCase().includes("AGENDAMENTO")) {
-          // Se for agendamento, usa obrigatoriamente os dados principais da planilha
+        if (isAgendamento || details.toUpperCase().includes("AGENDAMENTO") || details.toUpperCase().includes("AGENDA")) {
           const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
           deliveries.push({
             city,
@@ -239,7 +233,6 @@ const ExternalLoads = () => {
             freight: mainWeight * aliquot
           });
         } else {
-          // Entrega normal com pesos e tipos nos parênteses
           const parts = details.split(/[\/\+]/);
           parts.forEach(part => {
             const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
@@ -259,7 +252,6 @@ const ExternalLoads = () => {
           });
         }
       } else {
-        // Sem parênteses - trata o bloco como uma cidade direta
         const { city, uf } = splitCityUF(block);
         const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
         deliveries.push({
@@ -283,18 +275,22 @@ const ExternalLoads = () => {
       const arrayBuffer = await response.arrayBuffer();
       
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      
+      // CORREÇÃO: Busca especificamente a aba "CARGAS"
+      const sheetName = workbook.SheetNames.find(name => name.toUpperCase() === "CARGAS") || workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-      if (rows.length < 2) throw new Error("Planilha vazia ou inválida.");
+      if (rows.length < 2) throw new Error("Planilha vazia ou aba CARGAS não encontrada.");
 
+      // Filtra linhas vazias e pula o cabeçalho
       const dataRows = rows.slice(1).filter(r => r[1] && String(r[1]).trim() !== "");
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = String(row[1] || '');
-        const rawUF = String(row[3] || '');
-        const mainWeightStr = String(row[4] || '0');
-        const mainFreightType = String(row[5] || 'CIF').toUpperCase();
+        const rota = String(row[1] || ''); // Coluna B
+        const rawUF = String(row[3] || ''); // Coluna D
+        const mainWeightStr = String(row[4] || '0'); // Coluna E
+        const mainFreightType = String(row[5] || 'CIF').toUpperCase(); // Coluna F
         
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         
@@ -303,9 +299,9 @@ const ExternalLoads = () => {
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: String(row[0] || ''),
+          data: String(row[0] || ''), // Coluna A
           rota: rota,
-          entregas: String(row[2] || ''),
+          entregas: String(row[2] || ''), // Coluna C
           uf: cleanUF,
           peso: mainWeightStr,
           frete: mainFreightType,
@@ -333,7 +329,7 @@ const ExternalLoads = () => {
       setPreviousLoads(currentLoads);
       setCurrentLoads(newLoads);
       setViewMode('current');
-      showSuccess("Dados atualizados com sucesso!");
+      showSuccess(`Dados da aba ${sheetName} atualizados!`);
     } catch (error: any) {
       showError("Erro ao atualizar: " + error.message);
     } finally {
