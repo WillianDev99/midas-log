@@ -11,6 +11,7 @@ import {
   ChevronUp, 
   ChevronDown,
   Eye,
+  Plus,
   History,
   Save,
   ArrowUpDown,
@@ -18,7 +19,8 @@ import {
   ArrowDown,
   ExternalLink,
   Printer,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -31,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter
 } from "@/components/ui/dialog";
 import { 
   Popover,
@@ -55,6 +58,7 @@ interface ExternalLoad {
   frete: string;
   observacoes: string;
   status: string;
+  isManual?: boolean;
   parsedDeliveries?: any[];
   totalToPay?: number;
 }
@@ -76,6 +80,17 @@ const ExternalLoads = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
   const [manualSearch, setManualSearch] = useState("");
+  const [isAddManualOpen, setIsAddManualOpen] = useState(false);
+  const [newManualLoad, setNewManualLoad] = useState<Partial<ExternalLoad>>({
+    data: new Date().toLocaleDateString('pt-BR'),
+    rota: '',
+    entregas: '1',
+    uf: '',
+    peso: '0',
+    frete: 'CIF',
+    status: 'AGENCIANDO',
+    isManual: true
+  });
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
 
@@ -95,6 +110,10 @@ const ExternalLoads = () => {
       .toLowerCase()
       .trim()
       .replace(/\s+/g, ' ');
+  };
+
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const loadFreightTables = async () => {
@@ -179,12 +198,10 @@ const ExternalLoads = () => {
     
     const splitCityUF = (str: string) => {
       let raw = str.trim();
-      
       if (raw.toUpperCase().includes("AGENDAMENTO") || raw.toUpperCase().includes("AGENDA")) {
         raw = raw.split(/[-–—(]/)[0].trim();
         raw = raw.replace(/AGENDAMENTO.*/i, '').trim();
       }
-
       let uf = defaultUF;
       const parts = raw.split(/[-–—/ ]+/);
       if (parts.length > 1) {
@@ -194,72 +211,43 @@ const ExternalLoads = () => {
           raw = parts.slice(0, -1).join(' ').trim();
         }
       }
-      
       return { city: raw, uf };
     };
 
+    // Novo motor de parsing: Divide por blocos de parênteses
     const blocks: string[] = [];
-    let currentBlock = "";
-    let parenLevel = 0;
-    for (let i = 0; i < rotaStr.length; i++) {
-      const char = rotaStr[i];
-      if (char === '(') parenLevel++;
-      if (char === ')') parenLevel--;
-      if ((char === ',' || char === '.') && parenLevel === 0) {
-        if (currentBlock.trim()) blocks.push(currentBlock.trim());
-        currentBlock = "";
-      } else {
-        currentBlock += char;
-      }
-    }
-    if (currentBlock.trim()) blocks.push(currentBlock.trim());
+    let currentPos = 0;
+    const regex = /([^\(]+)\(([^\)]+)\)/g;
+    let match;
 
-    const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
-
-    blocks.forEach(block => {
-      const match = block.match(/^(.*?)\s*\((.*)\)$/);
+    while ((match = regex.exec(rotaStr)) !== null) {
+      const rawCity = match[1].trim();
+      const details = match[2].trim();
+      const { city, uf } = splitCityUF(rawCity);
       
-      if (match) {
-        const rawCity = match[1].trim();
-        const details = match[2].trim();
-        const { city, uf } = splitCityUF(rawCity);
-        
-        // Tenta extrair pesos de dentro dos parênteses
-        const parts = details.split(/[\/\+]/);
-        let foundWeights = false;
+      const parts = details.split(/[\/\+]/);
+      let foundWeights = false;
 
-        parts.forEach(part => {
-          const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
-          if (weightMatch) {
-            foundWeights = true;
-            const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
-            const t = weightMatch[2].toUpperCase();
-            const aliquot = getAliquot(city, uf, t, w);
-            deliveries.push({
-              city,
-              uf,
-              type: t,
-              weight: w,
-              aliquot,
-              freight: w * aliquot
-            });
-          }
-        });
-
-        // Se não encontrou pesos mas tem agendamento, usa o peso principal
-        if (!foundWeights) {
-          const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
+      parts.forEach(part => {
+        const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
+        if (weightMatch) {
+          foundWeights = true;
+          const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
+          const t = weightMatch[2].toUpperCase();
+          const aliquot = getAliquot(city, uf, t, w);
           deliveries.push({
             city,
             uf,
-            type: mainFreightType,
-            weight: mainWeight,
+            type: t,
+            weight: w,
             aliquot,
-            freight: mainWeight * aliquot
+            freight: w * aliquot
           });
         }
-      } else {
-        const { city, uf } = splitCityUF(block);
+      });
+
+      if (!foundWeights) {
+        const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
         const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
         deliveries.push({
           city,
@@ -270,7 +258,27 @@ const ExternalLoads = () => {
           freight: mainWeight * aliquot
         });
       }
-    });
+      currentPos = regex.lastIndex;
+    }
+
+    // Se não encontrou nenhum bloco com parênteses, tenta o split tradicional
+    if (deliveries.length === 0) {
+      const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
+      const simpleBlocks = rotaStr.split(/[,.]/);
+      simpleBlocks.forEach(b => {
+        if (!b.trim()) return;
+        const { city, uf } = splitCityUF(b);
+        const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
+        deliveries.push({
+          city,
+          uf,
+          type: mainFreightType,
+          weight: mainWeight,
+          aliquot,
+          freight: mainWeight * aliquot
+        });
+      });
+    }
     
     return deliveries;
   };
@@ -280,7 +288,6 @@ const ExternalLoads = () => {
     try {
       const response = await fetch(SHEET_URL);
       const arrayBuffer = await response.arrayBuffer();
-      
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames.find(name => name.toUpperCase() === "CARGAS") || workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
@@ -295,9 +302,7 @@ const ExternalLoads = () => {
         const rawUF = String(row[3] || '');
         const mainWeightStr = String(row[4] || '0');
         const mainFreightType = String(row[5] || 'CIF').toUpperCase();
-        
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-        
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
@@ -316,6 +321,10 @@ const ExternalLoads = () => {
         };
       });
 
+      // Mantém as cargas manuais atuais
+      const manualLoads = currentLoads.filter(l => l.isManual);
+      const finalLoads = [...manualLoads, ...newLoads];
+
       await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
       if (currentLoads.length > 0) {
         await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
@@ -323,7 +332,7 @@ const ExternalLoads = () => {
 
       const { error: insertError } = await supabase.from('hidracor_external_loads').insert([{
         user_id: user?.id,
-        loads: newLoads,
+        loads: finalLoads,
         version: 'current',
         updated_at: new Date().toISOString()
       }]);
@@ -331,14 +340,47 @@ const ExternalLoads = () => {
       if (insertError) throw insertError;
 
       setPreviousLoads(currentLoads);
-      setCurrentLoads(newLoads);
+      setCurrentLoads(finalLoads);
       setViewMode('current');
-      showSuccess(`Dados da aba ${sheetName} atualizados!`);
+      showSuccess(`Dados atualizados!`);
     } catch (error: any) {
       showError("Erro ao atualizar: " + error.message);
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handleAddManualLoad = async () => {
+    if (!newManualLoad.rota || !newManualLoad.uf) {
+      showError("Preencha Rota e UF.");
+      return;
+    }
+
+    const parsed = parseRota(newManualLoad.rota || '', newManualLoad.uf || '', newManualLoad.peso || '0', newManualLoad.frete || 'CIF');
+    const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
+    
+    const load: ExternalLoad = {
+      ...newManualLoad as ExternalLoad,
+      id: `manual-${Date.now()}`,
+      parsedDeliveries: parsed,
+      totalToPay: totalFreight * 0.7
+    };
+
+    const updatedLoads = [load, ...currentLoads];
+    setCurrentLoads(updatedLoads);
+    
+    await supabase.from('hidracor_external_loads').update({ loads: updatedLoads }).eq('version', 'current');
+    
+    setIsAddManualOpen(false);
+    showSuccess("Carga manual adicionada!");
+  };
+
+  const handleDeleteLoad = async (id: string) => {
+    if (!confirm("Excluir esta carga?")) return;
+    const updated = currentLoads.filter(l => l.id !== id);
+    setCurrentLoads(updated);
+    await supabase.from('hidracor_external_loads').update({ loads: updated }).eq('version', 'current');
+    showSuccess("Carga removida.");
   };
 
   const handleSort = (key: string) => {
@@ -373,9 +415,7 @@ const ExternalLoads = () => {
         if (!value) return true;
         return row[col as keyof ExternalLoad]?.toString().toLowerCase().includes(value.toLowerCase());
       });
-
       const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
-
       return matchesFilters && matchesUF;
     });
   }, [sortedData, columnFilters, selectedUFs]);
@@ -399,7 +439,6 @@ const ExternalLoads = () => {
         if (updates.weight !== undefined || updates.aliquot !== undefined) {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
-        
         const totalReceived = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
         return { ...l, parsedDeliveries: newDeliveries, totalToPay: totalReceived * 0.7 };
       }
@@ -409,16 +448,11 @@ const ExternalLoads = () => {
     else setPreviousLoads(updateFn);
   };
 
-  const handleFilterChange = (col: string, value: string) => {
-    setColumnFilters(prev => ({ ...prev, [col]: value }));
-  };
-
   const handlePrintDetailed = (load: ExternalLoad) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-
     const logoUrl = window.location.origin + "/logo.png";
-    const totalToPayFormatted = (load.totalToPay || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalToPayFormatted = formatCurrency(load.totalToPay || 0);
 
     const content = `
       <html>
@@ -438,7 +472,6 @@ const ExternalLoads = () => {
             .total-row { background: #f1f5f9; font-weight: bold; font-size: 16px; }
             .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: center; font-weight: bold; color: #b91c1c; font-size: 18px; }
             .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; pt: 20px; }
-            @media print { .no-print { display: none; } }
           </style>
         </head>
         <body>
@@ -446,7 +479,6 @@ const ExternalLoads = () => {
             <img src="${logoUrl}" class="logo" />
             <div class="title">Ordem de Carregamento</div>
           </div>
-
           <div class="info-grid">
             <div class="info-item">
               <div class="info-label">Rota</div>
@@ -457,7 +489,6 @@ const ExternalLoads = () => {
               <div>${new Date().toLocaleDateString('pt-BR')}</div>
             </div>
           </div>
-
           <table>
             <thead>
               <tr>
@@ -475,7 +506,7 @@ const ExternalLoads = () => {
                   <td style="text-transform: uppercase">${d.city}</td>
                   <td style="text-align: center; font-weight: bold;">${d.uf}</td>
                   <td style="text-align: center">${d.type}</td>
-                  <td style="text-align: right">${d.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td style="text-align: right">${formatCurrency(d.weight)}</td>
                 </tr>
               `).join('')}
               <tr class="total-row">
@@ -484,88 +515,11 @@ const ExternalLoads = () => {
               </tr>
             </tbody>
           </table>
-
-          <div class="note">
-            ⚠️ O DESCARREGO SERÁ POR CONTA DO MOTORISTA.
-          </div>
-
-          <div class="footer">
-            Midas Logística - Eficiência em Movimento<br>
-            Documento gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}
-          </div>
+          <div class="note">⚠️ O DESCARREGO SERÁ POR CONTA DO MOTORISTA.</div>
+          <div class="footer">Midas Logística - Eficiência em Movimento</div>
         </body>
       </html>
     `;
-
-    printWindow.document.write(content);
-    printWindow.document.close();
-  };
-
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const logoUrl = window.location.origin + "/logo.png";
-
-    const content = `
-      <html>
-        <head>
-          <title>Cargas Disponíveis - Midas Log</title>
-          <style>
-            body { font-family: sans-serif; padding: 20px; color: #333; }
-            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
-            .logo { height: 60px; }
-            .title { font-size: 24px; font-weight: bold; color: #1e293b; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #f8fafc; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
-            td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
-            .rota-cell { max-width: 400px; word-wrap: break-word; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #64748b; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <img src="${logoUrl}" class="logo" />
-            <div class="title">Cargas Disponíveis</div>
-            <div style="text-align: right">
-              <div style="font-weight: bold">Midas Logística</div>
-              <div style="font-size: 12px">${new Date().toLocaleDateString()}</div>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Rota</th>
-                <th>Entregas</th>
-                <th>UF</th>
-                <th>Peso Total</th>
-                <th>Frete</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredData.map(load => `
-                <tr>
-                  <td class="rota-cell"><strong>${load.rota}</strong></td>
-                  <td style="text-align: center">${load.entregas}</td>
-                  <td style="text-align: center"><strong>${load.uf}</strong></td>
-                  <td style="text-align: right">${load.peso}</td>
-                  <td style="text-align: center">${load.frete}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <div class="footer">
-            © ${new Date().getFullYear()} Midas Logística - Eficiência em Movimento
-          </div>
-          <script>
-            window.onload = () => {
-              setTimeout(() => { window.print(); }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `;
-
     printWindow.document.write(content);
     printWindow.document.close();
   };
@@ -587,39 +541,40 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <div className="flex bg-slate-100 p-1 rounded-lg mr-2">
-            <Button 
-              variant={viewMode === 'current' ? 'default' : 'ghost'} 
-              size="sm" 
-              onClick={() => setViewMode('current')}
-              className={viewMode === 'current' ? 'bg-amber-600 hover:bg-amber-700' : ''}
-            >
-              Atual
-            </Button>
-            <Button 
-              variant={viewMode === 'previous' ? 'default' : 'ghost'} 
-              size="sm" 
-              onClick={() => setViewMode('previous')}
-              className={viewMode === 'previous' ? 'bg-amber-600 hover:bg-amber-700' : ''}
-              disabled={previousLoads.length === 0}
-            >
-              Anterior
-            </Button>
-          </div>
+          <Dialog open={isAddManualOpen} onOpenChange={setIsAddManualOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
+                <Plus size={16} /> Nova Carga Manual
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Adicionar Carga Manual</DialogTitle>
+                <DialogDescription>Preencha os dados para adicionar uma carga fora da planilha.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="rota" className="text-right">Rota</Label>
+                  <Input id="rota" className="col-span-3" value={newManualLoad.rota} onChange={e => setNewManualLoad({...newManualLoad, rota: e.target.value})} />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="uf" className="text-right">UF</Label>
+                  <Input id="uf" className="col-span-3" value={newManualLoad.uf} onChange={e => setNewManualLoad({...newManualLoad, uf: e.target.value.toUpperCase()})} />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="peso" className="text-right">Peso Total</Label>
+                  <Input id="peso" type="number" className="col-span-3" value={newManualLoad.peso} onChange={e => setNewManualLoad({...newManualLoad, peso: e.target.value})} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleAddManualLoad}>Salvar Carga</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={updateFromGoogleSheets}
-            disabled={updating}
-            className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
-          >
+          <Button variant="outline" size="sm" onClick={updateFromGoogleSheets} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
             {updating ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
             <span className="hidden sm:inline">Atualizar Planilha</span>
-          </Button>
-
-          <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
-            <Printer size={16} /> <span className="hidden sm:inline">Imprimir para Motorista</span>
           </Button>
         </div>
       </header>
@@ -636,14 +591,6 @@ const ExternalLoads = () => {
                 {filteredData.length} cargas
               </span>
             </div>
-            <a 
-              href="https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit#gid=0" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-xs text-slate-500 hover:text-amber-600 flex items-center gap-1"
-            >
-              <ExternalLink size={12} /> Ver Planilha Original
-            </a>
           </CardHeader>
 
           <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
@@ -651,132 +598,20 @@ const ExternalLoads = () => {
               <Table>
                 <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                   <TableRow>
-                    <TableHead className="w-[50px]"></TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
-                        </div>
-                        <Input 
-                          placeholder="Filtrar..." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('data', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
-                        </div>
-                        <Input 
-                          placeholder="Filtrar..." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('rota', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
-                        </div>
-                        <Input 
-                          placeholder="Filt." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('entregas', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
-                                <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-40 p-2">
-                              <div className="space-y-2">
-                                {allUFs.map(uf => (
-                                  <div key={uf} className="flex items-center space-x-2">
-                                    <Checkbox 
-                                      id={`uf-${uf}`} 
-                                      checked={selectedUFs.includes(uf)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) setSelectedUFs([...selectedUFs, uf]);
-                                        else setSelectedUFs(selectedUFs.filter(u => u !== uf));
-                                      }}
-                                    />
-                                    <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
-                                  </div>
-                                ))}
-                                {selectedUFs.length > 0 && (
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className="w-full text-[10px] h-6 mt-2"
-                                    onClick={() => setSelectedUFs([])}
-                                  >
-                                    Limpar
-                                  </Button>
-                                )}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div className="h-7 flex items-center px-2 bg-slate-50 rounded border text-[10px] font-bold text-slate-500">
-                          {selectedUFs.length > 0 ? selectedUFs.join(', ') : 'Todos'}
-                        </div>
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
-                        </div>
-                        <Input 
-                          placeholder="Filtrar..." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('peso', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
-                        </div>
-                        <Input 
-                          placeholder="Filtrar..." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('frete', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-bold uppercase text-slate-500">Status</span>
-                        <Input 
-                          placeholder="Filtrar..." 
-                          className="h-7 text-[10px]" 
-                          onChange={(e) => handleFilterChange('status', e.target.value)}
-                        />
-                      </div>
-                    </TableHead>
+                    <TableHead className="w-[80px]"></TableHead>
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">Data</TableHead>
+                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">Rota</TableHead>
+                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">Entr.</TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">UF</TableHead>
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">Peso</TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">Frete</TableHead>
+                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredData.map((load) => (
-                    <TableRow key={load.id} className="hover:bg-slate-50/50">
-                      <TableCell className="p-2">
+                    <TableRow key={load.id} className={`hover:bg-slate-50/50 ${load.isManual ? 'bg-blue-50/50' : ''}`}>
+                      <TableCell className="p-2 flex items-center gap-1">
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 hover:bg-amber-50">
@@ -794,10 +629,7 @@ const ExternalLoads = () => {
                                   Rota: {load.rota}
                                 </DialogDescription>
                               </div>
-                              <Button 
-                                onClick={() => handlePrintDetailed(load)} 
-                                className="bg-slate-900 hover:bg-slate-800 text-white gap-2"
-                              >
+                              <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
                                 <Printer size={16} /> Imprimir para Motorista
                               </Button>
                             </DialogHeader>
@@ -827,34 +659,16 @@ const ExternalLoads = () => {
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-xs">
-                                        <Input 
-                                          type="number" 
-                                          className="h-7 w-24 text-xs" 
-                                          value={delivery.weight}
-                                          onChange={(e) => handleUpdateDelivery(load.id, dIdx, { weight: parseFloat(e.target.value) || 0 })}
-                                        />
+                                        <Input type="number" className="h-7 w-24 text-xs" value={delivery.weight} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { weight: parseFloat(e.target.value) || 0 })} />
                                       </TableCell>
                                       <TableCell className="text-xs">
                                         <div className="flex items-center gap-2">
-                                          <Input 
-                                            type="number" 
-                                            step="0.0001"
-                                            className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`}
-                                            value={delivery.aliquot}
-                                            onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })}
-                                          />
+                                          <Input type="number" step="0.0001" className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`} value={delivery.aliquot} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })} />
                                           <Popover>
-                                            <PopoverTrigger asChild>
-                                              <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600"><Search size={12} /></Button>
-                                            </PopoverTrigger>
+                                            <PopoverTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600"><Search size={12} /></Button></PopoverTrigger>
                                             <PopoverContent className="w-80 p-2">
                                               <div className="space-y-2">
-                                                <Input 
-                                                  placeholder="Pesquisar cidade..." 
-                                                  className="h-8 text-xs"
-                                                  value={manualSearch}
-                                                  onChange={(e) => setManualSearch(e.target.value)}
-                                                />
+                                                <Input placeholder="Pesquisar cidade..." className="h-8 text-xs" value={manualSearch} onChange={(e) => setManualSearch(e.target.value)} />
                                                 <div className="max-h-60 overflow-y-auto space-y-1">
                                                   {(delivery.type === 'CIF' ? freightTables.cif : freightTables.fob)
                                                     .filter((row: any) => {
@@ -862,69 +676,38 @@ const ExternalLoads = () => {
                                                       return normalizeText(name).includes(normalizeText(manualSearch));
                                                     })
                                                     .slice(0, 50)
-                                                    .map((row: any, idx: number) => {
-                                                      const weight = delivery.weight;
-                                                      let v1 = 0, v2 = 0, v3 = 0;
-                                                      if (delivery.type === 'CIF') {
-                                                        v1 = parseFloat(String(row['I'] || 0)) / 1000;
-                                                        v2 = parseFloat(String(row['J'] || 0)) / 1000;
-                                                        v3 = parseFloat(String(row['K'] || 0)) / 1000;
-                                                      } else {
-                                                        v1 = parseFloat(String(row['C'] || 0));
-                                                        v2 = parseFloat(String(row['F'] || 0));
-                                                        v3 = parseFloat(String(row['I'] || 0));
-                                                      }
-
-                                                      return (
-                                                        <Button 
-                                                          key={idx} 
-                                                          variant="ghost" 
-                                                          className="w-full flex flex-col items-start text-[10px] h-auto py-2 px-2 border-b last:border-0"
-                                                          onClick={() => {
-                                                            let finalVal = 0;
-                                                            if (delivery.type === 'CIF') {
-                                                              if (weight <= 7000) finalVal = v1;
-                                                              else if (weight <= 17000) finalVal = v2;
-                                                              else finalVal = v3;
-                                                            } else {
-                                                              if (weight <= 3000) finalVal = v1;
-                                                              else if (weight <= 14000) finalVal = v2;
-                                                              else finalVal = v3;
-                                                            }
-                                                            handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
-                                                          }}
-                                                        >
-                                                          <div className="font-bold uppercase">
-                                                            {delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}
-                                                          </div>
-                                                          <div className="flex gap-2 text-slate-500">
-                                                            <span>{v1.toFixed(4)}</span>
-                                                            <span>{v2.toFixed(4)}</span>
-                                                            <span>{v3.toFixed(4)}</span>
-                                                          </div>
-                                                        </Button>
-                                                      );
-                                                    })}
+                                                    .map((row: any, idx: number) => (
+                                                      <Button key={idx} variant="ghost" className="w-full flex flex-col items-start text-[10px] h-auto py-2 px-2 border-b last:border-0" onClick={() => {
+                                                        let finalVal = 0;
+                                                        const weight = delivery.weight;
+                                                        if (delivery.type === 'CIF') {
+                                                          if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                                          else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
+                                                          else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
+                                                        } else {
+                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0));
+                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0));
+                                                          else finalVal = parseFloat(String(row['I'] || 0));
+                                                        }
+                                                        handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
+                                                      }}>
+                                                        <div className="font-bold uppercase">{delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}</div>
+                                                      </Button>
+                                                    ))}
                                                 </div>
                                               </div>
                                             </PopoverContent>
                                           </Popover>
                                         </div>
                                       </TableCell>
-                                      <TableCell className="text-xs font-bold">
-                                        {delivery.freight.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                      </TableCell>
+                                      <TableCell className="text-xs font-bold">R$ {formatCurrency(delivery.freight)}</TableCell>
                                     </TableRow>
                                   ))}
                                   <TableRow className="bg-slate-50 font-bold">
                                     <TableCell colSpan={4} className="text-right uppercase text-[10px]">Total:</TableCell>
-                                    <TableCell className="text-xs">
-                                      {load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    </TableCell>
+                                    <TableCell className="text-xs">{formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
                                     <TableCell className="text-xs">-</TableCell>
-                                    <TableCell className="text-xs text-amber-700">
-                                      {load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                    </TableCell>
+                                    <TableCell className="text-xs text-amber-700">R$ {formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0)}</TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>
@@ -944,25 +727,16 @@ const ExternalLoads = () => {
                                       <span className="text-slate-500 font-bold uppercase">Total a Pagar:</span>
                                       <div className="flex items-center gap-2">
                                         <span className="text-slate-400">R$</span>
-                                        <Input 
-                                          type="number" 
-                                          className="h-7 w-32 text-xs font-bold" 
-                                          value={totalToPay}
-                                          onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })}
-                                        />
+                                        <Input type="number" className="h-7 w-32 text-xs font-bold" value={totalToPay} onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })} />
                                       </div>
                                     </div>
                                     <div className="flex gap-8 text-xs">
                                       <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
-                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {marginBefore.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({marginBeforePct.toFixed(2)}%)
-                                      </span>
+                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)</span>
                                     </div>
                                     <div className="flex gap-8 text-xs">
                                       <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto:</span>
-                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                        {marginAfter.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({marginAfterPct.toFixed(2)}%)
-                                      </span>
+                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)</span>
                                     </div>
                                   </div>
                                 );
@@ -970,34 +744,19 @@ const ExternalLoads = () => {
                             </div>
                           </DialogContent>
                         </Dialog>
+                        {load.isManual && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteLoad(load.id)}>
+                            <Trash2 size={16} />
+                          </Button>
+                        )}
                       </TableCell>
                       <TableCell className="text-[11px]">{load.data}</TableCell>
-                      <TableCell className="text-[11px] font-medium max-w-[300px]">
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <div className="truncate cursor-pointer hover:text-amber-600 transition-colors" title={load.rota}>
-                              {load.rota}
-                            </div>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[400px] p-4 text-xs leading-relaxed bg-white shadow-xl border-amber-100">
-                            <div className="font-bold text-amber-700 mb-2 uppercase border-b pb-1">Rota Completa</div>
-                            {load.rota}
-                          </PopoverContent>
-                        </Popover>
-                      </TableCell>
+                      <TableCell className="text-[11px] font-medium max-w-[300px] truncate" title={load.rota}>{load.rota}</TableCell>
                       <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
                       <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
                       <TableCell className="text-[11px] text-right">{load.peso}</TableCell>
-                      <TableCell className="text-[11px] text-center">
-                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span>
-                      </TableCell>
-                      <TableCell className="text-[11px]">
-                        <div className={`px-2 py-1 rounded-full text-[10px] font-bold text-center ${
-                          load.status.includes('AGENCIANDO') ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {load.status}
-                        </div>
-                      </TableCell>
+                      <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
+                      <TableCell className="text-[11px]"><div className={`px-2 py-1 rounded-full text-[10px] font-bold text-center ${load.status.includes('AGENCIANDO') ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{load.status}</div></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
