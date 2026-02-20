@@ -16,7 +16,10 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  ExternalLink
+  ExternalLink,
+  Printer,
+  Share2,
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -30,6 +33,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -47,6 +57,7 @@ interface ExternalLoad {
   observacoes: string;
   status: string;
   parsedDeliveries?: any[];
+  totalToPay?: number;
 }
 
 type SortConfig = {
@@ -62,13 +73,79 @@ const ExternalLoads = () => {
   const [updating, setUpdating] = useState(false);
   const [viewMode, setViewMode] = useState<'current' | 'previous'>('current');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
+  const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=csv&gid=0";
 
   useEffect(() => {
-    fetchSavedLoads();
+    const init = async () => {
+      await loadFreightTables();
+      await fetchSavedLoads();
+    };
+    init();
   }, []);
+
+  const normalizeText = (text: string) => {
+    return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  };
+
+  const loadFreightTables = async () => {
+    try {
+      const response = await fetch('/TABELA_MIDAS_2025.xlsx');
+      const arrayBuffer = await response.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
+      
+      // Tabela CIF (Geralmente a primeira ou nomeada)
+      const cifSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const cifData = XLSX.utils.sheet_to_json(cifSheet, { header: 'A' });
+      
+      // Tabela FOB (Geralmente a segunda ou nomeada)
+      const fobSheet = workbook.Sheets[workbook.SheetNames[1]];
+      const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
+
+      setFreightTables({
+        cif: cifData.slice(1), // Pula cabeçalho
+        fob: fobData.slice(1)
+      });
+    } catch (error) {
+      console.error("Erro ao carregar tabelas de frete:", error);
+    }
+  };
+
+  const getAliquot = (city: string, uf: string, type: string, weight: number) => {
+    const normCity = normalizeText(city);
+    const normUF = uf.toUpperCase();
+
+    if (type === 'CIF') {
+      const entry = freightTables.cif.find(row => 
+        normalizeText(String(row['B'] || '')) === normCity && 
+        String(row['E'] || '').toUpperCase() === normUF
+      );
+      if (!entry) return 0;
+      
+      // Colunas I (<=7t), J (7-17t), K (>17t) - Valores por tonelada
+      let val = 0;
+      if (weight <= 7000) val = parseFloat(String(entry['I'] || 0));
+      else if (weight <= 17000) val = parseFloat(String(entry['J'] || 0));
+      else val = parseFloat(String(entry['K'] || 0));
+      
+      return val / 1000; // Divide por 1000 para valor por kg
+    } else {
+      const entry = freightTables.fob.find(row => {
+        const rowCity = normalizeText(String(row['A'] || ''));
+        const rowRoute = String(row['B'] || '').toUpperCase();
+        return rowCity === normCity && rowRoute.includes(normUF);
+      });
+      if (!entry) return 0;
+
+      // Colunas C (<=3t), F (3-14t), I (>14t) - Valores por kg
+      if (weight <= 3000) return parseFloat(String(entry['C'] || 0));
+      if (weight <= 14000) return parseFloat(String(entry['F'] || 0));
+      return parseFloat(String(entry['I'] || 0));
+    }
+  };
 
   const fetchSavedLoads = async () => {
     try {
@@ -93,7 +170,8 @@ const ExternalLoads = () => {
 
   const parseRota = (rotaStr: string, uf: string) => {
     const deliveries: any[] = [];
-    // Regex para encontrar "CIDADE (CONTEUDO)"
+    // Regex melhorada para capturar blocos de cidades e seus parênteses
+    // Ex: BANZAÊ (6.453 FOB), PAULO AFONSO (4.900 FOB / 777 CIF)
     const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [];
     
     cityBlocks.forEach(block => {
@@ -109,17 +187,21 @@ const ExternalLoads = () => {
           if (!cleanPart) return;
           
           // Extrai peso e tipo (CIF ou FOB)
-          const weightMatch = cleanPart.match(/([\d\.,]+)\s*(CIF|FOB)/i);
+          // Suporta formatos como "6.453 FOB", "59KG CIF", "1KG FOB"
+          const weightMatch = cleanPart.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
           if (weightMatch) {
             const weightStr = weightMatch[1].replace(/\./g, '').replace(',', '.');
             const weight = parseFloat(weightStr);
             const type = weightMatch[2].toUpperCase();
+            const aliquot = getAliquot(cityName, uf, type, weight);
+            
             deliveries.push({
-              city: `${cityName}-${uf}`,
+              city: cityName,
+              uf: uf,
               type,
               weight,
-              aliquot: 0,
-              freight: 0
+              aliquot: aliquot,
+              freight: weight * aliquot
             });
           }
         });
@@ -134,21 +216,21 @@ const ExternalLoads = () => {
       const response = await fetch(SHEET_URL);
       const csvText = await response.text();
       
-      // Parse CSV simples (considerando que a planilha segue o padrão enviado)
       const rows = csvText.split('\n').map(row => {
-        // Lógica para lidar com vírgulas dentro de aspas no CSV
         const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
         return matches ? matches.map(m => m.replace(/^"|"$/g, '')) : [];
       });
 
       if (rows.length < 2) throw new Error("Planilha vazia ou inválida.");
 
-      const headers = rows[0];
       const dataRows = rows.slice(1).filter(r => r.length >= 8);
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = row[1] || '';
         const uf = row[3] || '';
+        const parsed = parseRota(rota, uf);
+        const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
+        
         return {
           id: `load-${idx}-${Date.now()}`,
           data: row[0] || '',
@@ -159,20 +241,16 @@ const ExternalLoads = () => {
           frete: row[5] || '',
           observacoes: row[6] || '',
           status: row[7] || '',
-          parsedDeliveries: parseRota(rota, uf)
+          parsedDeliveries: parsed,
+          totalToPay: totalFreight * 0.7 // Padrão: 30% de margem
         };
       });
 
-      // Versionamento no Supabase
-      // 1. Deleta a versão 'previous' antiga
       await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
-      
-      // 2. Move a 'current' atual para 'previous'
       if (currentLoads.length > 0) {
         await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
       }
 
-      // 3. Insere a nova como 'current'
       const { error: insertError } = await supabase.from('hidracor_external_loads').insert([{
         user_id: user?.id,
         loads: newLoads,
@@ -221,22 +299,106 @@ const ExternalLoads = () => {
 
   const filteredData = useMemo(() => {
     return sortedData.filter(row => {
-      return Object.entries(columnFilters).every(([col, value]) => {
+      const matchesFilters = Object.entries(columnFilters).every(([col, value]) => {
         if (!value) return true;
         return row[col as keyof ExternalLoad]?.toString().toLowerCase().includes(value.toLowerCase());
       });
-    });
-  }, [sortedData, columnFilters]);
 
-  const handleFilterChange = (col: string, value: string) => {
-    setColumnFilters(prev => ({ ...prev, [col]: value }));
+      const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
+
+      return matchesFilters && matchesUF;
+    });
+  }, [sortedData, columnFilters, selectedUFs]);
+
+  const allUFs = useMemo(() => {
+    const ufs = new Set(activeData.map(l => l.uf.toUpperCase()));
+    return Array.from(ufs).sort();
+  }, [activeData]);
+
+  const handleUpdateLoad = (loadId: string, updates: Partial<ExternalLoad>) => {
+    const updateFn = (loads: ExternalLoad[]) => loads.map(l => l.id === loadId ? { ...l, ...updates } : l);
+    if (viewMode === 'current') setCurrentLoads(updateFn);
+    else setPreviousLoads(updateFn);
   };
 
-  const downloadExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Cargas Externas");
-    XLSX.writeFile(wb, `CARGAS_EXTERNAS_${viewMode.toUpperCase()}_${new Date().toLocaleDateString()}.xlsx`);
+  const handleUpdateDelivery = (loadId: string, deliveryIdx: number, updates: any) => {
+    const updateFn = (loads: ExternalLoad[]) => loads.map(l => {
+      if (l.id === loadId && l.parsedDeliveries) {
+        const newDeliveries = [...l.parsedDeliveries];
+        newDeliveries[deliveryIdx] = { ...newDeliveries[deliveryIdx], ...updates };
+        // Recalcula frete da entrega se peso ou alíquota mudar
+        if (updates.weight !== undefined || updates.aliquot !== undefined) {
+          newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
+        }
+        return { ...l, parsedDeliveries: newDeliveries };
+      }
+      return l;
+    });
+    if (viewMode === 'current') setCurrentLoads(updateFn);
+    else setPreviousLoads(updateFn);
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const content = `
+      <html>
+        <head>
+          <title>Cargas Disponíveis - Midas Log</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #333; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
+            .logo { height: 50px; }
+            .title { font-size: 24px; font-weight: bold; color: #1e293b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #f8fafc; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
+            td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
+            .rota-cell { max-width: 400px; word-wrap: break-word; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #64748b; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="/logo.png" class="logo" />
+            <div class="title">Cargas Disponíveis</div>
+            <div style="text-align: right">
+              <div style="font-weight: bold">Midas Logística</div>
+              <div style="font-size: 12px">${new Date().toLocaleDateString()}</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Rota</th>
+                <th>Entregas</th>
+                <th>UF</th>
+                <th>Peso Total</th>
+                <th>Frete</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredData.map(load => `
+                <tr>
+                  <td class="rota-cell"><strong>${load.rota}</strong></td>
+                  <td style="text-align: center">${load.entregas}</td>
+                  <td style="text-align: center"><strong>${load.uf}</strong></td>
+                  <td style="text-align: right">${load.peso}</td>
+                  <td style="text-align: center">${load.frete}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            © ${new Date().getFullYear()} Midas Logística - Eficiência em Movimento
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
@@ -289,8 +451,8 @@ const ExternalLoads = () => {
             <span className="hidden sm:inline">Atualizar Planilha</span>
           </Button>
 
-          <Button onClick={downloadExcel} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
-            <Download size={16} /> <span className="hidden sm:inline">Exportar</span>
+          <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
+            <Printer size={16} /> <span className="hidden sm:inline">Imprimir para Motorista</span>
           </Button>
         </div>
       </header>
@@ -323,29 +485,125 @@ const ExternalLoads = () => {
                 <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead>
-                    {['data', 'rota', 'entregas', 'uf', 'peso', 'frete', 'observacoes', 'status'].map(col => (
-                      <TableHead key={col} className="min-w-[150px] py-4 px-4 bg-white">
-                        <div className="space-y-2">
-                          <div 
-                            className="flex items-center justify-between cursor-pointer hover:text-amber-600 transition-colors"
-                            onClick={() => handleSort(col)}
-                          >
-                            <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
-                            {sortConfig.key === col ? (
-                              sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={12} className="text-slate-300" />
-                            )}
-                          </div>
-                          <Input 
-                            placeholder={`Filtrar...`}
-                            className="h-7 text-[10px] bg-slate-50 border-slate-200"
-                            value={columnFilters[col] || ''}
-                            onChange={(e) => handleFilterChange(col, e.target.value)}
-                          />
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
                         </div>
-                      </TableHead>
-                    ))}
+                        <Input 
+                          placeholder="Filtrar..." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('data', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input 
+                          placeholder="Filtrar..." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('rota', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input 
+                          placeholder="Filt." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('entregas', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
+                                <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-40 p-2">
+                              <div className="space-y-2">
+                                {allUFs.map(uf => (
+                                  <div key={uf} className="flex items-center space-x-2">
+                                    <Checkbox 
+                                      id={`uf-${uf}`} 
+                                      checked={selectedUFs.includes(uf)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) setSelectedUFs([...selectedUFs, uf]);
+                                        else setSelectedUFs(selectedUFs.filter(u => u !== uf));
+                                      }}
+                                    />
+                                    <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
+                                  </div>
+                                ))}
+                                {selectedUFs.length > 0 && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="w-full text-[10px] h-6 mt-2"
+                                    onClick={() => setSelectedUFs([])}
+                                  >
+                                    Limpar
+                                  </Button>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div className="h-7 flex items-center px-2 bg-slate-50 rounded border text-[10px] font-bold text-slate-500">
+                          {selectedUFs.length > 0 ? selectedUFs.join(', ') : 'Todos'}
+                        </div>
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input 
+                          placeholder="Filtrar..." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('peso', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input 
+                          placeholder="Filtrar..." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('frete', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold uppercase text-slate-500">Status</span>
+                        <Input 
+                          placeholder="Filtrar..." 
+                          className="h-7 text-[10px]" 
+                          onChange={(e) => handleFilterChange('status', e.target.value)}
+                        />
+                      </div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -358,10 +616,13 @@ const ExternalLoads = () => {
                               <Eye size={16} />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
-                              <DialogTitle>Detalhamento da Carga</DialogTitle>
-                              <DialogDescription>
+                              <DialogTitle className="flex items-center gap-3">
+                                <img src="/logo.png" className="h-8 w-auto" />
+                                Detalhamento da Carga
+                              </DialogTitle>
+                              <DialogDescription className="font-bold text-slate-900">
                                 Rota: {load.rota}
                               </DialogDescription>
                             </DialogHeader>
@@ -382,15 +643,70 @@ const ExternalLoads = () => {
                                   {load.parsedDeliveries?.map((delivery, dIdx) => (
                                     <TableRow key={dIdx}>
                                       <TableCell className="text-xs font-bold">{dIdx + 1}</TableCell>
-                                      <TableCell className="text-xs">{delivery.city}</TableCell>
+                                      <TableCell className="text-xs">{delivery.city}-{delivery.uf}</TableCell>
                                       <TableCell className="text-xs">
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${delivery.type === 'CIF' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
                                           {delivery.type}
                                         </span>
                                       </TableCell>
-                                      <TableCell className="text-xs">{delivery.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                                      <TableCell className="text-xs">0,0000</TableCell>
-                                      <TableCell className="text-xs">R$ 0,00</TableCell>
+                                      <TableCell className="text-xs">
+                                        <Input 
+                                          type="number" 
+                                          className="h-7 w-24 text-xs" 
+                                          value={delivery.weight}
+                                          onChange={(e) => handleUpdateDelivery(load.id, dIdx, { weight: parseFloat(e.target.value) || 0 })}
+                                        />
+                                      </TableCell>
+                                      <TableCell className="text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <Input 
+                                            type="number" 
+                                            step="0.0001"
+                                            className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`}
+                                            value={delivery.aliquot}
+                                            onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })}
+                                          />
+                                          {delivery.aliquot === 0 && (
+                                            <Popover>
+                                              <PopoverTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500"><Search size={12} /></Button>
+                                              </PopoverTrigger>
+                                              <PopoverContent className="w-64 p-2">
+                                                <p className="text-[10px] text-slate-500 mb-2">Cidade não encontrada na tabela. Selecione uma alíquota manualmente ou busque uma cidade próxima.</p>
+                                                <div className="max-h-40 overflow-y-auto space-y-1">
+                                                  {(delivery.type === 'CIF' ? freightTables.cif : freightTables.fob).slice(0, 20).map((row: any, idx: number) => (
+                                                    <Button 
+                                                      key={idx} 
+                                                      variant="ghost" 
+                                                      className="w-full justify-start text-[10px] h-7 px-2"
+                                                      onClick={() => {
+                                                        const weight = delivery.weight;
+                                                        let val = 0;
+                                                        if (delivery.type === 'CIF') {
+                                                          if (weight <= 7000) val = parseFloat(String(row['I'] || 0));
+                                                          else if (weight <= 17000) val = parseFloat(String(row['J'] || 0));
+                                                          else val = parseFloat(String(row['K'] || 0));
+                                                          val = val / 1000;
+                                                        } else {
+                                                          if (weight <= 3000) val = parseFloat(String(row['C'] || 0));
+                                                          else if (weight <= 14000) val = parseFloat(String(row['F'] || 0));
+                                                          else val = parseFloat(String(row['I'] || 0));
+                                                        }
+                                                        handleUpdateDelivery(load.id, dIdx, { aliquot: val });
+                                                      }}
+                                                    >
+                                                      {delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}
+                                                    </Button>
+                                                  ))}
+                                                </div>
+                                              </PopoverContent>
+                                            </Popover>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-xs font-bold">
+                                        {delivery.freight.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                      </TableCell>
                                     </TableRow>
                                   ))}
                                   <TableRow className="bg-slate-50 font-bold">
@@ -398,33 +714,69 @@ const ExternalLoads = () => {
                                     <TableCell className="text-xs">
                                       {load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </TableCell>
-                                    <TableCell className="text-xs">0,0000</TableCell>
-                                    <TableCell className="text-xs text-amber-700">R$ 0,00</TableCell>
+                                    <TableCell className="text-xs">-</TableCell>
+                                    <TableCell className="text-xs text-amber-700">
+                                      {load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    </TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>
 
-                              <div className="mt-6 flex flex-col items-end gap-2 border-t pt-4">
-                                <div className="flex gap-8 text-xs">
-                                  <span className="text-slate-500 font-bold uppercase">Total a Pagar:</span>
-                                  <span className="font-bold">R$ 0,00</span>
-                                </div>
-                                <div className="flex gap-8 text-xs">
-                                  <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
-                                  <span className="font-bold text-green-600">R$ 0,00 (0,00%)</span>
-                                </div>
-                                <div className="flex gap-8 text-xs">
-                                  <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto:</span>
-                                  <span className="font-bold text-green-700">R$ 0,00 (0,00%)</span>
-                                </div>
-                              </div>
+                              {(() => {
+                                const totalReceived = load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+                                const totalToPay = load.totalToPay || 0;
+                                const tax = totalReceived * 0.0998;
+                                const marginBefore = totalReceived - totalToPay;
+                                const marginAfter = totalReceived - totalToPay - tax;
+                                const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
+                                const marginAfterPct = totalReceived > 0 ? (marginAfter / totalReceived) * 100 : 0;
+
+                                return (
+                                  <div className="mt-6 flex flex-col items-end gap-2 border-t pt-4">
+                                    <div className="flex items-center gap-8 text-xs">
+                                      <span className="text-slate-500 font-bold uppercase">Total a Pagar:</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-slate-400">R$</span>
+                                        <Input 
+                                          type="number" 
+                                          className="h-7 w-32 text-xs font-bold" 
+                                          value={totalToPay}
+                                          onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-8 text-xs">
+                                      <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
+                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {marginBefore.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({marginBeforePct.toFixed(2)}%)
+                                      </span>
+                                    </div>
+                                    <div className="flex gap-8 text-xs">
+                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto:</span>
+                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                        {marginAfter.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({marginAfterPct.toFixed(2)}%)
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </DialogContent>
                         </Dialog>
                       </TableCell>
                       <TableCell className="text-[11px]">{load.data}</TableCell>
-                      <TableCell className="text-[11px] font-medium max-w-[300px] truncate" title={load.rota}>
-                        {load.rota}
+                      <TableCell className="text-[11px] font-medium max-w-[300px]">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <div className="truncate cursor-pointer hover:text-amber-600 transition-colors" title={load.rota}>
+                              {load.rota}
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[400px] p-4 text-xs leading-relaxed bg-white shadow-xl border-amber-100">
+                            <div className="font-bold text-amber-700 mb-2 uppercase border-b pb-1">Rota Completa</div>
+                            {load.rota}
+                          </PopoverContent>
+                        </Popover>
                       </TableCell>
                       <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
                       <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
@@ -432,7 +784,6 @@ const ExternalLoads = () => {
                       <TableCell className="text-[11px] text-center">
                         <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span>
                       </TableCell>
-                      <TableCell className="text-[11px] max-w-[200px] truncate">{load.observacoes}</TableCell>
                       <TableCell className="text-[11px]">
                         <div className={`px-2 py-1 rounded-full text-[10px] font-bold text-center ${
                           load.status.includes('AGENCIANDO') ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
