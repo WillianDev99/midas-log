@@ -105,10 +105,20 @@ const ExternalLoads = () => {
       const fobSheet = workbook.Sheets[workbook.SheetNames[1]];
       const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
 
-      // Pulamos as 2 primeiras linhas para garantir que saímos do cabeçalho
+      // Filtra cabeçalhos e linhas vazias de forma mais agressiva
+      const cleanCIF = cifData.filter((row: any) => {
+        const city = String(row['B'] || '');
+        return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade';
+      });
+
+      const cleanFOB = fobData.filter((row: any) => {
+        const city = String(row['A'] || '');
+        return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && city !== 'undefined';
+      });
+
       setFreightTables({
-        cif: cifData.slice(2),
-        fob: fobData.slice(2)
+        cif: cleanCIF,
+        fob: cleanFOB
       });
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
@@ -122,7 +132,7 @@ const ExternalLoads = () => {
     if (type === 'CIF') {
       const entry = freightTables.cif.find(row => 
         normalizeText(String(row['B'] || '')) === normCity && 
-        String(row['E'] || '').toUpperCase() === normUF
+        String(row['E'] || '').toUpperCase().includes(normUF)
       );
       if (!entry) return 0;
       
@@ -235,7 +245,7 @@ const ExternalLoads = () => {
           observacoes: String(row[6] || ''),
           status: String(row[7] || ''),
           parsedDeliveries: parsed,
-          totalToPay: totalFreight * 0.7 // Preenchimento automático com 70%
+          totalToPay: totalFreight * 0.7
         };
       });
 
@@ -323,9 +333,9 @@ const ExternalLoads = () => {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
         
-        // Recalcula o Total a Pagar (70%) se o frete total mudar, mas apenas se o usuário não tiver editado manualmente ainda?
-        // Para simplificar, vamos apenas atualizar o frete total.
-        return { ...l, parsedDeliveries: newDeliveries };
+        // Recalcula o Total a Pagar (70%) se o frete total mudar e o valor ainda for o padrão
+        const totalReceived = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
+        return { ...l, parsedDeliveries: newDeliveries, totalToPay: totalReceived * 0.7 };
       }
       return l;
     });
@@ -340,6 +350,8 @@ const ExternalLoads = () => {
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
+
+    const logoUrl = window.location.origin + "/logo.png";
 
     const content = `
       <html>
@@ -359,7 +371,7 @@ const ExternalLoads = () => {
         </head>
         <body>
           <div class="header">
-            <img src="/logo.png" class="logo" />
+            <img src="${logoUrl}" class="logo" />
             <div class="title">Cargas Disponíveis</div>
             <div style="text-align: right">
               <div style="font-weight: bold">Midas Logística</div>
@@ -391,7 +403,11 @@ const ExternalLoads = () => {
           <div class="footer">
             © ${new Date().getFullYear()} Midas Logística - Eficiência em Movimento
           </div>
-          <script>window.print();</script>
+          <script>
+            window.onload = () => {
+              setTimeout(() => { window.print(); }, 500);
+            };
+          </script>
         </body>
       </html>
     `;
