@@ -18,7 +18,6 @@ import {
   ArrowDown,
   ExternalLink,
   Printer,
-  Share2,
   Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -105,7 +104,6 @@ const ExternalLoads = () => {
       const fobSheet = workbook.Sheets[workbook.SheetNames[1]];
       const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
 
-      // Filtra cabeçalhos e linhas vazias de forma mais agressiva
       const cleanCIF = cifData.filter((row: any) => {
         const city = String(row['B'] || '');
         return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade';
@@ -116,10 +114,7 @@ const ExternalLoads = () => {
         return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && city !== 'undefined';
       });
 
-      setFreightTables({
-        cif: cleanCIF,
-        fob: cleanFOB
-      });
+      setFreightTables({ cif: cleanCIF, fob: cleanFOB });
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
     }
@@ -127,13 +122,14 @@ const ExternalLoads = () => {
 
   const getAliquot = (city: string, uf: string, type: string, weight: number) => {
     const normCity = normalizeText(city);
-    const normUF = uf.toUpperCase();
+    const cleanUF = uf.replace(/[^a-zA-Z]/g, '').toUpperCase();
 
     if (type === 'CIF') {
-      const entry = freightTables.cif.find(row => 
-        normalizeText(String(row['B'] || '')) === normCity && 
-        String(row['E'] || '').toUpperCase().includes(normUF)
-      );
+      const entry = freightTables.cif.find(row => {
+        const rowCity = normalizeText(String(row['B'] || ''));
+        const rowUF = String(row['E'] || '').toUpperCase().replace(/[^A-Z]/g, '');
+        return rowCity === normCity && rowUF === cleanUF;
+      });
       if (!entry) return 0;
       
       let val = 0;
@@ -146,7 +142,7 @@ const ExternalLoads = () => {
       const entry = freightTables.fob.find(row => {
         const rowCity = normalizeText(String(row['A'] || ''));
         const rowRoute = String(row['B'] || '').toUpperCase();
-        return rowCity === normCity && rowRoute.includes(normUF);
+        return rowCity === normCity && rowRoute.includes(cleanUF);
       });
       if (!entry) return 0;
 
@@ -180,6 +176,7 @@ const ExternalLoads = () => {
   const parseRota = (rotaStr: string, uf: string) => {
     const deliveries: any[] = [];
     const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [rotaStr];
+    const cleanUF = uf.replace(/[^a-zA-Z]/g, '').toUpperCase();
     
     cityBlocks.forEach(block => {
       const match = block.match(/(.*?)\s*\((.*?)\)/);
@@ -197,11 +194,11 @@ const ExternalLoads = () => {
             const weightStr = weightMatch[1].replace(/\./g, '').replace(',', '.');
             const weight = parseFloat(weightStr);
             const type = weightMatch[2].toUpperCase();
-            const aliquot = getAliquot(cityName, uf, type, weight);
+            const aliquot = getAliquot(cityName, cleanUF, type, weight);
             
             deliveries.push({
               city: cityName,
-              uf: uf,
+              uf: cleanUF,
               type,
               weight,
               aliquot: aliquot,
@@ -230,8 +227,9 @@ const ExternalLoads = () => {
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = String(row[1] || '');
-        const uf = String(row[3] || '');
-        const parsed = parseRota(rota, uf);
+        const rawUF = String(row[3] || '');
+        const cleanUF = rawUF.replace(/[^a-zA-Z]/g, '').toUpperCase();
+        const parsed = parseRota(rota, cleanUF);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
         return {
@@ -239,7 +237,7 @@ const ExternalLoads = () => {
           data: String(row[0] || ''),
           rota: rota,
           entregas: String(row[2] || ''),
-          uf: uf,
+          uf: cleanUF,
           peso: String(row[4] || ''),
           frete: String(row[5] || ''),
           observacoes: String(row[6] || ''),
@@ -333,7 +331,6 @@ const ExternalLoads = () => {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
         
-        // Recalcula o Total a Pagar (70%) se o frete total mudar e o valor ainda for o padrão
         const totalReceived = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
         return { ...l, parsedDeliveries: newDeliveries, totalToPay: totalReceived * 0.7 };
       }
