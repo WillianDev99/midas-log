@@ -177,25 +177,27 @@ const ExternalLoads = () => {
   const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
     
-    // Função auxiliar para separar Cidade e UF de forma robusta
+    // Função para separar Cidade e UF de forma agressiva
     const splitCityUF = (str: string) => {
-      let city = str.trim();
+      let raw = str.trim();
       let uf = defaultUF;
       
-      // Procura por -UF ou espaço UF no final da string
-      const ufMatch = city.match(/[- ]+([A-Z]{2})$/i);
-      if (ufMatch) {
-        uf = ufMatch[1].toUpperCase();
-        city = city.substring(0, ufMatch.index).trim();
+      // Divide por traço, barra ou espaço e pega a última parte
+      const parts = raw.split(/[-–—/ ]+/);
+      if (parts.length > 1) {
+        const lastPart = parts[parts.length - 1].toUpperCase();
+        // Se a última parte tem 2 letras, assumimos que é a UF
+        if (lastPart.length === 2 && /^[A-Z]{2}$/.test(lastPart)) {
+          uf = lastPart;
+          // Reconstrói o nome da cidade sem a UF
+          raw = parts.slice(0, -1).join(' ').trim();
+        }
       }
       
-      // Limpeza final de traços residuais
-      city = city.replace(/[- ]+$/, '').trim();
-      
-      return { city, uf };
+      return { city: raw, uf };
     };
 
-    // Divisor de blocos que ignora vírgulas dentro de parênteses
+    // Divisor de blocos robusto (ignora vírgulas dentro de parênteses)
     const blocks: string[] = [];
     let currentBlock = "";
     let parenLevel = 0;
@@ -225,8 +227,8 @@ const ExternalLoads = () => {
         const details = match[2].trim();
         const { city, uf } = splitCityUF(rawCity);
         
-        if (isAgendamento) {
-          // Para agendamentos, usa o peso e frete principais da planilha
+        if (isAgendamento || details.toUpperCase().includes("AGENDAMENTO")) {
+          // Se for agendamento, usa obrigatoriamente os dados principais da planilha
           const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
           deliveries.push({
             city,
