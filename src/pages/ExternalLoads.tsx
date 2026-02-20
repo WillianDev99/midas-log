@@ -394,6 +394,10 @@ const ExternalLoads = () => {
     else setPreviousLoads(updateFn);
   };
 
+  const handleFilterChange = (col: string, value: string) => {
+    setColumnFilters(prev => ({ ...prev, [col]: value }));
+  };
+
   const handlePrintDetailed = (load: ExternalLoad) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -587,13 +591,94 @@ const ExternalLoads = () => {
                 <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                   <TableRow>
                     <TableHead className="w-[80px]"></TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">Data</TableHead>
-                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">Rota</TableHead>
-                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">Entr.</TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">UF</TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">Peso</TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">Frete</TableHead>
-                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">Status</TableHead>
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('data', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('rota', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input placeholder="Filt." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('entregas', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
+                                <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-40 p-2">
+                              <div className="space-y-2">
+                                {allUFs.map(uf => (
+                                  <div key={uf} className="flex items-center space-x-2">
+                                    <Checkbox 
+                                      id={`uf-${uf}`} 
+                                      checked={selectedUFs.includes(uf)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) setSelectedUFs([...selectedUFs, uf]);
+                                        else setSelectedUFs(selectedUFs.filter(u => u !== uf));
+                                      }}
+                                    />
+                                    <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
+                                  </div>
+                                ))}
+                                {selectedUFs.length > 0 && (
+                                  <Button variant="ghost" size="sm" className="w-full text-[10px] h-6 mt-2" onClick={() => setSelectedUFs([])}>Limpar</Button>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div className="h-7 flex items-center px-2 bg-slate-50 rounded border text-[10px] font-bold text-slate-500">
+                          {selectedUFs.length > 0 ? selectedUFs.join(', ') : 'Todos'}
+                        </div>
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('peso', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
+                          <ArrowUpDown size={12} className="text-slate-300" />
+                        </div>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('frete', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold uppercase text-slate-500">Status</span>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('status', e.target.value)} />
+                      </div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -669,13 +754,13 @@ const ExternalLoads = () => {
                                                         let finalVal = 0;
                                                         const weight = delivery.weight;
                                                         if (delivery.type === 'CIF') {
-                                                          if (weight <= 7000) finalVal = parseFloat(String(entry['I'] || 0)) / 1000;
-                                                          else if (weight <= 17000) finalVal = parseFloat(String(entry['J'] || 0)) / 1000;
-                                                          else finalVal = parseFloat(String(entry['K'] || 0)) / 1000;
+                                                          if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                                          else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
+                                                          else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
                                                         } else {
-                                                          if (weight <= 3000) finalVal = parseFloat(String(entry['C'] || 0));
-                                                          else if (weight <= 14000) finalVal = parseFloat(String(entry['F'] || 0));
-                                                          else finalVal = parseFloat(String(entry['I'] || 0));
+                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0));
+                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0));
+                                                          else finalVal = parseFloat(String(row['I'] || 0));
                                                         }
                                                         handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
                                                       }}>
