@@ -174,12 +174,10 @@ const ExternalLoads = () => {
     }
   };
 
-  const parseRota = (rotaStr: string, uf: string, mainWeightStr: string, mainFreightType: string) => {
+  const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
-    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-    const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
-
-    // Split robusto: ignora vírgulas dentro de parênteses para evitar truncamento
+    
+    // 1. Split robusto por vírgula, respeitando parênteses
     const blocks: string[] = [];
     let currentBlock = "";
     let parenLevel = 0;
@@ -188,7 +186,7 @@ const ExternalLoads = () => {
       if (char === '(') parenLevel++;
       if (char === ')') parenLevel--;
       if (char === ',' && parenLevel === 0) {
-        blocks.push(currentBlock.trim());
+        if (currentBlock.trim()) blocks.push(currentBlock.trim());
         currentBlock = "";
       } else {
         currentBlock += char;
@@ -196,41 +194,58 @@ const ExternalLoads = () => {
     }
     if (currentBlock.trim()) blocks.push(currentBlock.trim());
 
+    const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
+
     blocks.forEach(block => {
+      let cityName = "";
+      let deliveryUF = defaultUF;
+      
+      // Verifica se é agendamento
       const isAgendamento = block.toUpperCase().includes("AGENDAMENTO");
       
-      if (isAgendamento) {
-        // Extrai cidade antes do parêntese ou do traço
-        let cityName = block.split(/[\(\-]/)[0].trim();
-        // Limpeza profunda do nome da cidade
-        cityName = cityName.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
+      // Tenta encontrar o padrão: Cidade (Detalhes)
+      const match = block.match(/^(.*?)\s*\((.*?)\)$/);
+      
+      if (match) {
+        cityName = match[1].trim();
+        const details = match[2].trim();
         
-        const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
-        deliveries.push({
-          city: cityName,
-          uf: cleanUF,
-          type: mainFreightType,
-          weight: mainWeight,
-          aliquot,
-          freight: mainWeight * aliquot
-        });
-      } else {
-        const match = block.match(/(.*?)\s*\((.*?)\)/);
-        if (match) {
-          let cityName = match[1].trim();
-          cityName = cityName.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
-          const content = match[2];
-          const parts = content.split(/[\/\+]/);
+        // Se os detalhes contêm agendamento, usa colunas principais
+        if (details.toUpperCase().includes("AGENDAMENTO")) {
+          // Extrai UF do nome da cidade se presente (ex: SÃO LUÍS-MA)
+          const ufMatch = cityName.match(/[- ]+([A-Z]{2})$/i);
+          if (ufMatch) {
+            deliveryUF = ufMatch[1].toUpperCase();
+            cityName = cityName.replace(/[- ]+[A-Z]{2}$/i, '').trim();
+          }
           
+          const aliquot = getAliquot(cityName, deliveryUF, mainFreightType, mainWeight);
+          deliveries.push({
+            city: cityName,
+            uf: deliveryUF,
+            type: mainFreightType,
+            weight: mainWeight,
+            aliquot,
+            freight: mainWeight * aliquot
+          });
+        } else {
+          // Padrão normal: Cidade (Peso Tipo / Peso Tipo)
+          const ufMatch = cityName.match(/[- ]+([A-Z]{2})$/i);
+          if (ufMatch) {
+            deliveryUF = ufMatch[1].toUpperCase();
+            cityName = cityName.replace(/[- ]+[A-Z]{2}$/i, '').trim();
+          }
+          
+          const parts = details.split(/[\/\+]/);
           parts.forEach(part => {
             const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
             if (weightMatch) {
               const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
               const t = weightMatch[2].toUpperCase();
-              const aliquot = getAliquot(cityName, cleanUF, t, w);
+              const aliquot = getAliquot(cityName, deliveryUF, t, w);
               deliveries.push({
                 city: cityName,
-                uf: cleanUF,
+                uf: deliveryUF,
                 type: t,
                 weight: w,
                 aliquot,
@@ -238,22 +253,30 @@ const ExternalLoads = () => {
               });
             }
           });
-        } else {
-          // Fallback para blocos simples sem parênteses
-          let cityName = block.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
-          const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
-          deliveries.push({
-            city: cityName,
-            uf: cleanUF,
-            type: mainFreightType,
-            weight: mainWeight,
-            aliquot,
-            freight: mainWeight * aliquot
-          });
         }
+      } else {
+        // Sem parênteses, verifica se é agendamento simples ou cidade direta
+        cityName = block.split(/[-–—]/)[0].trim();
+        
+        // Extrai UF do nome da cidade se presente
+        const ufMatch = cityName.match(/[- ]+([A-Z]{2})$/i);
+        if (ufMatch) {
+          deliveryUF = ufMatch[1].toUpperCase();
+          cityName = cityName.replace(/[- ]+[A-Z]{2}$/i, '').trim();
+        }
+        
+        const aliquot = getAliquot(cityName, deliveryUF, mainFreightType, mainWeight);
+        deliveries.push({
+          city: cityName,
+          uf: deliveryUF,
+          type: mainFreightType,
+          weight: mainWeight,
+          aliquot,
+          freight: mainWeight * aliquot
+        });
       }
     });
-
+    
     return deliveries;
   };
 
@@ -277,7 +300,6 @@ const ExternalLoads = () => {
         const mainWeightStr = String(row[4] || '0');
         const mainFreightType = String(row[5] || 'CIF').toUpperCase();
         
-        // Limpeza radical da UF: apenas as 2 primeiras letras
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
