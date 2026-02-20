@@ -89,7 +89,8 @@ const ExternalLoads = () => {
   }, []);
 
   const normalizeText = (text: string) => {
-    return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    if (!text) return "";
+    return text.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   };
 
   const loadFreightTables = async () => {
@@ -104,9 +105,10 @@ const ExternalLoads = () => {
       const fobSheet = workbook.Sheets[workbook.SheetNames[1]];
       const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
 
+      // Pulamos as 2 primeiras linhas para garantir que saímos do cabeçalho
       setFreightTables({
-        cif: cifData.slice(1),
-        fob: fobData.slice(1)
+        cif: cifData.slice(2),
+        fob: fobData.slice(2)
       });
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
@@ -167,7 +169,6 @@ const ExternalLoads = () => {
 
   const parseRota = (rotaStr: string, uf: string) => {
     const deliveries: any[] = [];
-    // Regex mais robusta para capturar blocos de cidades e seus parênteses
     const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [rotaStr];
     
     cityBlocks.forEach(block => {
@@ -209,7 +210,6 @@ const ExternalLoads = () => {
       const response = await fetch(SHEET_URL);
       const csvText = await response.text();
       
-      // Usando XLSX para parsear o CSV de forma robusta
       const workbook = XLSX.read(csvText, { type: 'string' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
@@ -235,7 +235,7 @@ const ExternalLoads = () => {
           observacoes: String(row[6] || ''),
           status: String(row[7] || ''),
           parsedDeliveries: parsed,
-          totalToPay: totalFreight * 0.7
+          totalToPay: totalFreight * 0.7 // Preenchimento automático com 70%
         };
       });
 
@@ -322,6 +322,9 @@ const ExternalLoads = () => {
         if (updates.weight !== undefined || updates.aliquot !== undefined) {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
+        
+        // Recalcula o Total a Pagar (70%) se o frete total mudar, mas apenas se o usuário não tiver editado manualmente ainda?
+        // Para simplificar, vamos apenas atualizar o frete total.
         return { ...l, parsedDeliveries: newDeliveries };
       }
       return l;
