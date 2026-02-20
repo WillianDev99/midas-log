@@ -179,8 +179,14 @@ const ExternalLoads = () => {
     
     const splitCityUF = (str: string) => {
       let raw = str.trim();
-      let uf = defaultUF;
       
+      // Regra extra: Se houver "AGENDAMENTO" ou "AGENDA" fora de parênteses, limpa tudo a partir do traço ou espaço que o precede
+      if (raw.toUpperCase().includes("AGENDAMENTO") || raw.toUpperCase().includes("AGENDA")) {
+        raw = raw.split(/[-–—(]/)[0].trim();
+        raw = raw.replace(/AGENDAMENTO.*/i, '').trim();
+      }
+
+      let uf = defaultUF;
       const parts = raw.split(/[-–—/ ]+/);
       if (parts.length > 1) {
         const lastPart = parts[parts.length - 1].toUpperCase();
@@ -196,7 +202,6 @@ const ExternalLoads = () => {
     const blocks: string[] = [];
     let currentBlock = "";
     let parenLevel = 0;
-    // Divide por vírgula ou ponto (comum na aba CARGAS)
     for (let i = 0; i < rotaStr.length; i++) {
       const char = rotaStr[i];
       if (char === '(') parenLevel++;
@@ -275,22 +280,19 @@ const ExternalLoads = () => {
       const arrayBuffer = await response.arrayBuffer();
       
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
-      
-      // CORREÇÃO: Busca especificamente a aba "CARGAS"
       const sheetName = workbook.SheetNames.find(name => name.toUpperCase() === "CARGAS") || workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
       if (rows.length < 2) throw new Error("Planilha vazia ou aba CARGAS não encontrada.");
 
-      // Filtra linhas vazias e pula o cabeçalho
       const dataRows = rows.slice(1).filter(r => r[1] && String(r[1]).trim() !== "");
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = String(row[1] || ''); // Coluna B
-        const rawUF = String(row[3] || ''); // Coluna D
-        const mainWeightStr = String(row[4] || '0'); // Coluna E
-        const mainFreightType = String(row[5] || 'CIF').toUpperCase(); // Coluna F
+        const rota = String(row[1] || '');
+        const rawUF = String(row[3] || '');
+        const mainWeightStr = String(row[4] || '0');
+        const mainFreightType = String(row[5] || 'CIF').toUpperCase();
         
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         
@@ -299,9 +301,9 @@ const ExternalLoads = () => {
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: String(row[0] || ''), // Coluna A
+          data: String(row[0] || ''),
           rota: rota,
-          entregas: String(row[2] || ''), // Coluna C
+          entregas: String(row[2] || ''),
           uf: cleanUF,
           peso: mainWeightStr,
           frete: mainFreightType,
