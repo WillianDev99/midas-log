@@ -77,7 +77,6 @@ const ExternalLoads = () => {
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
   const [manualSearch, setManualSearch] = useState("");
 
-  // Mudança para formato XLSX para evitar quebra de colunas por vírgula
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
 
   useEffect(() => {
@@ -180,7 +179,7 @@ const ExternalLoads = () => {
     const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
     const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
 
-    // Split robusto: ignora vírgulas dentro de parênteses
+    // Split robusto: ignora vírgulas dentro de parênteses para evitar truncamento
     const blocks: string[] = [];
     let currentBlock = "";
     let parenLevel = 0;
@@ -203,6 +202,7 @@ const ExternalLoads = () => {
       if (isAgendamento) {
         // Extrai cidade antes do parêntese ou do traço
         let cityName = block.split(/[\(\-]/)[0].trim();
+        // Limpeza profunda do nome da cidade
         cityName = cityName.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
         
         const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
@@ -239,7 +239,7 @@ const ExternalLoads = () => {
             }
           });
         } else {
-          // Fallback para blocos simples
+          // Fallback para blocos simples sem parênteses
           let cityName = block.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
           const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
           deliveries.push({
@@ -269,7 +269,6 @@ const ExternalLoads = () => {
 
       if (rows.length < 2) throw new Error("Planilha vazia ou inválida.");
 
-      // Filtra linhas vazias e garante que temos as colunas necessárias
       const dataRows = rows.slice(1).filter(r => r[1] && String(r[1]).trim() !== "");
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
@@ -278,6 +277,7 @@ const ExternalLoads = () => {
         const mainWeightStr = String(row[4] || '0');
         const mainFreightType = String(row[5] || 'CIF').toUpperCase();
         
+        // Limpeza radical da UF: apenas as 2 primeiras letras
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
