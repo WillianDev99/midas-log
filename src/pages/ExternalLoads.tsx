@@ -180,7 +180,6 @@ const ExternalLoads = () => {
     const splitCityUF = (str: string) => {
       let raw = str.trim();
       
-      // Regra extra: Se houver "AGENDAMENTO" ou "AGENDA" fora de parênteses, limpa tudo a partir do traço ou espaço que o precede
       if (raw.toUpperCase().includes("AGENDAMENTO") || raw.toUpperCase().includes("AGENDA")) {
         raw = raw.split(/[-–—(]/)[0].trim();
         raw = raw.replace(/AGENDAMENTO.*/i, '').trim();
@@ -218,8 +217,6 @@ const ExternalLoads = () => {
     const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
 
     blocks.forEach(block => {
-      const isAgendamento = block.toUpperCase().includes("AGENDAMENTO") || block.toUpperCase().includes("AGENDA");
-      
       const match = block.match(/^(.*?)\s*\((.*)\)$/);
       
       if (match) {
@@ -227,7 +224,30 @@ const ExternalLoads = () => {
         const details = match[2].trim();
         const { city, uf } = splitCityUF(rawCity);
         
-        if (isAgendamento || details.toUpperCase().includes("AGENDAMENTO") || details.toUpperCase().includes("AGENDA")) {
+        // Tenta extrair pesos de dentro dos parênteses
+        const parts = details.split(/[\/\+]/);
+        let foundWeights = false;
+
+        parts.forEach(part => {
+          const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
+          if (weightMatch) {
+            foundWeights = true;
+            const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
+            const t = weightMatch[2].toUpperCase();
+            const aliquot = getAliquot(city, uf, t, w);
+            deliveries.push({
+              city,
+              uf,
+              type: t,
+              weight: w,
+              aliquot,
+              freight: w * aliquot
+            });
+          }
+        });
+
+        // Se não encontrou pesos mas tem agendamento, usa o peso principal
+        if (!foundWeights) {
           const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
           deliveries.push({
             city,
@@ -236,24 +256,6 @@ const ExternalLoads = () => {
             weight: mainWeight,
             aliquot,
             freight: mainWeight * aliquot
-          });
-        } else {
-          const parts = details.split(/[\/\+]/);
-          parts.forEach(part => {
-            const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
-            if (weightMatch) {
-              const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
-              const t = weightMatch[2].toUpperCase();
-              const aliquot = getAliquot(city, uf, t, w);
-              deliveries.push({
-                city,
-                uf,
-                type: t,
-                weight: w,
-                aliquot,
-                freight: w * aliquot
-              });
-            }
           });
         }
       } else {
@@ -409,6 +411,94 @@ const ExternalLoads = () => {
 
   const handleFilterChange = (col: string, value: string) => {
     setColumnFilters(prev => ({ ...prev, [col]: value }));
+  };
+
+  const handlePrintDetailed = (load: ExternalLoad) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const logoUrl = window.location.origin + "/logo.png";
+    const totalToPayFormatted = (load.totalToPay || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const content = `
+      <html>
+        <head>
+          <title>Ordem de Carregamento - Midas Log</title>
+          <style>
+            body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #f59e0b; padding-bottom: 20px; margin-bottom: 30px; }
+            .logo { height: 70px; }
+            .title { font-size: 28px; font-weight: bold; color: #1e293b; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; }
+            .info-item { font-size: 14px; }
+            .info-label { font-weight: bold; color: #64748b; text-transform: uppercase; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #1e293b; color: white; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
+            td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
+            .total-row { background: #f1f5f9; font-weight: bold; font-size: 16px; }
+            .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: center; font-weight: bold; color: #b91c1c; font-size: 18px; }
+            .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; pt: 20px; }
+            @media print { .no-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${logoUrl}" class="logo" />
+            <div class="title">Ordem de Carregamento</div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Rota</div>
+              <div style="font-size: 16px; font-weight: bold;">${load.rota}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Data de Emissão</div>
+              <div>${new Date().toLocaleDateString('pt-BR')}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 60px">Entr.</th>
+                <th>Cidade</th>
+                <th style="width: 60px">UF</th>
+                <th style="width: 100px">Tipo</th>
+                <th style="width: 120px">Peso (KG)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${load.parsedDeliveries?.map((d, idx) => `
+                <tr>
+                  <td style="text-align: center">${idx + 1}</td>
+                  <td style="text-transform: uppercase">${d.city}</td>
+                  <td style="text-align: center; font-weight: bold;">${d.uf}</td>
+                  <td style="text-align: center">${d.type}</td>
+                  <td style="text-align: right">${d.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              `).join('')}
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right">VALOR DO FRETE:</td>
+                <td style="text-align: right; color: #15803d;">R$ ${totalToPayFormatted}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="note">
+            ⚠️ O DESCARREGO SERÁ POR CONTA DO MOTORISTA.
+          </div>
+
+          <div class="footer">
+            Midas Logística - Eficiência em Movimento<br>
+            Documento gerado eletronicamente em ${new Date().toLocaleString('pt-BR')}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
   };
 
   const handlePrint = () => {
@@ -694,14 +784,22 @@ const ExternalLoads = () => {
                             </Button>
                           </DialogTrigger>
                           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-                            <DialogHeader>
-                              <DialogTitle className="flex items-center gap-3">
-                                <img src="/logo.png" className="h-8 w-auto" />
-                                Detalhamento da Carga
-                              </DialogTitle>
-                              <DialogDescription className="font-bold text-slate-900">
-                                Rota: {load.rota}
-                              </DialogDescription>
+                            <DialogHeader className="flex flex-row items-center justify-between pr-8">
+                              <div className="flex flex-col gap-1">
+                                <DialogTitle className="flex items-center gap-3">
+                                  <img src="/logo.png" className="h-8 w-auto" />
+                                  Detalhamento da Carga
+                                </DialogTitle>
+                                <DialogDescription className="font-bold text-slate-900">
+                                  Rota: {load.rota}
+                                </DialogDescription>
+                              </div>
+                              <Button 
+                                onClick={() => handlePrintDetailed(load)} 
+                                className="bg-slate-900 hover:bg-slate-800 text-white gap-2"
+                              >
+                                <Printer size={16} /> Imprimir para Motorista
+                              </Button>
                             </DialogHeader>
                             
                             <div className="mt-4">
