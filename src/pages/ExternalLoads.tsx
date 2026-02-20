@@ -126,17 +126,13 @@ const ExternalLoads = () => {
   };
 
   const getAliquot = (city: string, uf: string, type: string, weight: number) => {
-    // Limpeza profunda da cidade: remove sufixos de UF (ex: -MA) e traços residuais
-    const cleanCityName = city.trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
-    const normCity = normalizeText(cleanCityName);
-    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
+    const normCity = normalizeText(city);
+    const cleanUF = uf.substring(0, 2).toUpperCase();
 
     if (type === 'CIF') {
-      const entry = freightTables.cif.find(row => {
-        const rowCity = normalizeText(String(row['B'] || ''));
-        const rowUF = String(row['E'] || '').toUpperCase().replace(/[^A-Z]/g, '').substring(0, 2);
-        return rowCity === normCity && rowUF === cleanUF;
-      });
+      const matches = freightTables.cif.filter(row => normalizeText(String(row['B'] || '')) === normCity);
+      const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
+      
       if (!entry) return 0;
       
       let val = 0;
@@ -146,11 +142,9 @@ const ExternalLoads = () => {
       
       return val / 1000;
     } else {
-      const entry = freightTables.fob.find(row => {
-        const rowCity = normalizeText(String(row['A'] || ''));
-        const rowRoute = String(row['B'] || '').toUpperCase();
-        return rowCity === normCity && rowRoute.includes(cleanUF);
-      });
+      const matches = freightTables.fob.filter(row => normalizeText(String(row['A'] || '')) === normCity);
+      const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['B'] || '').toUpperCase().includes(cleanUF));
+      
       if (!entry) return 0;
 
       if (weight <= 3000) return parseFloat(String(entry['C'] || 0));
@@ -180,40 +174,62 @@ const ExternalLoads = () => {
     }
   };
 
-  const parseRota = (rotaStr: string, uf: string) => {
+  const parseRota = (rotaStr: string, uf: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
-    const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [rotaStr];
-    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
+    const blocks = rotaStr.split(',').map(b => b.trim());
     
-    cityBlocks.forEach(block => {
-      const match = block.match(/(.*?)\s*\((.*?)\)/);
-      if (match) {
-        const rawCityName = match[1].trim();
-        // Remove sufixo de UF e traços extras do nome da cidade para exibição e busca
-        const cityName = rawCityName.replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
-        const content = match[2];
-        const deliveryParts = content.split(/[\/\+]/);
+    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
+    const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
+
+    blocks.forEach(block => {
+      let cityName = "";
+      let isAgendamento = block.toUpperCase().includes("AGENDAMENTO");
+      
+      const parenMatch = block.match(/(.*?)\s*\((.*?)\)/);
+      
+      if (parenMatch) {
+        cityName = parenMatch[1].trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
+        const content = parenMatch[2].trim();
         
-        deliveryParts.forEach(part => {
-          const cleanPart = part.trim();
-          if (!cleanPart) return;
-          
-          const weightMatch = cleanPart.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
-          if (weightMatch) {
-            const weightStr = weightMatch[1].replace(/\./g, '').replace(',', '.');
-            const weight = parseFloat(weightStr);
-            const type = weightMatch[2].toUpperCase();
-            const aliquot = getAliquot(cityName, cleanUF, type, weight);
-            
-            deliveries.push({
-              city: cityName,
-              uf: cleanUF,
-              type,
-              weight,
-              aliquot: aliquot,
-              freight: weight * aliquot
-            });
-          }
+        if (content.toUpperCase().includes("AGENDAMENTO")) {
+          const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
+          deliveries.push({
+            city: cityName,
+            uf: cleanUF,
+            type: mainFreightType,
+            weight: mainWeight,
+            aliquot,
+            freight: mainWeight * aliquot
+          });
+        } else {
+          const parts = content.split(/[\/\+]/);
+          parts.forEach(part => {
+            const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
+            if (weightMatch) {
+              const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
+              const t = weightMatch[2].toUpperCase();
+              const aliquot = getAliquot(cityName, cleanUF, t, w);
+              deliveries.push({
+                city: cityName,
+                uf: cleanUF,
+                type: t,
+                weight: w,
+                aliquot,
+                freight: w * aliquot
+              });
+            }
+          });
+        }
+      } else if (isAgendamento) {
+        cityName = block.split(/[-–—]/)[0].trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
+        const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
+        deliveries.push({
+          city: cityName,
+          uf: cleanUF,
+          type: mainFreightType,
+          weight: mainWeight,
+          aliquot,
+          freight: mainWeight * aliquot
         });
       }
     });
@@ -237,8 +253,13 @@ const ExternalLoads = () => {
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = String(row[1] || '');
         const rawUF = String(row[3] || '');
+        const mainWeightStr = String(row[4] || '0');
+        const mainFreightType = String(row[5] || 'CIF').toUpperCase();
+        
+        // Limpeza radical da UF: apenas as 2 primeiras letras
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-        const parsed = parseRota(rota, cleanUF);
+        
+        const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
         return {
@@ -247,8 +268,8 @@ const ExternalLoads = () => {
           rota: rota,
           entregas: String(row[2] || ''),
           uf: cleanUF,
-          peso: String(row[4] || ''),
-          frete: String(row[5] || ''),
+          peso: mainWeightStr,
+          frete: mainFreightType,
           observacoes: String(row[6] || ''),
           status: String(row[7] || ''),
           parsedDeliveries: parsed,
@@ -651,7 +672,8 @@ const ExternalLoads = () => {
                                 <TableHeader className="bg-slate-900">
                                   <TableRow>
                                     <TableHead className="text-white text-[10px] uppercase">Entregas</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">Cidade/UF</TableHead>
+                                    <TableHead className="text-white text-[10px] uppercase">Cidade</TableHead>
+                                    <TableHead className="text-white text-[10px] uppercase">UF</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">CIF/FOB</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">Peso</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">Alíquota</TableHead>
@@ -662,7 +684,8 @@ const ExternalLoads = () => {
                                   {load.parsedDeliveries?.map((delivery, dIdx) => (
                                     <TableRow key={dIdx}>
                                       <TableCell className="text-xs font-bold">{dIdx + 1}</TableCell>
-                                      <TableCell className="text-xs">{delivery.city}-{delivery.uf}</TableCell>
+                                      <TableCell className="text-xs uppercase">{delivery.city}</TableCell>
+                                      <TableCell className="text-xs font-bold">{delivery.uf}</TableCell>
                                       <TableCell className="text-xs">
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${delivery.type === 'CIF' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
                                           {delivery.type}
@@ -759,7 +782,7 @@ const ExternalLoads = () => {
                                     </TableRow>
                                   ))}
                                   <TableRow className="bg-slate-50 font-bold">
-                                    <TableCell colSpan={3} className="text-right uppercase text-[10px]">Total:</TableCell>
+                                    <TableCell colSpan={4} className="text-right uppercase text-[10px]">Total:</TableCell>
                                     <TableCell className="text-xs">
                                       {load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </TableCell>
