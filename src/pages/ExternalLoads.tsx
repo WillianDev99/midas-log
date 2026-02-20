@@ -58,7 +58,6 @@ interface ExternalLoad {
   frete: string;
   observacoes: string;
   status: string;
-  isManual?: boolean;
   parsedDeliveries?: any[];
   totalToPay?: number;
 }
@@ -80,17 +79,6 @@ const ExternalLoads = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
   const [manualSearch, setManualSearch] = useState("");
-  const [isAddManualOpen, setIsAddManualOpen] = useState(false);
-  const [newManualLoad, setNewManualLoad] = useState<Partial<ExternalLoad>>({
-    data: new Date().toLocaleDateString('pt-BR'),
-    rota: '',
-    entregas: '1',
-    uf: '',
-    peso: '0',
-    frete: 'CIF',
-    status: 'AGENCIANDO',
-    isManual: true
-  });
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
 
@@ -214,9 +202,6 @@ const ExternalLoads = () => {
       return { city: raw, uf };
     };
 
-    // Novo motor de parsing: Divide por blocos de parênteses
-    const blocks: string[] = [];
-    let currentPos = 0;
     const regex = /([^\(]+)\(([^\)]+)\)/g;
     let match;
 
@@ -258,10 +243,8 @@ const ExternalLoads = () => {
           freight: mainWeight * aliquot
         });
       }
-      currentPos = regex.lastIndex;
     }
 
-    // Se não encontrou nenhum bloco com parênteses, tenta o split tradicional
     if (deliveries.length === 0) {
       const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
       const simpleBlocks = rotaStr.split(/[,.]/);
@@ -321,10 +304,6 @@ const ExternalLoads = () => {
         };
       });
 
-      // Mantém as cargas manuais atuais
-      const manualLoads = currentLoads.filter(l => l.isManual);
-      const finalLoads = [...manualLoads, ...newLoads];
-
       await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
       if (currentLoads.length > 0) {
         await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
@@ -332,7 +311,7 @@ const ExternalLoads = () => {
 
       const { error: insertError } = await supabase.from('hidracor_external_loads').insert([{
         user_id: user?.id,
-        loads: finalLoads,
+        loads: newLoads,
         version: 'current',
         updated_at: new Date().toISOString()
       }]);
@@ -340,7 +319,7 @@ const ExternalLoads = () => {
       if (insertError) throw insertError;
 
       setPreviousLoads(currentLoads);
-      setCurrentLoads(finalLoads);
+      setCurrentLoads(newLoads);
       setViewMode('current');
       showSuccess(`Dados atualizados!`);
     } catch (error: any) {
@@ -348,39 +327,6 @@ const ExternalLoads = () => {
     } finally {
       setUpdating(false);
     }
-  };
-
-  const handleAddManualLoad = async () => {
-    if (!newManualLoad.rota || !newManualLoad.uf) {
-      showError("Preencha Rota e UF.");
-      return;
-    }
-
-    const parsed = parseRota(newManualLoad.rota || '', newManualLoad.uf || '', newManualLoad.peso || '0', newManualLoad.frete || 'CIF');
-    const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
-    
-    const load: ExternalLoad = {
-      ...newManualLoad as ExternalLoad,
-      id: `manual-${Date.now()}`,
-      parsedDeliveries: parsed,
-      totalToPay: totalFreight * 0.7
-    };
-
-    const updatedLoads = [load, ...currentLoads];
-    setCurrentLoads(updatedLoads);
-    
-    await supabase.from('hidracor_external_loads').update({ loads: updatedLoads }).eq('version', 'current');
-    
-    setIsAddManualOpen(false);
-    showSuccess("Carga manual adicionada!");
-  };
-
-  const handleDeleteLoad = async (id: string) => {
-    if (!confirm("Excluir esta carga?")) return;
-    const updated = currentLoads.filter(l => l.id !== id);
-    setCurrentLoads(updated);
-    await supabase.from('hidracor_external_loads').update({ loads: updated }).eq('version', 'current');
-    showSuccess("Carga removida.");
   };
 
   const handleSort = (key: string) => {
@@ -524,6 +470,75 @@ const ExternalLoads = () => {
     printWindow.document.close();
   };
 
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const logoUrl = window.location.origin + "/logo.png";
+
+    const content = `
+      <html>
+        <head>
+          <title>Cargas Disponíveis - Midas Log</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #333; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
+            .logo { height: 60px; }
+            .title { font-size: 24px; font-weight: bold; color: #1e293b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #f8fafc; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
+            td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
+            .rota-cell { max-width: 400px; word-wrap: break-word; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #64748b; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${logoUrl}" class="logo" />
+            <div class="title">Cargas Disponíveis</div>
+            <div style="text-align: right">
+              <div style="font-weight: bold">Midas Logística</div>
+              <div style="font-size: 12px">${new Date().toLocaleDateString()}</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Rota</th>
+                <th>Entregas</th>
+                <th>UF</th>
+                <th>Peso Total</th>
+                <th>Frete</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredData.map(load => `
+                <tr>
+                  <td class="rota-cell"><strong>${load.rota}</strong></td>
+                  <td style="text-align: center">${load.entregas}</td>
+                  <td style="text-align: center"><strong>${load.uf}</strong></td>
+                  <td style="text-align: right">${load.peso}</td>
+                  <td style="text-align: center">${load.frete}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            © ${new Date().getFullYear()} Midas Logística - Eficiência em Movimento
+          </div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => { window.print(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
@@ -541,36 +556,9 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <Dialog open={isAddManualOpen} onOpenChange={setIsAddManualOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
-                <Plus size={16} /> Nova Carga Manual
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Adicionar Carga Manual</DialogTitle>
-                <DialogDescription>Preencha os dados para adicionar uma carga fora da planilha.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="rota" className="text-right">Rota</Label>
-                  <Input id="rota" className="col-span-3" value={newManualLoad.rota} onChange={e => setNewManualLoad({...newManualLoad, rota: e.target.value})} />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="uf" className="text-right">UF</Label>
-                  <Input id="uf" className="col-span-3" value={newManualLoad.uf} onChange={e => setNewManualLoad({...newManualLoad, uf: e.target.value.toUpperCase()})} />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="peso" className="text-right">Peso Total</Label>
-                  <Input id="peso" type="number" className="col-span-3" value={newManualLoad.peso} onChange={e => setNewManualLoad({...newManualLoad, peso: e.target.value})} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleAddManualLoad}>Salvar Carga</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
+            <Printer size={16} /> <span className="hidden sm:inline">Imprimir para Motorista</span>
+          </Button>
 
           <Button variant="outline" size="sm" onClick={updateFromGoogleSheets} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
             {updating ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
@@ -610,7 +598,7 @@ const ExternalLoads = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredData.map((load) => (
-                    <TableRow key={load.id} className={`hover:bg-slate-50/50 ${load.isManual ? 'bg-blue-50/50' : ''}`}>
+                    <TableRow key={load.id} className="hover:bg-slate-50/50">
                       <TableCell className="p-2 flex items-center gap-1">
                         <Dialog>
                           <DialogTrigger asChild>
@@ -681,13 +669,13 @@ const ExternalLoads = () => {
                                                         let finalVal = 0;
                                                         const weight = delivery.weight;
                                                         if (delivery.type === 'CIF') {
-                                                          if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
-                                                          else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
-                                                          else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
+                                                          if (weight <= 7000) finalVal = parseFloat(String(entry['I'] || 0)) / 1000;
+                                                          else if (weight <= 17000) finalVal = parseFloat(String(entry['J'] || 0)) / 1000;
+                                                          else finalVal = parseFloat(String(entry['K'] || 0)) / 1000;
                                                         } else {
-                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0));
-                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0));
-                                                          else finalVal = parseFloat(String(row['I'] || 0));
+                                                          if (weight <= 3000) finalVal = parseFloat(String(entry['C'] || 0));
+                                                          else if (weight <= 14000) finalVal = parseFloat(String(entry['F'] || 0));
+                                                          else finalVal = parseFloat(String(entry['I'] || 0));
                                                         }
                                                         handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
                                                       }}>
@@ -744,11 +732,6 @@ const ExternalLoads = () => {
                             </div>
                           </DialogContent>
                         </Dialog>
-                        {load.isManual && (
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteLoad(load.id)}>
-                            <Trash2 size={16} />
-                          </Button>
-                        )}
                       </TableCell>
                       <TableCell className="text-[11px]">{load.data}</TableCell>
                       <TableCell className="text-[11px] font-medium max-w-[300px] truncate" title={load.rota}>{load.rota}</TableCell>
