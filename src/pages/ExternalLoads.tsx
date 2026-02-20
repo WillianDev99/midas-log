@@ -76,6 +76,7 @@ const ExternalLoads = () => {
   const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
+  const [manualSearch, setManualSearch] = useState("");
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=csv&gid=0";
 
@@ -97,16 +98,14 @@ const ExternalLoads = () => {
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       
-      // Tabela CIF (Geralmente a primeira ou nomeada)
       const cifSheet = workbook.Sheets[workbook.SheetNames[0]];
       const cifData = XLSX.utils.sheet_to_json(cifSheet, { header: 'A' });
       
-      // Tabela FOB (Geralmente a segunda ou nomeada)
       const fobSheet = workbook.Sheets[workbook.SheetNames[1]];
       const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
 
       setFreightTables({
-        cif: cifData.slice(1), // Pula cabeçalho
+        cif: cifData.slice(1),
         fob: fobData.slice(1)
       });
     } catch (error) {
@@ -125,13 +124,12 @@ const ExternalLoads = () => {
       );
       if (!entry) return 0;
       
-      // Colunas I (<=7t), J (7-17t), K (>17t) - Valores por tonelada
       let val = 0;
       if (weight <= 7000) val = parseFloat(String(entry['I'] || 0));
       else if (weight <= 17000) val = parseFloat(String(entry['J'] || 0));
       else val = parseFloat(String(entry['K'] || 0));
       
-      return val / 1000; // Divide por 1000 para valor por kg
+      return val / 1000;
     } else {
       const entry = freightTables.fob.find(row => {
         const rowCity = normalizeText(String(row['A'] || ''));
@@ -140,7 +138,6 @@ const ExternalLoads = () => {
       });
       if (!entry) return 0;
 
-      // Colunas C (<=3t), F (3-14t), I (>14t) - Valores por kg
       if (weight <= 3000) return parseFloat(String(entry['C'] || 0));
       if (weight <= 14000) return parseFloat(String(entry['F'] || 0));
       return parseFloat(String(entry['I'] || 0));
@@ -170,24 +167,20 @@ const ExternalLoads = () => {
 
   const parseRota = (rotaStr: string, uf: string) => {
     const deliveries: any[] = [];
-    // Regex melhorada para capturar blocos de cidades e seus parênteses
-    // Ex: BANZAÊ (6.453 FOB), PAULO AFONSO (4.900 FOB / 777 CIF)
-    const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [];
+    // Regex mais robusta para capturar blocos de cidades e seus parênteses
+    const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [rotaStr];
     
     cityBlocks.forEach(block => {
       const match = block.match(/(.*?)\s*\((.*?)\)/);
       if (match) {
         const cityName = match[1].trim();
         const content = match[2];
-        // Divide entregas por / ou +
         const deliveryParts = content.split(/[\/\+]/);
         
         deliveryParts.forEach(part => {
           const cleanPart = part.trim();
           if (!cleanPart) return;
           
-          // Extrai peso e tipo (CIF ou FOB)
-          // Suporta formatos como "6.453 FOB", "59KG CIF", "1KG FOB"
           const weightMatch = cleanPart.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
           if (weightMatch) {
             const weightStr = weightMatch[1].replace(/\./g, '').replace(',', '.');
@@ -216,33 +209,33 @@ const ExternalLoads = () => {
       const response = await fetch(SHEET_URL);
       const csvText = await response.text();
       
-      const rows = csvText.split('\n').map(row => {
-        const matches = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-        return matches ? matches.map(m => m.replace(/^"|"$/g, '')) : [];
-      });
+      // Usando XLSX para parsear o CSV de forma robusta
+      const workbook = XLSX.read(csvText, { type: 'string' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
       if (rows.length < 2) throw new Error("Planilha vazia ou inválida.");
 
       const dataRows = rows.slice(1).filter(r => r.length >= 8);
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = row[1] || '';
-        const uf = row[3] || '';
+        const rota = String(row[1] || '');
+        const uf = String(row[3] || '');
         const parsed = parseRota(rota, uf);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: row[0] || '',
+          data: String(row[0] || ''),
           rota: rota,
-          entregas: row[2] || '',
+          entregas: String(row[2] || ''),
           uf: uf,
-          peso: row[4] || '',
-          frete: row[5] || '',
-          observacoes: row[6] || '',
-          status: row[7] || '',
+          peso: String(row[4] || ''),
+          frete: String(row[5] || ''),
+          observacoes: String(row[6] || ''),
+          status: String(row[7] || ''),
           parsedDeliveries: parsed,
-          totalToPay: totalFreight * 0.7 // Padrão: 30% de margem
+          totalToPay: totalFreight * 0.7
         };
       });
 
@@ -326,7 +319,6 @@ const ExternalLoads = () => {
       if (l.id === loadId && l.parsedDeliveries) {
         const newDeliveries = [...l.parsedDeliveries];
         newDeliveries[deliveryIdx] = { ...newDeliveries[deliveryIdx], ...updates };
-        // Recalcula frete da entrega se peso ou alíquota mudar
         if (updates.weight !== undefined || updates.aliquot !== undefined) {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
@@ -336,6 +328,10 @@ const ExternalLoads = () => {
     });
     if (viewMode === 'current') setCurrentLoads(updateFn);
     else setPreviousLoads(updateFn);
+  };
+
+  const handleFilterChange = (col: string, value: string) => {
+    setColumnFilters(prev => ({ ...prev, [col]: value }));
   };
 
   const handlePrint = () => {
@@ -349,7 +345,7 @@ const ExternalLoads = () => {
           <style>
             body { font-family: sans-serif; padding: 20px; color: #333; }
             .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
-            .logo { height: 50px; }
+            .logo { height: 60px; }
             .title { font-size: 24px; font-weight: bold; color: #1e293b; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th { background: #f8fafc; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
@@ -400,8 +396,6 @@ const ExternalLoads = () => {
     printWindow.document.write(content);
     printWindow.document.close();
   };
-
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
@@ -666,42 +660,72 @@ const ExternalLoads = () => {
                                             value={delivery.aliquot}
                                             onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })}
                                           />
-                                          {delivery.aliquot === 0 && (
-                                            <Popover>
-                                              <PopoverTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500"><Search size={12} /></Button>
-                                              </PopoverTrigger>
-                                              <PopoverContent className="w-64 p-2">
-                                                <p className="text-[10px] text-slate-500 mb-2">Cidade não encontrada na tabela. Selecione uma alíquota manualmente ou busque uma cidade próxima.</p>
-                                                <div className="max-h-40 overflow-y-auto space-y-1">
-                                                  {(delivery.type === 'CIF' ? freightTables.cif : freightTables.fob).slice(0, 20).map((row: any, idx: number) => (
-                                                    <Button 
-                                                      key={idx} 
-                                                      variant="ghost" 
-                                                      className="w-full justify-start text-[10px] h-7 px-2"
-                                                      onClick={() => {
-                                                        const weight = delivery.weight;
-                                                        let val = 0;
-                                                        if (delivery.type === 'CIF') {
-                                                          if (weight <= 7000) val = parseFloat(String(row['I'] || 0));
-                                                          else if (weight <= 17000) val = parseFloat(String(row['J'] || 0));
-                                                          else val = parseFloat(String(row['K'] || 0));
-                                                          val = val / 1000;
-                                                        } else {
-                                                          if (weight <= 3000) val = parseFloat(String(row['C'] || 0));
-                                                          else if (weight <= 14000) val = parseFloat(String(row['F'] || 0));
-                                                          else val = parseFloat(String(row['I'] || 0));
-                                                        }
-                                                        handleUpdateDelivery(load.id, dIdx, { aliquot: val });
-                                                      }}
-                                                    >
-                                                      {delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}
-                                                    </Button>
-                                                  ))}
+                                          <Popover>
+                                            <PopoverTrigger asChild>
+                                              <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600"><Search size={12} /></Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-80 p-2">
+                                              <div className="space-y-2">
+                                                <Input 
+                                                  placeholder="Pesquisar cidade..." 
+                                                  className="h-8 text-xs"
+                                                  value={manualSearch}
+                                                  onChange={(e) => setManualSearch(e.target.value)}
+                                                />
+                                                <div className="max-h-60 overflow-y-auto space-y-1">
+                                                  {(delivery.type === 'CIF' ? freightTables.cif : freightTables.fob)
+                                                    .filter((row: any) => {
+                                                      const name = delivery.type === 'CIF' ? String(row['B'] || '') : String(row['A'] || '');
+                                                      return normalizeText(name).includes(normalizeText(manualSearch));
+                                                    })
+                                                    .slice(0, 50)
+                                                    .map((row: any, idx: number) => {
+                                                      const weight = delivery.weight;
+                                                      let v1 = 0, v2 = 0, v3 = 0;
+                                                      if (delivery.type === 'CIF') {
+                                                        v1 = parseFloat(String(row['I'] || 0)) / 1000;
+                                                        v2 = parseFloat(String(row['J'] || 0)) / 1000;
+                                                        v3 = parseFloat(String(row['K'] || 0)) / 1000;
+                                                      } else {
+                                                        v1 = parseFloat(String(row['C'] || 0));
+                                                        v2 = parseFloat(String(row['F'] || 0));
+                                                        v3 = parseFloat(String(row['I'] || 0));
+                                                      }
+
+                                                      return (
+                                                        <Button 
+                                                          key={idx} 
+                                                          variant="ghost" 
+                                                          className="w-full flex flex-col items-start text-[10px] h-auto py-2 px-2 border-b last:border-0"
+                                                          onClick={() => {
+                                                            let finalVal = 0;
+                                                            if (delivery.type === 'CIF') {
+                                                              if (weight <= 7000) finalVal = v1;
+                                                              else if (weight <= 17000) finalVal = v2;
+                                                              else finalVal = v3;
+                                                            } else {
+                                                              if (weight <= 3000) finalVal = v1;
+                                                              else if (weight <= 14000) finalVal = v2;
+                                                              else finalVal = v3;
+                                                            }
+                                                            handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
+                                                          }}
+                                                        >
+                                                          <div className="font-bold uppercase">
+                                                            {delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}
+                                                          </div>
+                                                          <div className="flex gap-2 text-slate-500">
+                                                            <span>{v1.toFixed(4)}</span>
+                                                            <span>{v2.toFixed(4)}</span>
+                                                            <span>{v3.toFixed(4)}</span>
+                                                          </div>
+                                                        </Button>
+                                                      );
+                                                    })}
                                                 </div>
-                                              </PopoverContent>
-                                            </Popover>
-                                          )}
+                                              </div>
+                                            </PopoverContent>
+                                          </Popover>
                                         </div>
                                       </TableCell>
                                       <TableCell className="text-xs font-bold">

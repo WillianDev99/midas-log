@@ -12,9 +12,9 @@ const Navbar = () => {
 
   return (
     <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+      <div className="container mx-auto px-4 h-20 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+          <img src="/logo.png" alt="Midas Log" className="h-14 w-auto" />
         </Link>
         
         <div className="flex items-center gap-6">
