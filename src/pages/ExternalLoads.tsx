@@ -126,8 +126,10 @@ const ExternalLoads = () => {
   };
 
   const getAliquot = (city: string, uf: string, type: string, weight: number) => {
-    const normCity = normalizeText(city);
-    const cleanUF = uf.replace(/[^A-Z]/g, '').substring(0, 2).toUpperCase();
+    // Limpeza profunda da cidade: remove sufixos de UF (ex: -MA) e traços residuais
+    const cleanCityName = city.trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
+    const normCity = normalizeText(cleanCityName);
+    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
 
     if (type === 'CIF') {
       const entry = freightTables.cif.find(row => {
@@ -181,12 +183,14 @@ const ExternalLoads = () => {
   const parseRota = (rotaStr: string, uf: string) => {
     const deliveries: any[] = [];
     const cityBlocks = rotaStr.match(/[^,]+?\s*\(.*?\)/g) || [rotaStr];
-    const cleanUF = uf.replace(/[^A-Z]/g, '').substring(0, 2).toUpperCase();
+    const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
     
     cityBlocks.forEach(block => {
       const match = block.match(/(.*?)\s*\((.*?)\)/);
       if (match) {
-        const cityName = match[1].trim();
+        const rawCityName = match[1].trim();
+        // Remove sufixo de UF e traços extras do nome da cidade para exibição e busca
+        const cityName = rawCityName.replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
         const content = match[2];
         const deliveryParts = content.split(/[\/\+]/);
         
@@ -233,7 +237,6 @@ const ExternalLoads = () => {
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = String(row[1] || '');
         const rawUF = String(row[3] || '');
-        // Limpeza definitiva da UF: pega apenas as 2 primeiras letras
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         const parsed = parseRota(rota, cleanUF);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
