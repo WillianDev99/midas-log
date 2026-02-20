@@ -77,7 +77,8 @@ const ExternalLoads = () => {
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
   const [manualSearch, setManualSearch] = useState("");
 
-  const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=csv&gid=0";
+  // Mudança para formato XLSX para evitar quebra de colunas por vírgula
+  const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
 
   useEffect(() => {
     const init = async () => {
@@ -176,33 +177,51 @@ const ExternalLoads = () => {
 
   const parseRota = (rotaStr: string, uf: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
-    const blocks = rotaStr.split(',').map(b => b.trim());
-    
     const cleanUF = uf.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
     const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
 
+    // Split robusto: ignora vírgulas dentro de parênteses
+    const blocks: string[] = [];
+    let currentBlock = "";
+    let parenLevel = 0;
+    for (let i = 0; i < rotaStr.length; i++) {
+      const char = rotaStr[i];
+      if (char === '(') parenLevel++;
+      if (char === ')') parenLevel--;
+      if (char === ',' && parenLevel === 0) {
+        blocks.push(currentBlock.trim());
+        currentBlock = "";
+      } else {
+        currentBlock += char;
+      }
+    }
+    if (currentBlock.trim()) blocks.push(currentBlock.trim());
+
     blocks.forEach(block => {
-      let cityName = "";
-      let isAgendamento = block.toUpperCase().includes("AGENDAMENTO");
+      const isAgendamento = block.toUpperCase().includes("AGENDAMENTO");
       
-      const parenMatch = block.match(/(.*?)\s*\((.*?)\)/);
-      
-      if (parenMatch) {
-        cityName = parenMatch[1].trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
-        const content = parenMatch[2].trim();
+      if (isAgendamento) {
+        // Extrai cidade antes do parêntese ou do traço
+        let cityName = block.split(/[\(\-]/)[0].trim();
+        cityName = cityName.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
         
-        if (content.toUpperCase().includes("AGENDAMENTO")) {
-          const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
-          deliveries.push({
-            city: cityName,
-            uf: cleanUF,
-            type: mainFreightType,
-            weight: mainWeight,
-            aliquot,
-            freight: mainWeight * aliquot
-          });
-        } else {
+        const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
+        deliveries.push({
+          city: cityName,
+          uf: cleanUF,
+          type: mainFreightType,
+          weight: mainWeight,
+          aliquot,
+          freight: mainWeight * aliquot
+        });
+      } else {
+        const match = block.match(/(.*?)\s*\((.*?)\)/);
+        if (match) {
+          let cityName = match[1].trim();
+          cityName = cityName.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
+          const content = match[2];
           const parts = content.split(/[\/\+]/);
+          
           parts.forEach(part => {
             const weightMatch = part.match(/([\d\.,]+)\s*(?:KG\s*)?(CIF|FOB)/i);
             if (weightMatch) {
@@ -219,20 +238,22 @@ const ExternalLoads = () => {
               });
             }
           });
+        } else {
+          // Fallback para blocos simples
+          let cityName = block.replace(new RegExp(`-${cleanUF}$`, 'i'), '').replace(/-+$/, '').trim();
+          const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
+          deliveries.push({
+            city: cityName,
+            uf: cleanUF,
+            type: mainFreightType,
+            weight: mainWeight,
+            aliquot,
+            freight: mainWeight * aliquot
+          });
         }
-      } else if (isAgendamento) {
-        cityName = block.split(/[-–—]/)[0].trim().replace(/-[A-Z]{2}$/i, '').replace(/-+$/, '').trim();
-        const aliquot = getAliquot(cityName, cleanUF, mainFreightType, mainWeight);
-        deliveries.push({
-          city: cityName,
-          uf: cleanUF,
-          type: mainFreightType,
-          weight: mainWeight,
-          aliquot,
-          freight: mainWeight * aliquot
-        });
       }
     });
+
     return deliveries;
   };
 
@@ -240,15 +261,16 @@ const ExternalLoads = () => {
     setUpdating(true);
     try {
       const response = await fetch(SHEET_URL);
-      const csvText = await response.text();
+      const arrayBuffer = await response.arrayBuffer();
       
-      const workbook = XLSX.read(csvText, { type: 'string' });
+      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
       if (rows.length < 2) throw new Error("Planilha vazia ou inválida.");
 
-      const dataRows = rows.slice(1).filter(r => r.length >= 8);
+      // Filtra linhas vazias e garante que temos as colunas necessárias
+      const dataRows = rows.slice(1).filter(r => r[1] && String(r[1]).trim() !== "");
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = String(row[1] || '');
@@ -256,7 +278,6 @@ const ExternalLoads = () => {
         const mainWeightStr = String(row[4] || '0');
         const mainFreightType = String(row[5] || 'CIF').toUpperCase();
         
-        // Limpeza radical da UF: apenas as 2 primeiras letras
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
