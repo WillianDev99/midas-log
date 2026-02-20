@@ -137,6 +137,7 @@ const AdminDashboard = () => {
                 title="Cargas Externas Hidracor" 
                 description="Análise e processamento de dados de cargas externas para integração logística."
                 icon={Truck}
+                href="/admin/external-loads"
               />
             </div>
           </TabsContent>
