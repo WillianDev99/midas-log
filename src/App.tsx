@@ -10,6 +10,8 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import AdminDashboard from "./pages/AdminDashboard";
 import HidracorFormatter from "./pages/HidracorFormatter";
+import HidracorLoadsList from "./pages/HidracorLoadsList";
+import HidracorLoadManager from "./pages/HidracorLoadManager";
 import ExternalLoads from "./pages/ExternalLoads";
 import NotFound from "./pages/NotFound";
 
@@ -29,6 +31,8 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/hidracor-formatter" element={<HidracorFormatter />} />
+            <Route path="/admin/hidracor-loads" element={<HidracorLoadsList />} />
+            <Route path="/admin/hidracor-loads/:id" element={<HidracorLoadManager />} />
             <Route path="/admin/external-loads" element={<ExternalLoads />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
