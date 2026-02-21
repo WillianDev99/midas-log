@@ -20,7 +20,8 @@ import {
   ExternalLink,
   Printer,
   Search,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -81,6 +82,7 @@ const ExternalLoads = () => {
   const [manualSearch, setManualSearch] = useState("");
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
+  const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
 
   useEffect(() => {
     const init = async () => {
@@ -185,7 +187,9 @@ const ExternalLoads = () => {
     const deliveries: any[] = [];
     
     const splitCityUF = (str: string) => {
-      let raw = str.trim();
+      // Limpeza rigorosa: remove vírgulas, pontos e espaços no início e fim
+      let raw = str.trim().replace(/^[,.\s]+|[,.\s]+$/g, '');
+      
       if (raw.toUpperCase().includes("AGENDAMENTO") || raw.toUpperCase().includes("AGENDA")) {
         raw = raw.split(/[-–—(]/)[0].trim();
         raw = raw.replace(/AGENDAMENTO.*/i, '').trim();
@@ -560,6 +564,12 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
+          <a href={VIEW_SHEET_URL} target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
+              <FileText size={16} /> <span className="hidden sm:inline">Ver Planilha Original</span>
+            </Button>
+          </a>
+
           <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
             <Printer size={16} /> <span className="hidden sm:inline">Imprimir para Motorista</span>
           </Button>
