@@ -187,7 +187,6 @@ const ExternalLoads = () => {
     const deliveries: any[] = [];
     
     const splitCityUF = (str: string) => {
-      // Limpeza rigorosa: remove vírgulas, pontos e espaços no início e fim
       let raw = str.trim().replace(/^[,.\s]+|[,.\s]+$/g, '');
       
       if (raw.toUpperCase().includes("AGENDAMENTO") || raw.toUpperCase().includes("AGENDA")) {
@@ -407,6 +406,8 @@ const ExternalLoads = () => {
     if (!printWindow) return;
     const logoUrl = window.location.origin + "/logo.png";
     const totalToPayFormatted = formatCurrency(load.totalToPay || 0);
+    const totalWeight = load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0;
+    const totalWeightFormatted = formatCurrency(totalWeight);
 
     const content = `
       <html>
@@ -463,6 +464,10 @@ const ExternalLoads = () => {
                   <td style="text-align: right">${formatCurrency(d.weight)}</td>
                 </tr>
               `).join('')}
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right">PESO TOTAL:</td>
+                <td style="text-align: right;">${totalWeightFormatted} KG</td>
+              </tr>
               <tr class="total-row">
                 <td colspan="4" style="text-align: right">VALOR DO FRETE:</td>
                 <td style="text-align: right; color: #15803d;">R$ ${totalToPayFormatted}</td>
