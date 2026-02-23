@@ -12,6 +12,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import HidracorFormatter from "./pages/HidracorFormatter";
 import HidracorLoadsList from "./pages/HidracorLoadsList";
 import HidracorLoadManager from "./pages/HidracorLoadManager";
+import CerbrasFormatter from "./pages/CerbrasFormatter";
 import ExternalLoads from "./pages/ExternalLoads";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/admin/hidracor-formatter" element={<HidracorFormatter />} />
             <Route path="/admin/hidracor-loads" element={<HidracorLoadsList />} />
             <Route path="/admin/hidracor-loads/:id" element={<HidracorLoadManager />} />
+            <Route path="/admin/cerbras-formatter" element={<CerbrasFormatter />} />
             <Route path="/admin/external-loads" element={<ExternalLoads />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

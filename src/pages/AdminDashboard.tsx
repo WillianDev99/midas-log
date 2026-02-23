@@ -148,6 +148,7 @@ const AdminDashboard = () => {
                 title="Formatar Carteira Cerbras" 
                 description="Processamento de dados da carteira Cerbras com saída em planilha formatada."
                 icon={FileSpreadsheet}
+                href="/admin/cerbras-formatter"
               />
               <ToolCard 
                 title="Pesos por Cidade" 
