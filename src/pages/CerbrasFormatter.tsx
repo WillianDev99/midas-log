@@ -152,6 +152,20 @@ const CerbrasFormatter = () => {
     else { setProducts([...products, data[0]]); showSuccess("Produto adicionado!"); }
   };
 
+  const editProduct = async (product: CerbrasProduct) => {
+    const name = prompt("Nome do Produto:", product.product_name);
+    if (!name) return;
+    const m2 = parseFloat(prompt("M² por Palete:", product.unit_m2.toString())?.replace(',', '.') || "0");
+    const peso = parseFloat(prompt("Peso por Palete:", product.unit_peso.toString())?.replace(',', '.') || "0");
+
+    const { error } = await supabase.from('cerbras_products').update({ product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso }).eq('id', product.id);
+    if (error) showError(error.message);
+    else {
+      setProducts(products.map(p => p.id === product.id ? { ...p, product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso } : p));
+      showSuccess("Produto atualizado!");
+    }
+  };
+
   const addRoute = async () => {
     const name = prompt("Nome da Rota:");
     if (!name) return;
@@ -160,13 +174,29 @@ const CerbrasFormatter = () => {
     else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
   };
 
+  const editRoute = async (route: Route) => {
+    const name = prompt("Novo nome da Rota:", route.name);
+    if (!name || name === route.name) return;
+    const { error } = await supabase.from('cerbras_routes').update({ name: name.toUpperCase() }).eq('id', route.id);
+    if (error) showError(error.message);
+    else { setRoutes(routes.map(r => r.id === route.id ? { ...r, name: name.toUpperCase() } : r)); showSuccess("Rota atualizada!"); }
+  };
+
   const addCity = async (routeId: string) => {
-    const input = prompt("Nomes das cidades (separe por vírgula):");
+    const input = prompt("Nomes das cidades (separe por vírgula ou linha):");
     if (!input) return;
-    const names = input.split(',').map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
+    const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
     const { data, error } = await supabase.from('cerbras_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
+  };
+
+  const editCity = async (city: City) => {
+    const name = prompt("Novo nome da Cidade:", city.city_name);
+    if (!name || name === city.city_name) return;
+    const { error } = await supabase.from('cerbras_cities').update({ city_name: name.toUpperCase() }).eq('id', city.id);
+    if (error) showError(error.message);
+    else { setCities(cities.map(c => c.id === city.id ? { ...c, city_name: name.toUpperCase() } : c)); showSuccess("Cidade atualizada!"); }
   };
 
   const addPickupClients = async () => {
@@ -176,6 +206,14 @@ const CerbrasFormatter = () => {
     const { data, error } = await supabase.from('cerbras_pickup_clients').insert(names.map(n => ({ client_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setPickupClients([...pickupClients, ...(data || [])]); showSuccess("Clientes adicionados!"); }
+  };
+
+  const editPickupClient = async (client: PickupClient) => {
+    const name = prompt("Novo nome do Cliente:", client.client_name);
+    if (!name || name === client.client_name) return;
+    const { error } = await supabase.from('cerbras_pickup_clients').update({ client_name: name.toUpperCase() }).eq('id', client.id);
+    if (error) showError(error.message);
+    else { setPickupClients(pickupClients.map(c => c.id === client.id ? { ...c, client_name: name.toUpperCase() } : c)); showSuccess("Cliente atualizado!"); }
   };
 
   const deleteProduct = async (id: string) => {
@@ -190,6 +228,12 @@ const CerbrasFormatter = () => {
     const { error } = await supabase.from('cerbras_routes').delete().eq('id', id);
     if (error) showError(error.message);
     else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); }
+  };
+
+  const deleteCity = async (id: string) => {
+    const { error } = await supabase.from('cerbras_cities').delete().eq('id', id);
+    if (error) showError(error.message);
+    else setCities(cities.filter(c => c.id !== id));
   };
 
   const deletePickupClient = async (id: string) => {
@@ -413,7 +457,7 @@ const CerbrasFormatter = () => {
                           <TableHead className="text-[10px] uppercase">Produto</TableHead>
                           <TableHead className="text-[10px] uppercase">M²</TableHead>
                           <TableHead className="text-[10px] uppercase">Peso</TableHead>
-                          <TableHead className="w-[40px]"></TableHead>
+                          <TableHead className="w-[80px] text-right">Ações</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -422,7 +466,16 @@ const CerbrasFormatter = () => {
                             <TableCell className="text-[10px] font-bold uppercase">{p.product_name}</TableCell>
                             <TableCell className="text-[10px]">{p.unit_m2}</TableCell>
                             <TableCell className="text-[10px]">{p.unit_peso}</TableCell>
-                            <TableCell><Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(p.id)}><Trash2 size={12} /></Button></TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600" onClick={() => editProduct(p)}>
+                                  <Edit2 size={12} />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(p.id)}>
+                                  <Trash2 size={12} />
+                                </Button>
+                              </div>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -441,13 +494,22 @@ const CerbrasFormatter = () => {
                         <div className="flex justify-between items-center mb-2">
                           <span className="font-bold text-amber-700 text-xs uppercase">{route.name}</span>
                           <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => editRoute(route)} className="h-6 w-6 p-0 text-amber-600"><Edit2 size={14} /></Button>
                             <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-6 w-6 p-0 text-green-600"><Plus size={14} /></Button>
                             <Button size="sm" variant="ghost" onClick={() => deleteRoute(route.id)} className="h-6 w-6 p-0 text-red-500"><Trash2 size={14} /></Button>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {cities.filter(c => c.route_id === route.id).map(city => (
-                            <span key={city.id} className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase">{city.city_name}</span>
+                            <DropdownMenu key={city.id}>
+                              <DropdownMenuTrigger asChild>
+                                <button className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase hover:border-amber-500">{city.city_name}</button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => editCity(city)}>Renomear</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600">Excluir</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           ))}
                         </div>
                       </div>
@@ -464,7 +526,10 @@ const CerbrasFormatter = () => {
                     {pickupClients.map(client => (
                       <div key={client.id} className="flex justify-between items-center p-2 bg-slate-50 border rounded text-[10px] uppercase">
                         <span className="truncate">{client.client_name}</span>
-                        <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500" onClick={() => deletePickupClient(client.id)}><Trash2 size={12} /></Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-amber-600" onClick={() => editPickupClient(client)}><Edit2 size={12} /></Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500" onClick={() => deletePickupClient(client.id)}><Trash2 size={12} /></Button>
+                        </div>
                       </div>
                     ))}
                   </div>
