@@ -18,7 +18,8 @@ import {
   Calculator,
   Filter,
   ChevronUp,
-  Search
+  Search,
+  FileUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -59,6 +60,7 @@ const CerbrasFormatter = () => {
   const [products, setProducts] = useState<CerbrasProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [importingBase, setImportingBase] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(true);
   const [formattedData, setFormattedData] = useState<any[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
@@ -67,6 +69,7 @@ const CerbrasFormatter = () => {
 
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const baseInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -108,8 +111,8 @@ const CerbrasFormatter = () => {
   const addProduct = async () => {
     const name = prompt("Nome do Produto:");
     if (!name) return;
-    const m2 = parseFloat(prompt("M² por Palete:") || "0");
-    const peso = parseFloat(prompt("Peso por Palete:") || "0");
+    const m2 = parseFloat(prompt("M² por Palete:")?.replace(',', '.') || "0");
+    const peso = parseFloat(prompt("Peso por Palete:")?.replace(',', '.') || "0");
 
     const { data, error } = await supabase
       .from('cerbras_products')
@@ -126,6 +129,44 @@ const CerbrasFormatter = () => {
       setProducts([...products, data[0]]);
       showSuccess("Produto adicionado!");
     }
+  };
+
+  const handleBaseImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportingBase(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        if (rawData.length < 2) throw new Error("Planilha de base vazia.");
+
+        // Mapeamento: A=Produto, B=M2, C=Peso (ajuste conforme sua planilha)
+        const newProducts = rawData.slice(1).map(row => ({
+          product_name: String(row[0] || '').toUpperCase().trim(),
+          unit_m2: parseFloat(String(row[1] || '0').replace(',', '.')),
+          unit_peso: parseFloat(String(row[2] || '0').replace(',', '.')),
+          user_id: user?.id
+        })).filter(p => p.product_name !== "");
+
+        const { error } = await supabase.from('cerbras_products').insert(newProducts);
+        if (error) throw error;
+
+        showSuccess(`${newProducts.length} produtos importados com sucesso!`);
+        fetchProducts();
+      } catch (error: any) {
+        showError("Erro na importação: " + error.message);
+      } finally {
+        setImportingBase(false);
+        if (baseInputRef.current) baseInputRef.current.value = "";
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const deleteProduct = async (id: string) => {
@@ -161,7 +202,6 @@ const CerbrasFormatter = () => {
       return;
     }
 
-    const headers = rows[0].map(h => h?.toString().trim());
     const getIdx = (letter: string) => letter.charCodeAt(0) - 65;
 
     const formatted = rows.slice(1).map((row) => {
@@ -234,24 +274,16 @@ const CerbrasFormatter = () => {
   }, [filteredData]);
 
   const downloadExcel = () => {
-    // Criar aba de dados para as fórmulas
     const dadosWs = XLSX.utils.json_to_sheet(products.map(p => ({
       'PRODUTO': p.product_name,
       'M2_UNIT': p.unit_m2,
       'PESO_UNIT': p.unit_peso
     })));
 
-    // Criar aba principal
     const mainWs = XLSX.utils.json_to_sheet(filteredData);
-    
-    // Adicionar fórmulas e subtotais (simplificado para exportação básica)
-    // Nota: XLSX puro não suporta fórmulas complexas de VLOOKUP entre abas facilmente sem bibliotecas pesadas,
-    // então exportaremos os valores calculados mas com a aba DADOS inclusa como solicitado.
-    
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, mainWs, "Carteira Cerbras");
     XLSX.utils.book_append_sheet(wb, dadosWs, "DADOS");
-    
     XLSX.writeFile(wb, `CARTEIRA_CERBRAS_${new Date().toLocaleDateString()}.xlsx`);
   };
 
@@ -286,8 +318,8 @@ const CerbrasFormatter = () => {
               </SheetHeader>
               
               <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <div className="relative flex-1 mr-2">
+                <div className="flex flex-wrap gap-2 justify-between items-center">
+                  <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
                     <Input 
                       placeholder="Buscar produto..." 
@@ -296,9 +328,16 @@ const CerbrasFormatter = () => {
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
                   </div>
-                  <Button size="sm" onClick={addProduct} className="h-9 bg-amber-600 hover:bg-amber-700">
-                    <Plus size={14} /> Novo
-                  </Button>
+                  <div className="flex gap-2">
+                    <input type="file" className="hidden" ref={baseInputRef} accept=".xlsx, .xls" onChange={handleBaseImport} />
+                    <Button size="sm" variant="outline" onClick={() => baseInputRef.current?.click()} disabled={importingBase} className="h-9 gap-1 border-slate-200">
+                      {importingBase ? <Loader2 className="animate-spin" size={14} /> : <FileUp size={14} />}
+                      Importar Excel
+                    </Button>
+                    <Button size="sm" onClick={addProduct} className="h-9 bg-amber-600 hover:bg-amber-700">
+                      <Plus size={14} /> Novo
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="border rounded-lg overflow-hidden">
@@ -315,8 +354,8 @@ const CerbrasFormatter = () => {
                       {products.filter(p => p.product_name.includes(searchTerm.toUpperCase())).map(product => (
                         <TableRow key={product.id}>
                           <TableCell className="text-[10px] font-bold uppercase">{product.product_name}</TableCell>
-                          <TableCell className="text-[10px]">{product.unit_m2}</TableCell>
-                          <TableCell className="text-[10px]">{product.unit_peso}</TableCell>
+                          <TableCell className="text-[10px]">{product.unit_m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-[10px]">{product.unit_peso.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(product.id)}>
                               <Trash2 size={12} />
@@ -428,7 +467,6 @@ const CerbrasFormatter = () => {
                           ))}
                         </TableRow>
                       ))}
-                      {/* Linha de Subtotal */}
                       <TableRow className="bg-slate-100 font-bold">
                         {Object.keys(formattedData[0]).map(col => (
                           <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
