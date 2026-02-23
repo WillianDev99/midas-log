@@ -36,6 +36,7 @@ import {
 import { 
   Collapsible,
   CollapsibleContent,
+  CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
@@ -168,7 +169,6 @@ const CerbrasFormatter = () => {
 
         if (rawData.length < 2) throw new Error("Planilha de base vazia.");
 
-        // Mapeamento: A=Produto, B=M2, C=Peso
         const newProducts = rawData.slice(1).map(row => ({
           product_name: String(row[0] || '').toUpperCase().trim(),
           unit_m2: parseFloat(String(row[1] || '0').replace(',', '.')),
@@ -296,16 +296,49 @@ const CerbrasFormatter = () => {
   }, [filteredData]);
 
   const downloadExcel = () => {
+    const wb = XLSX.utils.book_new();
+    
+    // Aba DADOS
     const dadosWs = XLSX.utils.json_to_sheet(products.map(p => ({
       'PRODUTO': p.product_name,
       'M2_UNIT': p.unit_m2,
       'PESO_UNIT': p.unit_peso
     })));
-
-    const mainWs = XLSX.utils.json_to_sheet(filteredData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, mainWs, "Carteira Cerbras");
     XLSX.utils.book_append_sheet(wb, dadosWs, "DADOS");
+
+    // Aba Principal
+    const mainWs = XLSX.utils.json_to_sheet(filteredData);
+    
+    // Inserir Fórmulas Dinâmicas
+    const range = filteredData.length + 1;
+    for(let i = 2; i <= range; i++) {
+      const prodCell = `L${i}`;
+      const paletCell = `M${i}`;
+      const m2Cell = `N${i}`;
+      const pesoCell = `O${i}`;
+      const valUniCell = `Q${i}`;
+      const valTotCell = `R${i}`;
+
+      // M² = PALET * VLOOKUP(PRODUTO, DADOS!A:C, 2, FALSE)
+      mainWs[m2Cell] = { f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,2,FALSE),0)` };
+      // PESO = PALET * VLOOKUP(PRODUTO, DADOS!A:C, 3, FALSE)
+      mainWs[pesoCell] = { f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,3,FALSE),0)` };
+      // VAL TOT = M² * VAL UNI
+      mainWs[valTotCell] = { f: `${m2Cell}*${valUniCell}` };
+    }
+
+    // Adicionar Linha de SUBTOTAL (Dinâmica com filtros do Excel)
+    const subtotalRow = range + 1;
+    const colsToSum = ['M', 'N', 'O', 'Q', 'R'];
+    colsToSum.forEach(col => {
+      const cell = `${col}${subtotalRow}`;
+      mainWs[cell] = { f: `SUBTOTAL(9,${col}2:${col}${range})` };
+    });
+
+    // Adicionar label "SUBTOTAL"
+    mainWs[`L${subtotalRow}`] = { v: "SUBTOTAL:" };
+
+    XLSX.utils.book_append_sheet(wb, mainWs, "Carteira Cerbras");
     XLSX.writeFile(wb, `CARTEIRA_CERBRAS_${new Date().toLocaleDateString()}.xlsx`);
   };
 
@@ -414,22 +447,27 @@ const CerbrasFormatter = () => {
                 <CardDescription>Selecione o arquivo data.xlsx para processamento.</CardDescription>
               </div>
               {formattedData.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={() => setIsUploadOpen(false)}>
-                  <ChevronUp size={18} /> Recolher
-                </Button>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <ChevronUp className={`transition-transform ${isUploadOpen ? "" : "rotate-180"}`} size={18} /> 
+                    {isUploadOpen ? "Recolher" : "Expandir"}
+                  </Button>
+                </CollapsibleTrigger>
               )}
             </CardHeader>
-            <CardContent className="pb-6">
-              <div className="flex items-center justify-center w-full">
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                    <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
-                  </div>
-                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-                </label>
-              </div>
-            </CardContent>
+            <CollapsibleContent>
+              <CardContent className="pb-6">
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <Upload className="w-8 h-8 mb-3 text-slate-400" />
+                      <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+                  </label>
+                </div>
+              </CardContent>
+            </CollapsibleContent>
           </Card>
         </Collapsible>
 
