@@ -20,7 +20,10 @@ import {
   ChevronUp,
   Search,
   FileUp,
-  X
+  X,
+  Users,
+  MapPin,
+  MoreVertical
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -34,6 +37,14 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -47,6 +58,22 @@ interface CerbrasProduct {
   unit_peso: number;
 }
 
+interface Route {
+  id: string;
+  name: string;
+}
+
+interface City {
+  id: string;
+  route_id: string;
+  city_name: string;
+}
+
+interface PickupClient {
+  id: string;
+  client_name: string;
+}
+
 type SortConfig = {
   key: string;
   direction: 'asc' | 'desc' | null;
@@ -55,6 +82,9 @@ type SortConfig = {
 const CerbrasFormatter = () => {
   const { user } = useAuth();
   const [products, setProducts] = useState<CerbrasProduct[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [pickupClients, setPickupClients] = useState<PickupClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [importingBase, setImportingBase] = useState(false);
@@ -69,17 +99,22 @@ const CerbrasFormatter = () => {
   const baseInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchProducts();
+    fetchBaseData();
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchBaseData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('cerbras_products')
-        .select('*')
-        .order('product_name');
-      if (error) throw error;
-      setProducts(data || []);
+      const [p, r, c, pc] = await Promise.all([
+        supabase.from('cerbras_products').select('*').order('product_name'),
+        supabase.from('hidracor_routes').select('*').order('name'),
+        supabase.from('hidracor_cities').select('*').order('city_name'),
+        supabase.from('hidracor_pickup_clients').select('*').order('client_name')
+      ]);
+
+      setProducts(p.data || []);
+      setRoutes(r.data || []);
+      setCities(c.data || []);
+      setPickupClients(pc.data || []);
     } catch (error: any) {
       showError(error.message);
     } finally {
@@ -105,96 +140,63 @@ const CerbrasFormatter = () => {
     return date.toLocaleDateString('pt-BR');
   };
 
+  // Funções de Gestão de Base
   const addProduct = async () => {
     const name = prompt("Nome do Produto:");
     if (!name) return;
     const m2 = parseFloat(prompt("M² por Palete:")?.replace(',', '.') || "0");
     const peso = parseFloat(prompt("Peso por Palete:")?.replace(',', '.') || "0");
 
-    const { data, error } = await supabase
-      .from('cerbras_products')
-      .insert([{ 
-        product_name: name.toUpperCase(), 
-        unit_m2: m2, 
-        unit_peso: peso,
-        user_id: user?.id 
-      }])
-      .select();
-
+    const { data, error } = await supabase.from('cerbras_products').insert([{ product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso, user_id: user?.id }]).select();
     if (error) showError(error.message);
-    else {
-      setProducts([...products, data[0]]);
-      showSuccess("Produto adicionado!");
-    }
+    else { setProducts([...products, data[0]]); showSuccess("Produto adicionado!"); }
   };
 
-  const editProduct = async (product: CerbrasProduct) => {
-    const name = prompt("Nome do Produto:", product.product_name);
+  const addRoute = async () => {
+    const name = prompt("Nome da Rota:");
     if (!name) return;
-    const m2 = parseFloat(prompt("M² por Palete:", product.unit_m2.toString())?.replace(',', '.') || "0");
-    const peso = parseFloat(prompt("Peso por Palete:", product.unit_peso.toString())?.replace(',', '.') || "0");
-
-    const { error } = await supabase
-      .from('cerbras_products')
-      .update({ 
-        product_name: name.toUpperCase(), 
-        unit_m2: m2, 
-        unit_peso: peso 
-      })
-      .eq('id', product.id);
-
+    const { data, error } = await supabase.from('hidracor_routes').insert([{ name: name.toUpperCase(), user_id: user?.id }]).select();
     if (error) showError(error.message);
-    else {
-      setProducts(products.map(p => p.id === product.id ? { ...p, product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso } : p));
-      showSuccess("Produto atualizado!");
-    }
+    else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
   };
 
-  const handleBaseImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const addCity = async (routeId: string) => {
+    const input = prompt("Nomes das cidades (separe por vírgula):");
+    if (!input) return;
+    const names = input.split(',').map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
+    const { data, error } = await supabase.from('hidracor_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
+    if (error) showError(error.message);
+    else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
+  };
 
-    setImportingBase(true);
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-        if (rawData.length < 2) throw new Error("Planilha de base vazia.");
-
-        const newProducts = rawData.slice(1).map(row => ({
-          product_name: String(row[0] || '').toUpperCase().trim(),
-          unit_m2: parseFloat(String(row[1] || '0').replace(',', '.')),
-          unit_peso: parseFloat(String(row[2] || '0').replace(',', '.')),
-          user_id: user?.id
-        })).filter(p => p.product_name !== "");
-
-        const { error } = await supabase.from('cerbras_products').insert(newProducts);
-        if (error) throw error;
-
-        showSuccess(`${newProducts.length} produtos importados com sucesso!`);
-        fetchProducts();
-      } catch (error: any) {
-        showError("Erro na importação: " + error.message);
-      } finally {
-        setImportingBase(false);
-        if (baseInputRef.current) baseInputRef.current.value = "";
-      }
-    };
-    reader.readAsBinaryString(file);
+  const addPickupClients = async () => {
+    const input = prompt("Nomes dos clientes (separe por vírgula ou linha):");
+    if (!input) return;
+    const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
+    const { data, error } = await supabase.from('hidracor_pickup_clients').insert(names.map(n => ({ client_name: n, user_id: user?.id }))).select();
+    if (error) showError(error.message);
+    else { setPickupClients([...pickupClients, ...(data || [])]); showSuccess("Clientes adicionados!"); }
   };
 
   const deleteProduct = async (id: string) => {
-    if (!confirm("Excluir este produto da base?")) return;
+    if (!confirm("Excluir produto?")) return;
     const { error } = await supabase.from('cerbras_products').delete().eq('id', id);
     if (error) showError(error.message);
-    else {
-      setProducts(products.filter(p => p.id !== id));
-      showSuccess("Produto removido!");
-    }
+    else setProducts(products.filter(p => p.id !== id));
+  };
+
+  const deleteRoute = async (id: string) => {
+    if (!confirm("Excluir rota e suas cidades?")) return;
+    const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
+    if (error) showError(error.message);
+    else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); }
+  };
+
+  const deletePickupClient = async (id: string) => {
+    if (!confirm("Excluir cliente?")) return;
+    const { error } = await supabase.from('hidracor_pickup_clients').delete().eq('id', id);
+    if (error) showError(error.message);
+    else setPickupClients(pickupClients.filter(c => c.id !== id));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -222,16 +224,34 @@ const CerbrasFormatter = () => {
 
     const getIdx = (letter: string) => letter.charCodeAt(0) - 65;
 
+    // Mapeamentos para busca rápida
+    const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
+    const cityToRouteMap: Record<string, string> = {};
+    cities.forEach(c => {
+      const route = routes.find(r => r.id === c.route_id);
+      if (route) cityToRouteMap[c.city_name.toUpperCase()] = route.name;
+    });
+
     const formatted = rows.slice(1)
       .filter(row => {
         const uf = String(row[getIdx('F')] || '').trim().toUpperCase();
         return uf !== "" && uf !== "UF";
       })
       .map((row) => {
+        const clientName = String(row[getIdx('A')] || '').toUpperCase().trim();
+        const cityName = String(row[getIdx('D')] || '').toUpperCase().trim();
         const productName = String(row[getIdx('I')] || '').toUpperCase().trim();
         const palet = parseFloat(String(row[getIdx('P')] || '0').replace(',', '.'));
         const valUni = parseFloat(String(row[getIdx('K')] || '0').replace(',', '.'));
         
+        // Lógica de ROTA
+        let finalRoute = 'NÃO ENCONTRADA';
+        if (pickupSet.has(clientName)) {
+          finalRoute = 'CLIENTE RETIRA';
+        } else if (cityToRouteMap[cityName]) {
+          finalRoute = cityToRouteMap[cityName];
+        }
+
         const productBase = products.find(p => p.product_name === productName);
         const m2 = productBase ? palet * productBase.unit_m2 : 0;
         const peso = productBase ? palet * productBase.unit_peso : 0;
@@ -239,6 +259,7 @@ const CerbrasFormatter = () => {
 
         return {
           'DATA': excelDateToJSDate(row[getIdx('G')]),
+          'ROTA': finalRoute,
           'CLIENTE': row[getIdx('A')],
           'CNPJ': row[getIdx('C')],
           'CIDADE': row[getIdx('D')],
@@ -299,7 +320,6 @@ const CerbrasFormatter = () => {
   const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
     
-    // Aba DADOS
     const dadosWs = XLSX.utils.json_to_sheet(products.map(p => ({
       'PRODUTO': p.product_name,
       'M2_UNIT': p.unit_m2,
@@ -307,39 +327,29 @@ const CerbrasFormatter = () => {
     })));
     XLSX.utils.book_append_sheet(wb, dadosWs, "DADOS");
 
-    // Aba Principal
     const mainWs = XLSX.utils.json_to_sheet(filteredData);
-    
-    // Inserir Fórmulas Dinâmicas
     const range = filteredData.length + 1;
+    
     for(let i = 2; i <= range; i++) {
-      const prodCell = `L${i}`;
-      const paletCell = `M${i}`;
-      const m2Cell = `N${i}`;
-      const pesoCell = `O${i}`;
-      const valUniCell = `Q${i}`;
-      const valTotCell = `R${i}`;
+      const prodCell = `M${i}`; // PRODUTO agora é M
+      const paletCell = `N${i}`; // PALET agora é N
+      const m2Cell = `O${i}`;
+      const pesoCell = `P${i}`;
+      const valUniCell = `R${i}`;
+      const valTotCell = `S${i}`;
 
-      // M² = PALET * VLOOKUP(PRODUTO, DADOS!A:C, 2, FALSE)
       mainWs[m2Cell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,2,FALSE),0)` };
-      // PESO = PALET * VLOOKUP(PRODUTO, DADOS!A:C, 3, FALSE)
       mainWs[pesoCell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,3,FALSE),0)` };
-      // VAL TOT = M² * VAL UNI
       mainWs[valTotCell] = { t: 'n', f: `${m2Cell}*${valUniCell}` };
     }
 
-    // Adicionar Linha de SUBTOTAL (Dinâmica com filtros do Excel)
     const subtotalRow = range + 1;
-    const colsToSum = ['M', 'N', 'O', 'Q', 'R'];
+    const colsToSum = ['N', 'O', 'P', 'R', 'S'];
     colsToSum.forEach(col => {
-      const cell = `${col}${subtotalRow}`;
-      mainWs[cell] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
+      mainWs[`${col}${subtotalRow}`] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
     });
+    mainWs[`M${subtotalRow}`] = { v: "SUBTOTAL:" };
 
-    // Adicionar label "SUBTOTAL"
-    mainWs[`L${subtotalRow}`] = { v: "SUBTOTAL:" };
-
-    // Atualizar o range da planilha para incluir a linha de subtotal
     const range_ref = XLSX.utils.decode_range(mainWs['!ref']!);
     range_ref.e.r = subtotalRow - 1;
     mainWs['!ref'] = XLSX.utils.encode_range(range_ref);
@@ -361,90 +371,105 @@ const CerbrasFormatter = () => {
             <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Cerbras</h1>
-              <p className="text-slate-500 text-xs">Processamento com busca em base técnica de produtos.</p>
+              <p className="text-slate-500 text-xs">Processamento com busca em base técnica de produtos e rotas.</p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {formattedData.length > 0 && !isUploadOpen && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setIsUploadOpen(true)}
-              className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
-            >
-              <RefreshCw size={14} /> 
-              Novo Upload
+            <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(true)} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+              <RefreshCw size={14} /> Novo Upload
             </Button>
           )}
 
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
-                <Settings2 size={16} /> <span className="hidden sm:inline">Base de Produtos (DADOS)</span>
+                <Settings2 size={16} /> <span className="hidden sm:inline">Base Técnica Cerbras</span>
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+            <SheetContent className="w-[400px] sm:w-[600px] overflow-y-auto">
               <SheetHeader className="mb-6">
-                <SheetTitle>Base Técnica Cerbras</SheetTitle>
-                <SheetDescription>Gerencie M² e Peso unitário por palete de cada produto.</SheetDescription>
+                <SheetTitle>Configuração de Base Técnica</SheetTitle>
+                <SheetDescription>Gerencie produtos, rotas e clientes retira.</SheetDescription>
               </SheetHeader>
               
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2 justify-between items-center">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-2 top-2.5 text-slate-400" size={14} />
-                    <Input 
-                      placeholder="Buscar produto..." 
-                      className="pl-8 h-9 text-xs"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <input type="file" className="hidden" ref={baseInputRef} accept=".xlsx, .xls" onChange={handleBaseImport} />
-                    <Button size="sm" variant="outline" onClick={() => baseInputRef.current?.click()} disabled={importingBase} className="h-9 gap-1 border-slate-200">
-                      {importingBase ? <Loader2 className="animate-spin" size={14} /> : <FileUp size={14} />}
-                      Importar Excel
-                    </Button>
-                    <Button size="sm" onClick={addProduct} className="h-9 bg-amber-600 hover:bg-amber-700">
-                      <Plus size={14} /> Novo
-                    </Button>
-                  </div>
-                </div>
+              <Tabs defaultValue="products" className="w-full">
+                <TabsList className="grid grid-cols-3 mb-6">
+                  <TabsTrigger value="products">Produtos</TabsTrigger>
+                  <TabsTrigger value="routes">Rotas</TabsTrigger>
+                  <TabsTrigger value="pickup">Retira</TabsTrigger>
+                </TabsList>
 
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader className="bg-slate-50">
-                      <TableRow>
-                        <TableHead className="text-[10px] uppercase">Produto</TableHead>
-                        <TableHead className="text-[10px] uppercase">M²</TableHead>
-                        <TableHead className="text-[10px] uppercase">Peso</TableHead>
-                        <TableHead className="w-[80px] text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {products.filter(p => p.product_name.includes(searchTerm.toUpperCase())).map(product => (
-                        <TableRow key={product.id}>
-                          <TableCell className="text-[10px] font-bold uppercase">{product.product_name}</TableCell>
-                          <TableCell className="text-[10px]">{product.unit_m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="text-[10px]">{product.unit_peso.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600" onClick={() => editProduct(product)}>
-                                <Edit2 size={12} />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(product.id)}>
-                                <Trash2 size={12} />
-                              </Button>
-                            </div>
-                          </TableCell>
+                <TabsContent value="products" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Produtos Cadastrados</h3>
+                    <Button size="sm" onClick={addProduct} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Novo</Button>
+                  </div>
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="text-[10px] uppercase">Produto</TableHead>
+                          <TableHead className="text-[10px] uppercase">M²</TableHead>
+                          <TableHead className="text-[10px] uppercase">Peso</TableHead>
+                          <TableHead className="w-[40px]"></TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {products.map(p => (
+                          <TableRow key={p.id}>
+                            <TableCell className="text-[10px] font-bold uppercase">{p.product_name}</TableCell>
+                            <TableCell className="text-[10px]">{p.unit_m2}</TableCell>
+                            <TableCell className="text-[10px]">{p.unit_peso}</TableCell>
+                            <TableCell><Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(p.id)}><Trash2 size={12} /></Button></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="routes" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Rotas e Cidades</h3>
+                    <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
+                  </div>
+                  <div className="space-y-4">
+                    {routes.map(route => (
+                      <div key={route.id} className="border rounded-lg p-3 bg-slate-50">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-amber-700 text-xs uppercase">{route.name}</span>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-6 w-6 p-0 text-green-600"><Plus size={14} /></Button>
+                            <Button size="sm" variant="ghost" onClick={() => deleteRoute(route.id)} className="h-6 w-6 p-0 text-red-500"><Trash2 size={14} /></Button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {cities.filter(c => c.route_id === route.id).map(city => (
+                            <span key={city.id} className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase">{city.city_name}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="pickup" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Clientes Retira</h3>
+                    <Button size="sm" onClick={addPickupClients} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Adicionar Clientes</Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {pickupClients.map(client => (
+                      <div key={client.id} className="flex justify-between items-center p-2 bg-slate-50 border rounded text-[10px] uppercase">
+                        <span className="truncate">{client.client_name}</span>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500" onClick={() => deletePickupClient(client.id)}><Trash2 size={12} /></Button>
+                      </div>
+                    ))}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </SheetContent>
           </Sheet>
 
@@ -465,9 +490,7 @@ const CerbrasFormatter = () => {
                 <CardDescription>Selecione o arquivo data.xlsx para processamento.</CardDescription>
               </div>
               {formattedData.length > 0 && (
-                <Button variant="ghost" size="icon" onClick={() => setIsUploadOpen(false)}>
-                  <X size={20} />
-                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setIsUploadOpen(false)}><X size={20} /></Button>
               )}
             </CardHeader>
             <CardContent className="pb-6">
@@ -507,12 +530,12 @@ const CerbrasFormatter = () => {
             </CardHeader>
 
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto bg-slate-100 border-b h-4 min-h-[16px]">
-              <div style={{ width: '3000px', height: '1px' }} />
+              <div style={{ width: '3200px', height: '1px' }} />
             </div>
 
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
-                <div className="min-w-[3000px]">
+                <div className="min-w-[3200px]">
                   <Table>
                     <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                       <TableRow>
@@ -523,11 +546,7 @@ const CerbrasFormatter = () => {
                                 <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
                                 <ArrowUpDown size={12} className="text-slate-300" />
                               </div>
-                              <Input 
-                                placeholder={`Filtrar...`} 
-                                className="h-7 text-[10px] bg-slate-50 border-slate-200" 
-                                onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
-                              />
+                              <Input placeholder={`Filtrar...`} className="h-7 text-[10px] bg-slate-50 border-slate-200" onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} />
                             </div>
                           </TableHead>
                         ))}
@@ -538,9 +557,19 @@ const CerbrasFormatter = () => {
                         <TableRow key={idx} className="hover:bg-slate-50/50">
                           {Object.keys(row).map(col => (
                             <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
-                              <span className="block truncate max-w-[160px]">
-                                {typeof row[col] === 'number' ? row[col].toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : row[col]}
-                              </span>
+                              {col === 'ROTA' ? (
+                                <div className={`px-2 py-1 rounded font-bold text-center border ${
+                                  row[col] === 'CLIENTE RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
+                                  'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {row[col]}
+                                </div>
+                              ) : (
+                                <span className="block truncate max-w-[160px]">
+                                  {typeof row[col] === 'number' ? row[col].toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : row[col]}
+                                </span>
+                              )}
                             </TableCell>
                           ))}
                         </TableRow>
