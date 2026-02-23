@@ -226,37 +226,42 @@ const CerbrasFormatter = () => {
 
     const getIdx = (letter: string) => letter.charCodeAt(0) - 65;
 
-    const formatted = rows.slice(1).map((row) => {
-      const productName = String(row[getIdx('I')] || '').toUpperCase().trim();
-      const palet = parseFloat(String(row[getIdx('P')] || '0').replace(',', '.'));
-      const valUni = parseFloat(String(row[getIdx('K')] || '0').replace(',', '.'));
-      
-      const productBase = products.find(p => p.product_name === productName);
-      const m2 = productBase ? palet * productBase.unit_m2 : 0;
-      const peso = productBase ? palet * productBase.unit_peso : 0;
-      const valTot = m2 * valUni;
+    const formatted = rows.slice(1)
+      .filter(row => {
+        const uf = String(row[getIdx('F')] || '').trim().toUpperCase();
+        return uf !== "" && uf !== "UF";
+      })
+      .map((row) => {
+        const productName = String(row[getIdx('I')] || '').toUpperCase().trim();
+        const palet = parseFloat(String(row[getIdx('P')] || '0').replace(',', '.'));
+        const valUni = parseFloat(String(row[getIdx('K')] || '0').replace(',', '.'));
+        
+        const productBase = products.find(p => p.product_name === productName);
+        const m2 = productBase ? palet * productBase.unit_m2 : 0;
+        const peso = productBase ? palet * productBase.unit_peso : 0;
+        const valTot = m2 * valUni;
 
-      return {
-        'DATA': excelDateToJSDate(row[getIdx('G')]),
-        'CLIENTE': row[getIdx('A')],
-        'CNPJ': row[getIdx('C')],
-        'CIDADE': row[getIdx('D')],
-        'UF': row[getIdx('F')],
-        'PEDIDO': row[getIdx('H')],
-        'COM': row[getIdx('T')],
-        'FIN': row[getIdx('V')],
-        'EXP': row[getIdx('U')],
-        'INI RES': excelDateToJSDate(row[getIdx('R')]),
-        'FIM RES': excelDateToJSDate(row[getIdx('S')]),
-        'PRODUTO': productName,
-        'PALET': palet,
-        'M²': m2,
-        'PESO': peso,
-        'LOTE': row[getIdx('M')],
-        'VAL UNI': valUni,
-        'VAL TOT': valTot
-      };
-    });
+        return {
+          'DATA': excelDateToJSDate(row[getIdx('G')]),
+          'CLIENTE': row[getIdx('A')],
+          'CNPJ': row[getIdx('C')],
+          'CIDADE': row[getIdx('D')],
+          'UF': row[getIdx('F')],
+          'PEDIDO': row[getIdx('H')],
+          'COM': row[getIdx('T')],
+          'FIN': row[getIdx('V')],
+          'EXP': row[getIdx('U')],
+          'INI RES': excelDateToJSDate(row[getIdx('R')]),
+          'FIM RES': excelDateToJSDate(row[getIdx('S')]),
+          'PRODUTO': productName,
+          'PALET': palet,
+          'M²': m2,
+          'PESO': peso,
+          'LOTE': row[getIdx('M')],
+          'VAL UNI': valUni,
+          'VAL TOT': valTot
+        };
+      });
 
     setFormattedData(formatted);
     setProcessing(false);
@@ -360,6 +365,18 @@ const CerbrasFormatter = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {formattedData.length > 0 && !isUploadOpen && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setIsUploadOpen(true)}
+              className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
+            >
+              <RefreshCw size={14} /> 
+              Novo Upload
+            </Button>
+          )}
+
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
