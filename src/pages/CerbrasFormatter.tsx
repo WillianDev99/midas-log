@@ -131,6 +131,28 @@ const CerbrasFormatter = () => {
     }
   };
 
+  const editProduct = async (product: CerbrasProduct) => {
+    const name = prompt("Nome do Produto:", product.product_name);
+    if (!name) return;
+    const m2 = parseFloat(prompt("M² por Palete:", product.unit_m2.toString())?.replace(',', '.') || "0");
+    const peso = parseFloat(prompt("Peso por Palete:", product.unit_peso.toString())?.replace(',', '.') || "0");
+
+    const { error } = await supabase
+      .from('cerbras_products')
+      .update({ 
+        product_name: name.toUpperCase(), 
+        unit_m2: m2, 
+        unit_peso: peso 
+      })
+      .eq('id', product.id);
+
+    if (error) showError(error.message);
+    else {
+      setProducts(products.map(p => p.id === product.id ? { ...p, product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso } : p));
+      showSuccess("Produto atualizado!");
+    }
+  };
+
   const handleBaseImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -146,7 +168,7 @@ const CerbrasFormatter = () => {
 
         if (rawData.length < 2) throw new Error("Planilha de base vazia.");
 
-        // Mapeamento: A=Produto, B=M2, C=Peso (ajuste conforme sua planilha)
+        // Mapeamento: A=Produto, B=M2, C=Peso
         const newProducts = rawData.slice(1).map(row => ({
           product_name: String(row[0] || '').toUpperCase().trim(),
           unit_m2: parseFloat(String(row[1] || '0').replace(',', '.')),
@@ -347,7 +369,7 @@ const CerbrasFormatter = () => {
                         <TableHead className="text-[10px] uppercase">Produto</TableHead>
                         <TableHead className="text-[10px] uppercase">M²</TableHead>
                         <TableHead className="text-[10px] uppercase">Peso</TableHead>
-                        <TableHead className="w-[40px]"></TableHead>
+                        <TableHead className="w-[80px] text-right">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -356,10 +378,15 @@ const CerbrasFormatter = () => {
                           <TableCell className="text-[10px] font-bold uppercase">{product.product_name}</TableCell>
                           <TableCell className="text-[10px]">{product.unit_m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell className="text-[10px]">{product.unit_peso.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(product.id)}>
-                              <Trash2 size={12} />
-                            </Button>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600" onClick={() => editProduct(product)}>
+                                <Edit2 size={12} />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteProduct(product.id)}>
+                                <Trash2 size={12} />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
