@@ -106,9 +106,9 @@ const CerbrasFormatter = () => {
     try {
       const [p, r, c, pc] = await Promise.all([
         supabase.from('cerbras_products').select('*').order('product_name'),
-        supabase.from('hidracor_routes').select('*').order('name'),
-        supabase.from('hidracor_cities').select('*').order('city_name'),
-        supabase.from('hidracor_pickup_clients').select('*').order('client_name')
+        supabase.from('cerbras_routes').select('*').order('name'),
+        supabase.from('cerbras_cities').select('*').order('city_name'),
+        supabase.from('cerbras_pickup_clients').select('*').order('client_name')
       ]);
 
       setProducts(p.data || []);
@@ -155,7 +155,7 @@ const CerbrasFormatter = () => {
   const addRoute = async () => {
     const name = prompt("Nome da Rota:");
     if (!name) return;
-    const { data, error } = await supabase.from('hidracor_routes').insert([{ name: name.toUpperCase(), user_id: user?.id }]).select();
+    const { data, error } = await supabase.from('cerbras_routes').insert([{ name: name.toUpperCase(), user_id: user?.id }]).select();
     if (error) showError(error.message);
     else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
   };
@@ -164,7 +164,7 @@ const CerbrasFormatter = () => {
     const input = prompt("Nomes das cidades (separe por vírgula):");
     if (!input) return;
     const names = input.split(',').map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
-    const { data, error } = await supabase.from('hidracor_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
+    const { data, error } = await supabase.from('cerbras_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
   };
@@ -173,7 +173,7 @@ const CerbrasFormatter = () => {
     const input = prompt("Nomes dos clientes (separe por vírgula ou linha):");
     if (!input) return;
     const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
-    const { data, error } = await supabase.from('hidracor_pickup_clients').insert(names.map(n => ({ client_name: n, user_id: user?.id }))).select();
+    const { data, error } = await supabase.from('cerbras_pickup_clients').insert(names.map(n => ({ client_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setPickupClients([...pickupClients, ...(data || [])]); showSuccess("Clientes adicionados!"); }
   };
@@ -187,14 +187,14 @@ const CerbrasFormatter = () => {
 
   const deleteRoute = async (id: string) => {
     if (!confirm("Excluir rota e suas cidades?")) return;
-    const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
+    const { error } = await supabase.from('cerbras_routes').delete().eq('id', id);
     if (error) showError(error.message);
     else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); }
   };
 
   const deletePickupClient = async (id: string) => {
     if (!confirm("Excluir cliente?")) return;
-    const { error } = await supabase.from('hidracor_pickup_clients').delete().eq('id', id);
+    const { error } = await supabase.from('cerbras_pickup_clients').delete().eq('id', id);
     if (error) showError(error.message);
     else setPickupClients(pickupClients.filter(c => c.id !== id));
   };
@@ -331,8 +331,8 @@ const CerbrasFormatter = () => {
     const range = filteredData.length + 1;
     
     for(let i = 2; i <= range; i++) {
-      const prodCell = `M${i}`; // PRODUTO agora é M
-      const paletCell = `N${i}`; // PALET agora é N
+      const prodCell = `M${i}`;
+      const paletCell = `N${i}`;
       const m2Cell = `O${i}`;
       const pesoCell = `P${i}`;
       const valUniCell = `R${i}`;
