@@ -46,9 +46,10 @@ const MARACANAU_COORDS: [number, number] = [-3.8767, -38.6256];
 interface DeliveryItem {
   cliente: string;
   cidade: string;
+  uf: string;
   peso: number;
   pedido: string;
-  chave: string;
+  chave: string; // Combinação CIDADE|UF
 }
 
 interface RoutePoint {
@@ -94,14 +95,15 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
-  // Função de normalização idêntica ao Python (limpar_texto)
+  // Função de normalização rigorosa
   const limparTexto = (txt: any) => {
     if (!txt) return "";
     return String(txt)
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\u0300-\u036f]/g, "") // Remove acentos
       .toUpperCase()
-      .split('-')[0] // Pega apenas o nome da cidade antes do hífen
+      .split('-')[0] // Remove sufixos após hífen
+      .replace(/[^A-Z0-9\s]/g, '') // Remove caracteres especiais
       .trim()
       .replace(/\s+/g, ' ');
   };
@@ -134,15 +136,18 @@ const CerbrasWeightsByCity = () => {
       
       const coords: Record<string, [number, number]> = {};
       data.forEach((row) => {
-        const name = limparTexto(row[0]);
+        const city = limparTexto(row[0]);
+        const uf = limparTexto(row[1]);
         const lat = converterNumero(row[2]);
         const lng = converterNumero(row[3]);
-        if (name && lat !== 0 && lng !== 0) {
-          coords[name] = [lat, lng];
+        
+        if (city && uf && lat !== 0 && lng !== 0) {
+          // Chave composta para evitar duplicidade em estados diferentes
+          coords[`${city}|${uf}`] = [lat, lng];
         }
       });
       setCityCoords(coords);
-      console.log("[CerbrasWeights] Coordenadas carregadas:", Object.keys(coords).length);
+      console.log("[CerbrasWeights] Base de coordenadas carregada:", Object.keys(coords).length);
     } catch (error) {
       console.error("Erro ao carregar coordenadas:", error);
     }
@@ -177,21 +182,24 @@ const CerbrasWeightsByCity = () => {
 
         const idxCli = getIdx('CLIENTE');
         const idxCid = getIdx('CIDADE');
+        const idxUF = getIdx('UF');
         const idxPeso = getIdx('PESO');
         const idxPed = getIdx('PEDIDO');
 
         if (idxCid === -1 || idxPeso === -1) {
-          throw new Error("Colunas 'CIDADE' ou 'PESO' não encontradas.");
+          throw new Error("Colunas 'CIDADE' ou 'PESO' não encontradas na planilha Base.");
         }
 
         const items: DeliveryItem[] = rawData.slice(1)
           .filter(row => row[idxCid] && !String(row[idxCid]).toUpperCase().includes("TOTAL"))
           .map(row => {
             const cidade = String(row[idxCid]).trim();
+            const uf = String(row[idxUF] || '').trim();
             return {
               cliente: String(row[idxCli] || 'NÃO INFORMADO').toUpperCase(),
               cidade: cidade,
-              chave: limparTexto(cidade),
+              uf: uf,
+              chave: `${limparTexto(cidade)}|${limparTexto(uf)}`,
               peso: converterNumero(row[idxPeso]),
               pedido: String(row[idxPed] || '')
             };
@@ -211,9 +219,16 @@ const CerbrasWeightsByCity = () => {
   };
 
   const citySummary = useMemo(() => {
-    const summary: Record<string, { totalWeight: number, clients: Record<string, number>, originalName: string }> = {};
+    const summary: Record<string, { totalWeight: number, clients: Record<string, number>, originalName: string, uf: string }> = {};
     deliveries.forEach(d => {
-      if (!summary[d.chave]) summary[d.chave] = { totalWeight: 0, clients: {}, originalName: d.cidade };
+      if (!summary[d.chave]) {
+        summary[d.chave] = { 
+          totalWeight: 0, 
+          clients: {}, 
+          originalName: d.cidade,
+          uf: d.uf
+        };
+      }
       summary[d.chave].totalWeight += d.peso;
       summary[d.chave].clients[d.cliente] = (summary[d.chave].clients[d.cliente] || 0) + d.peso;
     });
@@ -227,14 +242,15 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
-  // Lógica de busca de coordenadas com fallback
+  // Lógica de busca de coordenadas com Cidade + UF
   const getCoordsForCity = (chave: string) => {
-    // 1. Busca exata
+    // Busca direta na chave composta CIDADE|UF
     if (cityCoords[chave]) return cityCoords[chave];
     
-    // 2. Busca por prefixo (ex: "TIANGUA" encontra "TIANGUA - CE")
+    // Fallback: tenta encontrar apenas pela cidade se a UF falhar (menos preciso)
+    const [cidade] = chave.split('|');
     const keys = Object.keys(cityCoords);
-    const match = keys.find(k => k.startsWith(chave) || chave.startsWith(k));
+    const match = keys.find(k => k.startsWith(cidade));
     if (match) return cityCoords[match];
     
     return null;
@@ -397,7 +413,7 @@ const CerbrasWeightsByCity = () => {
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = getCoordsForCity(chave);
               if (!coords) return null;
-              const isSelectedInCurrentRoute = currentRoute.some(p => limparTexto(p.city) === chave);
+              const isSelectedInCurrentRoute = currentRoute.some(p => `${limparTexto(p.city)}|${limparTexto(data.uf)}` === chave);
 
               return (
                 <Marker key={chave} position={coords} icon={L.divIcon({
@@ -408,7 +424,7 @@ const CerbrasWeightsByCity = () => {
                 })}>
                   <Popup className="custom-popup">
                     <div className="p-2 min-w-[200px]">
-                      <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName}</h3>
+                      <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName} - {data.uf}</h3>
                       <div className="flex justify-between items-center mb-3 bg-amber-50 p-2 rounded">
                         <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
                         <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
