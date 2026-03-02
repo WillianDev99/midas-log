@@ -49,7 +49,7 @@ interface DeliveryItem {
   uf: string;
   peso: number;
   pedido: string;
-  chave: string; // Combinação CIDADE|UF
+  chave: string; 
 }
 
 interface RoutePoint {
@@ -59,17 +59,14 @@ interface RoutePoint {
   weight: number;
 }
 
-// Componente para controlar o zoom e centralização do mapa
 const MapController = ({ points }: { points: [number, number][] }) => {
   const map = useMap();
-  
   useEffect(() => {
     if (points.length > 0) {
       const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
     }
   }, [points, map]);
-  
   return null;
 };
 
@@ -95,34 +92,24 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
-  // Função de normalização rigorosa
-  const limparTexto = (txt: any) => {
+  // Normalização agressiva para comparação (remove tudo exceto letras e números)
+  const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
     return String(txt)
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+      .replace(/[\u0300-\u036f]/g, "")
       .toUpperCase()
-      .replace(/[^A-Z0-9\s]/g, '') // Remove caracteres especiais
-      .trim()
-      .replace(/\s+/g, ' ');
+      .replace(/[^A-Z0-9]/g, '') // Remove espaços, hífens, etc.
+      .trim();
   };
 
-  // Função de conversão de peso/coord robusta
   const converterNumero = (v: any): number => {
     if (v === null || v === undefined || v === "") return 0;
     if (typeof v === 'number') return v;
-    
-    let s = String(v).trim();
-    try {
-      if (s.includes('.') && s.includes(',')) {
-        s = s.replace(/\./g, '').replace(',', '.');
-      } else if (s.includes(',')) {
-        s = s.replace(',', '.');
-      }
-      return parseFloat(s) || 0;
-    } catch {
-      return 0;
-    }
+    let s = String(v).trim().replace(/\s/g, '');
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else if (s.includes(',')) s = s.replace(',', '.');
+    return parseFloat(s) || 0;
   };
 
   const loadCityCoords = async () => {
@@ -133,19 +120,32 @@ const CerbrasWeightsByCity = () => {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
+      if (data.length === 0) return;
+
+      // Tenta encontrar as colunas pelos nomes no cabeçalho
+      const headers = data[0].map(h => normalizarParaMatch(h));
+      let idxCid = headers.indexOf('CIDADE');
+      let idxUF = headers.indexOf('UF');
+      let idxLat = headers.indexOf('LATITUDE');
+      let idxLng = headers.indexOf('LONGITUDE');
+
+      // Fallback se não houver cabeçalho claro
+      if (idxCid === -1) { idxCid = 0; idxUF = 1; idxLat = 2; idxLng = 3; }
+
       const coords: Record<string, [number, number]> = {};
-      data.forEach((row) => {
-        const city = limparTexto(row[0]);
-        const uf = limparTexto(row[1]);
-        const lat = converterNumero(row[2]);
-        const lng = converterNumero(row[3]);
+      data.forEach((row, i) => {
+        if (i === 0 && idxCid !== 0) return; // Pula cabeçalho se detectado
+        const city = normalizarParaMatch(row[idxCid]);
+        const uf = normalizarParaMatch(row[idxUF]);
+        const lat = converterNumero(row[idxLat]);
+        const lng = converterNumero(row[idxLng]);
         
         if (city && uf && lat !== 0 && lng !== 0) {
           coords[`${city}|${uf}`] = [lat, lng];
         }
       });
       setCityCoords(coords);
-      console.log("[CerbrasWeights] Base de coordenadas carregada:", Object.keys(coords).length);
+      console.log("[MAPA] Base de coordenadas carregada:", Object.keys(coords).length, "cidades.");
     } catch (error) {
       console.error("Erro ao carregar coordenadas:", error);
     }
@@ -173,8 +173,6 @@ const CerbrasWeightsByCity = () => {
         const ws = wb.Sheets[sheetName];
         const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-        if (rawData.length < 2) throw new Error("Arquivo vazio ou sem dados.");
-
         const headers = rawData[0].map(h => String(h).toUpperCase().trim());
         const getIdx = (name: string) => headers.indexOf(name);
 
@@ -183,10 +181,6 @@ const CerbrasWeightsByCity = () => {
         const idxUF = getIdx('UF');
         const idxPeso = getIdx('PESO');
         const idxPed = getIdx('PEDIDO');
-
-        if (idxCid === -1 || idxPeso === -1) {
-          throw new Error("Colunas 'CIDADE' ou 'PESO' não encontradas na planilha Base.");
-        }
 
         const items: DeliveryItem[] = rawData.slice(1)
           .filter(row => row[idxCid] && !String(row[idxCid]).toUpperCase().includes("TOTAL"))
@@ -197,7 +191,7 @@ const CerbrasWeightsByCity = () => {
               cliente: String(row[idxCli] || 'NÃO INFORMADO').toUpperCase(),
               cidade: cidade,
               uf: uf,
-              chave: `${limparTexto(cidade)}|${limparTexto(uf)}`,
+              chave: `${normalizarParaMatch(cidade)}|${normalizarParaMatch(uf)}`,
               peso: converterNumero(row[idxPeso]),
               pedido: String(row[idxPed] || '')
             };
@@ -220,12 +214,7 @@ const CerbrasWeightsByCity = () => {
     const summary: Record<string, { totalWeight: number, clients: Record<string, number>, originalName: string, uf: string }> = {};
     deliveries.forEach(d => {
       if (!summary[d.chave]) {
-        summary[d.chave] = { 
-          totalWeight: 0, 
-          clients: {}, 
-          originalName: d.cidade,
-          uf: d.uf
-        };
+        summary[d.chave] = { totalWeight: 0, clients: {}, originalName: d.cidade, uf: d.uf };
       }
       summary[d.chave].totalWeight += d.peso;
       summary[d.chave].clients[d.cliente] = (summary[d.chave].clients[d.cliente] || 0) + d.peso;
@@ -240,25 +229,17 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
-  // Lógica de busca de coordenadas com Cidade + UF e Fallback
   const getCoordsForCity = (chave: string) => {
-    // 1. Busca exata na chave composta CIDADE|UF
     if (cityCoords[chave]) return cityCoords[chave];
     
-    const [cidade, uf] = chave.split('|');
+    // Tenta match parcial se o exato falhar
+    const [cidade] = chave.split('|');
     const keys = Object.keys(cityCoords);
-
-    // 2. Busca por aproximação (contém o nome e a UF bate)
-    const match = keys.find(k => {
-      const [kCity, kUf] = k.split('|');
-      return (kCity.includes(cidade) || cidade.includes(kCity)) && kUf === uf;
-    });
+    const match = keys.find(k => k.startsWith(cidade) || cidade.startsWith(k.split('|')[0]));
+    
     if (match) return cityCoords[match];
     
-    // 3. Busca apenas pela cidade (qualquer UF)
-    const cityOnlyMatch = keys.find(k => k.split('|')[0] === cidade);
-    if (cityOnlyMatch) return cityCoords[cityOnlyMatch];
-    
+    console.warn(`[MAPA] Não encontrei coordenadas para: ${chave}`);
     return null;
   };
 
@@ -340,27 +321,13 @@ const CerbrasWeightsByCity = () => {
             </div>
           </div>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-2 border-amber-200 text-amber-700"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={processing}
-          >
+          <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => fileInputRef.current?.click()} disabled={processing}>
             {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
             Upload Base
           </Button>
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
 
-          <Button 
-            variant={isRouteMode ? "destructive" : "default"} 
-            size="sm" 
-            onClick={() => {
-              setIsRouteMode(!isRouteMode);
-              if (!isRouteMode) setCurrentRoute([]);
-            }}
-            className="gap-2"
-          >
+          <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) setCurrentRoute([]); }} className="gap-2">
             {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
             {isRouteMode ? "Cancelar Rota" : "Montar Rota"}
           </Button>
@@ -419,7 +386,7 @@ const CerbrasWeightsByCity = () => {
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = getCoordsForCity(chave);
               if (!coords) return null;
-              const isSelectedInCurrentRoute = currentRoute.some(p => `${limparTexto(p.city)}|${limparTexto(data.uf)}` === chave);
+              const isSelectedInCurrentRoute = currentRoute.some(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
 
               return (
                 <Marker key={chave} position={coords} icon={L.divIcon({
