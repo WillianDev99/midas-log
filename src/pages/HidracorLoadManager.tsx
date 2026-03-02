@@ -8,7 +8,8 @@ import {
   Printer, 
   Save, 
   Loader2,
-  Trash2
+  Trash2,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -89,8 +90,10 @@ const HidracorLoadManager = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const totalPeso = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0);
-    const totalValor = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['valor total'] || 0), 0);
+    const totalPesoPoss = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['peso possível'] || 0), 0);
+    const totalValorPoss = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['valor possível'] || 0), 0);
+    const totalPesoTot = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0);
+    const totalValorTot = load.items.reduce((acc: number, i: any) => acc + parseFloat(i['valor total'] || 0), 0);
 
     const content = `
       <html>
@@ -110,20 +113,25 @@ const HidracorLoadManager = () => {
           <p>Data: ${new Date(load.created_at).toLocaleDateString('pt-BR')}</p>
           <table>
             <thead>
-              <tr><th>Pedido</th><th>Cliente</th><th>Município</th><th>Peso Total</th><th>Valor Total</th></tr>
+              <tr><th>Pedido</th><th>Cliente</th><th>Município</th><th>Peso Possível</th><th>Valor Possível</th></tr>
             </thead>
             <tbody>
               ${load.items.map((item: any) => `
                 <tr>
                   <td>${item.Pedido}</td><td>${item['Nome Cliente']}</td><td>${item['Município']}</td>
-                  <td style="text-align:right">${formatWeight(parseFloat(item['peso total']))}</td>
-                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor total']))}</td>
+                  <td style="text-align:right">${formatWeight(parseFloat(item['peso possível']))}</td>
+                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor possível']))}</td>
                 </tr>
               `).join('')}
               <tr class="total-row">
+                <td colspan="3" style="text-align:right">SOMA POSSÍVEL:</td>
+                <td style="text-align:right">${formatWeight(totalPesoPoss)}</td>
+                <td style="text-align:right">${formatCurrency(totalValorPoss)}</td>
+              </tr>
+              <tr class="total-row">
                 <td colspan="3" style="text-align:right">SOMA TOTAL:</td>
-                <td style="text-align:right">${formatWeight(totalPeso)}</td>
-                <td style="text-align:right">${formatCurrency(totalValor)}</td>
+                <td style="text-align:right">${formatWeight(totalPesoTot)}</td>
+                <td style="text-align:right">${formatCurrency(totalValorTot)}</td>
               </tr>
             </tbody>
           </table>
@@ -140,37 +148,37 @@ const HidracorLoadManager = () => {
     if (!printWindow) return;
 
     let shipmentsHtml = '';
-    let grandTotalPeso = 0;
-    let grandTotalValor = 0;
+    let grandTotalPesoPoss = 0;
+    let grandTotalValorPoss = 0;
 
     Object.keys(load.shipments).forEach(key => {
       const items = getShipmentItems(key);
       if (items.length === 0) return;
 
-      const subPeso = items.reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0);
-      const subValor = items.reduce((acc: number, i: any) => acc + parseFloat(i['valor total'] || 0), 0);
-      grandTotalPeso += subPeso;
-      grandTotalValor += subValor;
+      const subPesoPoss = items.reduce((acc: number, i: any) => acc + parseFloat(i['peso possível'] || 0), 0);
+      const subValorPoss = items.reduce((acc: number, i: any) => acc + parseFloat(i['valor possível'] || 0), 0);
+      grandTotalPesoPoss += subPesoPoss;
+      grandTotalValorPoss += subValorPoss;
 
       shipmentsHtml += `
         <div style="page-break-after: always; margin-bottom: 40px;">
           <h2 style="background: #1e293b; color: white; padding: 10px;">EMBARQUE ${key} - ${load.name}</h2>
           <table>
             <thead>
-              <tr><th>Pedido</th><th>Cliente</th><th>Município</th><th>Peso Total</th><th>Valor Total</th></tr>
+              <tr><th>Pedido</th><th>Cliente</th><th>Município</th><th>Peso Possível</th><th>Valor Possível</th></tr>
             </thead>
             <tbody>
               ${items.map((item: any) => `
                 <tr>
                   <td>${item.Pedido}</td><td>${item['Nome Cliente']}</td><td>${item['Município']}</td>
-                  <td style="text-align:right">${formatWeight(parseFloat(item['peso total']))}</td>
-                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor total']))}</td>
+                  <td style="text-align:right">${formatWeight(parseFloat(item['peso possível']))}</td>
+                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor possível']))}</td>
                 </tr>
               `).join('')}
               <tr style="background:#f8fafc; font-weight:bold;">
                 <td colspan="3" style="text-align:right">SUBTOTAL EMBARQUE ${key}:</td>
-                <td style="text-align:right">${formatWeight(subPeso)}</td>
-                <td style="text-align:right">${formatCurrency(subValor)}</td>
+                <td style="text-align:right">${formatWeight(subPesoPoss)}</td>
+                <td style="text-align:right">${formatCurrency(subValorPoss)}</td>
               </tr>
             </tbody>
           </table>
@@ -193,9 +201,9 @@ const HidracorLoadManager = () => {
         <body>
           ${shipmentsHtml || '<p>Nenhum embarque configurado.</p>'}
           <div class="grand-total">
-            <h3 style="margin-top:0">RESUMO GERAL DA CARGA</h3>
-            <p><strong>PESO TOTAL (TODOS EMBARQUES):</strong> ${formatWeight(grandTotalPeso)}</p>
-            <p><strong>VALOR TOTAL (TODOS EMBARQUES):</strong> ${formatCurrency(grandTotalValor)}</p>
+            <h3 style="margin-top:0">RESUMO GERAL DA CARGA (POSSÍVEL)</h3>
+            <p><strong>PESO POSSÍVEL TOTAL:</strong> ${formatWeight(grandTotalPesoPoss)}</p>
+            <p><strong>VALOR POSSÍVEL TOTAL:</strong> ${formatCurrency(grandTotalValorPoss)}</p>
           </div>
         </body>
       </html>
@@ -206,6 +214,14 @@ const HidracorLoadManager = () => {
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
+
+  const currentShipmentItems = getShipmentItems(activeShipment);
+  const shipmentTotals = {
+    pesoPoss: currentShipmentItems.reduce((acc: number, i: any) => acc + parseFloat(i['peso possível'] || 0), 0),
+    valorPoss: currentShipmentItems.reduce((acc: number, i: any) => acc + parseFloat(i['valor possível'] || 0), 0),
+    pesoTot: currentShipmentItems.reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0),
+    valorTot: currentShipmentItems.reduce((acc: number, i: any) => acc + parseFloat(i['valor total'] || 0), 0),
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -235,9 +251,15 @@ const HidracorLoadManager = () => {
                     </div>
                   </div>
                   <p className="text-xs font-bold uppercase truncate">{item['Nome Cliente']}</p>
-                  <div className="mt-2 flex justify-between text-[10px] font-medium">
-                    <span>PESO: {formatWeight(parseFloat(item['peso total']))}</span>
-                    <span className="text-amber-700">VALOR: {formatCurrency(parseFloat(item['valor total']))}</span>
+                  <div className="mt-2 space-y-1">
+                    <div className="flex justify-between text-[10px] font-medium text-blue-600">
+                      <span>POSSÍVEL: {formatWeight(parseFloat(item['peso possível']))}</span>
+                      <span>{formatCurrency(parseFloat(item['valor possível']))}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-medium text-slate-400">
+                      <span>TOTAL: {formatWeight(parseFloat(item['peso total']))}</span>
+                      <span>{formatCurrency(parseFloat(item['valor total']))}</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -259,26 +281,50 @@ const HidracorLoadManager = () => {
                 <TableRow>
                   <TableHead className="text-[10px] uppercase">Pedido</TableHead>
                   <TableHead className="text-[10px] uppercase">Cliente</TableHead>
-                  <TableHead className="text-[10px] uppercase">Peso</TableHead>
+                  <TableHead className="text-[10px] uppercase">Peso Possível</TableHead>
+                  <TableHead className="text-[10px] uppercase">Valor Possível</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {getShipmentItems(activeShipment).map((item: any) => (
+                {currentShipmentItems.map((item: any) => (
                   <TableRow key={item.Pedido}>
                     <TableCell className="text-xs font-bold">{item.Pedido}</TableCell>
                     <TableCell className="text-xs uppercase truncate max-w-[200px]">{item['Nome Cliente']}</TableCell>
-                    <TableCell className="text-xs">{formatWeight(parseFloat(item['peso total']))}</TableCell>
+                    <TableCell className="text-xs text-blue-600 font-medium">{formatWeight(parseFloat(item['peso possível']))}</TableCell>
+                    <TableCell className="text-xs text-blue-600 font-medium">{formatCurrency(parseFloat(item['valor possível']))}</TableCell>
                     <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => moveToShipment(item.Pedido?.toString(), "0")}><Trash2 size={14} /></Button></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </CardContent>
-          <div className="p-4 bg-slate-50 border-t flex justify-between items-center">
-            <div className="text-xs font-bold text-slate-600">{getShipmentItems(activeShipment).length} ITENS</div>
-            <div className="text-xs font-bold text-amber-700">
-              PESO TOTAL: {formatWeight(getShipmentItems(activeShipment).reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0))}
+          <div className="p-4 bg-slate-50 border-t space-y-2">
+            <div className="flex items-center gap-2 text-slate-400 mb-1">
+              <Calculator size={14} />
+              <span className="text-[10px] font-bold uppercase">Resumo do Embarque {activeShipment}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-blue-600">
+                  <span>PESO POSSÍVEL:</span>
+                  <span>{formatWeight(shipmentTotals.pesoPoss)}</span>
+                </div>
+                <div className="flex justify-between text-[10px] font-bold text-blue-600">
+                  <span>VALOR POSSÍVEL:</span>
+                  <span>{formatCurrency(shipmentTotals.valorPoss)}</span>
+                </div>
+              </div>
+              <div className="space-y-1 border-l pl-4">
+                <div className="flex justify-between text-[10px] font-bold text-amber-700">
+                  <span>PESO TOTAL:</span>
+                  <span>{formatWeight(shipmentTotals.pesoTot)}</span>
+                </div>
+                <div className="flex justify-between text-[10px] font-bold text-amber-700">
+                  <span>VALOR TOTAL:</span>
+                  <span>{formatCurrency(shipmentTotals.valorTot)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
