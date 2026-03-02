@@ -168,12 +168,32 @@ const HidracorFormatter = () => {
     return date.toLocaleDateString('pt-BR');
   };
 
+  // Funções de Gestão de Base
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
     const { data, error } = await supabase.from('hidracor_routes').insert([{ name: name.toUpperCase(), user_id: user?.id }]).select();
     if (error) showError(error.message);
     else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
+  };
+
+  const editRoute = async (route: Route) => {
+    const name = prompt("Novo nome da rota:", route.name);
+    if (!name || name === route.name) return;
+    const { error } = await supabase.from('hidracor_routes').update({ name: name.toUpperCase() }).eq('id', route.id);
+    if (error) showError(error.message);
+    else { setRoutes(routes.map(r => r.id === route.id ? { ...r, name: name.toUpperCase() } : r)); showSuccess("Rota atualizada!"); }
+  };
+
+  const deleteRoute = async (id: string) => {
+    if (!confirm("Excluir rota e todas as suas cidades?")) return;
+    const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
+    if (error) showError(error.message);
+    else {
+      setRoutes(routes.filter(r => r.id !== id));
+      setCities(cities.filter(c => c.route_id !== id));
+      showSuccess("Rota excluída!");
+    }
   };
 
   const addCity = async (routeId: string) => {
@@ -183,6 +203,27 @@ const HidracorFormatter = () => {
     const { data, error } = await supabase.from('hidracor_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
+  };
+
+  const editCity = async (city: City) => {
+    const name = prompt("Novo nome da cidade:", city.city_name);
+    if (!name || name === city.city_name) return;
+    const { error } = await supabase.from('hidracor_cities').update({ city_name: name.toUpperCase() }).eq('id', city.id);
+    if (error) showError(error.message);
+    else { setCities(cities.map(c => c.id === city.id ? { ...c, city_name: name.toUpperCase() } : c)); showSuccess("Cidade atualizada!"); }
+  };
+
+  const deleteCity = async (id: string) => {
+    if (!confirm("Excluir cidade?")) return;
+    const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
+    if (error) showError(error.message);
+    else { setCities(cities.filter(c => c.id !== id)); showSuccess("Cidade excluída!"); }
+  };
+
+  const moveCity = async (city: City, newRouteId: string) => {
+    const { error } = await supabase.from('hidracor_cities').update({ route_id: newRouteId }).eq('id', city.id);
+    if (error) showError(error.message);
+    else { setCities(cities.map(c => c.id === city.id ? { ...c, route_id: newRouteId } : c)); showSuccess("Cidade movida!"); }
   };
 
   const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
@@ -195,6 +236,29 @@ const HidracorFormatter = () => {
       if (table === 'hidracor_awaiting_clients') setAwaitingClients([...awaitingClients, ...(data || [])]);
       else setPickupClients([...pickupClients, ...(data || [])]);
       showSuccess("Clientes adicionados!");
+    }
+  };
+
+  const editClient = async (client: ClientBase, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
+    const name = prompt("Novo nome do cliente:", client.client_name);
+    if (!name || name === client.client_name) return;
+    const { error } = await supabase.from(table).update({ client_name: name.toUpperCase() }).eq('id', client.id);
+    if (error) showError(error.message);
+    else {
+      if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.map(c => c.id === client.id ? { ...c, client_name: name.toUpperCase() } : c));
+      else setPickupClients(pickupClients.map(c => c.id === client.id ? { ...c, client_name: name.toUpperCase() } : c));
+      showSuccess("Cliente atualizado!");
+    }
+  };
+
+  const deleteClient = async (id: string, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
+    if (!confirm("Excluir cliente?")) return;
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) showError(error.message);
+    else {
+      if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.filter(c => c.id !== id));
+      else setPickupClients(pickupClients.filter(c => c.id !== id));
+      showSuccess("Cliente excluído!");
     }
   };
 
@@ -405,11 +469,44 @@ const HidracorFormatter = () => {
                       <div key={route.id} className="border rounded-lg p-3 bg-slate-50">
                         <div className="flex justify-between items-center mb-2">
                           <span className="font-bold text-amber-700 text-xs uppercase">{route.name}</span>
-                          <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-6 w-6 p-0 text-green-600"><Plus size={14} /></Button>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => editRoute(route)} className="h-6 w-6 p-0 text-amber-600"><Edit2 size={14} /></Button>
+                            <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-6 w-6 p-0 text-green-600"><Plus size={14} /></Button>
+                            <Button size="sm" variant="ghost" onClick={() => deleteRoute(route.id)} className="h-6 w-6 p-0 text-red-500"><Trash2 size={14} /></Button>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {cities.filter(c => c.route_id === route.id).map(city => (
-                            <span key={city.id} className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase">{city.city_name}</span>
+                            <DropdownMenu key={city.id}>
+                              <DropdownMenuTrigger asChild>
+                                <button className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase hover:border-amber-500 transition-colors">
+                                  {city.city_name}
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start">
+                                <DropdownMenuItem onClick={() => editCity(city)} className="gap-2">
+                                  <Edit2 size={14} /> Editar Nome
+                                </DropdownMenuItem>
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger className="gap-2">
+                                    <MoveHorizontal size={14} /> Mover para Rota
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuPortal>
+                                    <DropdownMenuSubContent>
+                                      {routes.filter(r => r.id !== route.id).map(r => (
+                                        <DropdownMenuItem key={r.id} onClick={() => moveCity(city, r.id)}>
+                                          {r.name}
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </DropdownMenuSubContent>
+                                  </DropdownMenuPortal>
+                                </DropdownMenuSub>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600 gap-2">
+                                  <Trash2 size={14} /> Excluir Cidade
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           ))}
                         </div>
                       </div>
@@ -424,7 +521,13 @@ const HidracorFormatter = () => {
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     {awaitingClients.map(client => (
-                      <div key={client.id} className="p-2 bg-slate-50 border rounded text-[10px] uppercase">{client.client_name}</div>
+                      <div key={client.id} className="flex justify-between items-center p-2 bg-slate-50 border rounded text-[10px] uppercase group">
+                        <span className="truncate">{client.client_name}</span>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-amber-600" onClick={() => editClient(client, 'hidracor_awaiting_clients')}><Edit2 size={12} /></Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500" onClick={() => deleteClient(client.id, 'hidracor_awaiting_clients')}><Trash2 size={12} /></Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </TabsContent>
@@ -436,7 +539,13 @@ const HidracorFormatter = () => {
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     {pickupClients.map(client => (
-                      <div key={client.id} className="p-2 bg-slate-50 border rounded text-[10px] uppercase">{client.client_name}</div>
+                      <div key={client.id} className="flex justify-between items-center p-2 bg-slate-50 border rounded text-[10px] uppercase group">
+                        <span className="truncate">{client.client_name}</span>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-amber-600" onClick={() => editClient(client, 'hidracor_pickup_clients')}><Edit2 size={12} /></Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500" onClick={() => deleteClient(client.id, 'hidracor_pickup_clients')}><Trash2 size={12} /></Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </TabsContent>
