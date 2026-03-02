@@ -22,7 +22,8 @@ import {
   Truck,
   CheckSquare,
   Square,
-  ListFilter
+  ListFilter,
+  Settings
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -138,6 +139,14 @@ const HidracorFormatter = () => {
       load.items.forEach((item: any) => orderMap.set(item.Pedido?.toString(), load.name));
     });
     setUsedOrderIds(orderMap);
+  };
+
+  const formatWeight = (val: number) => {
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+  };
+
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   const handleTopScroll = () => {
@@ -364,6 +373,75 @@ const HidracorFormatter = () => {
         </div>
         <div className="flex items-center gap-2">
           <Link to="/admin/hidracor-loads"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
+          
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
+                <Settings2 size={16} /> <span className="hidden sm:inline">Base Técnica Hidracor</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-[400px] sm:w-[600px] overflow-y-auto">
+              <SheetHeader className="mb-6">
+                <SheetTitle>Configuração de Base Técnica</SheetTitle>
+                <SheetDescription>Gerencie rotas, clientes aguardando e clientes retira.</SheetDescription>
+              </SheetHeader>
+              
+              <Tabs defaultValue="routes" className="w-full">
+                <TabsList className="grid grid-cols-3 mb-6">
+                  <TabsTrigger value="routes">Rotas</TabsTrigger>
+                  <TabsTrigger value="awaiting">Aguardando</TabsTrigger>
+                  <TabsTrigger value="pickup">Retira</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="routes" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Rotas e Cidades</h3>
+                    <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
+                  </div>
+                  <div className="space-y-4">
+                    {routes.map(route => (
+                      <div key={route.id} className="border rounded-lg p-3 bg-slate-50">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-amber-700 text-xs uppercase">{route.name}</span>
+                          <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-6 w-6 p-0 text-green-600"><Plus size={14} /></Button>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {cities.filter(c => c.route_id === route.id).map(city => (
+                            <span key={city.id} className="bg-white px-2 py-0.5 rounded text-[9px] border border-slate-200 uppercase">{city.city_name}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="awaiting" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Clientes Aguardando Confirmação</h3>
+                    <Button size="sm" onClick={() => addClientsToBase('hidracor_awaiting_clients')} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Adicionar</Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {awaitingClients.map(client => (
+                      <div key={client.id} className="p-2 bg-slate-50 border rounded text-[10px] uppercase">{client.client_name}</div>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="pickup" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold uppercase text-slate-500">Clientes Retira</h3>
+                    <Button size="sm" onClick={() => addClientsToBase('hidracor_pickup_clients')} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Adicionar</Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {pickupClients.map(client => (
+                      <div key={client.id} className="p-2 bg-slate-50 border rounded text-[10px] uppercase">{client.client_name}</div>
+                    ))}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </SheetContent>
+          </Sheet>
+
           {selectedItems.length > 0 && <Button onClick={handleCreateLoad} size="sm" className="bg-amber-600 text-white gap-2 animate-pulse"><Truck size={16} /> Criar Carga ({selectedItems.length})</Button>}
           {formattedData.length > 0 && <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(!isUploadOpen)} className="gap-2 border-amber-200 text-amber-700"><RefreshCw size={14} /> {isUploadOpen ? "Fechar" : "Novo Upload"}</Button>}
           <Button onClick={downloadExcel} size="sm" className="bg-green-600 text-white gap-2"><Download size={16} /> Baixar Excel</Button>
@@ -395,12 +473,14 @@ const HidracorFormatter = () => {
               </div>
               <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
                 <Calculator size={16} className="text-slate-400" />
-                {Object.entries(totals).map(([col, val]) => (
-                  <div key={col} className="text-[10px] border-r last:border-0 pr-2 last:pr-0">
-                    <span className="text-slate-500 font-medium uppercase">{col}:</span>
-                    <span className="ml-1 font-bold text-amber-700">{val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
+                <div className="text-[10px] border-r pr-2">
+                  <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
+                  <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
+                </div>
+                <div className="text-[10px]">
+                  <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
+                  <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
+                </div>
               </div>
             </CardHeader>
 
@@ -447,7 +527,9 @@ const HidracorFormatter = () => {
                                 {col === 'ROTA' ? (
                                   <div className={`px-2 py-1 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                                 ) : (
-                                  <span className="block truncate max-w-[180px]">{row[col]}</span>
+                                  <span className="block truncate max-w-[180px]">
+                                    {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
+                                  </span>
                                 )}
                               </TableCell>
                             ))}

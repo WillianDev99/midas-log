@@ -56,6 +56,14 @@ const HidracorLoadManager = () => {
     }
   };
 
+  const formatWeight = (val: number) => {
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+  };
+
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
   const moveToShipment = (pedidoId: string, targetShipment: string) => {
     const newShipments = { ...load.shipments };
     Object.keys(newShipments).forEach(key => {
@@ -76,8 +84,6 @@ const HidracorLoadManager = () => {
     Object.values(load.shipments).forEach((ids: any) => ids.forEach((id: string) => assignedIds.add(id)));
     return load.items.filter((item: any) => !assignedIds.has(item.Pedido?.toString()));
   }, [load]);
-
-  const formatVal = (val: any) => parseFloat(val?.toString().replace(',', '.') || '0').toFixed(2);
 
   const handlePrintLoad = () => {
     const printWindow = window.open('', '_blank');
@@ -110,14 +116,14 @@ const HidracorLoadManager = () => {
               ${load.items.map((item: any) => `
                 <tr>
                   <td>${item.Pedido}</td><td>${item['Nome Cliente']}</td><td>${item['Município']}</td>
-                  <td style="text-align:right">${formatVal(item['peso total'])}</td>
-                  <td style="text-align:right">${formatVal(item['valor total'])}</td>
+                  <td style="text-align:right">${formatWeight(parseFloat(item['peso total']))}</td>
+                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor total']))}</td>
                 </tr>
               `).join('')}
               <tr class="total-row">
                 <td colspan="3" style="text-align:right">SOMA TOTAL:</td>
-                <td style="text-align:right">${totalPeso.toFixed(2)}</td>
-                <td style="text-align:right">${totalValor.toFixed(2)}</td>
+                <td style="text-align:right">${formatWeight(totalPeso)}</td>
+                <td style="text-align:right">${formatCurrency(totalValor)}</td>
               </tr>
             </tbody>
           </table>
@@ -157,14 +163,14 @@ const HidracorLoadManager = () => {
               ${items.map((item: any) => `
                 <tr>
                   <td>${item.Pedido}</td><td>${item['Nome Cliente']}</td><td>${item['Município']}</td>
-                  <td style="text-align:right">${formatVal(item['peso total'])}</td>
-                  <td style="text-align:right">${formatVal(item['valor total'])}</td>
+                  <td style="text-align:right">${formatWeight(parseFloat(item['peso total']))}</td>
+                  <td style="text-align:right">${formatCurrency(parseFloat(item['valor total']))}</td>
                 </tr>
               `).join('')}
               <tr style="background:#f8fafc; font-weight:bold;">
                 <td colspan="3" style="text-align:right">SUBTOTAL EMBARQUE ${key}:</td>
-                <td style="text-align:right">${subPeso.toFixed(2)}</td>
-                <td style="text-align:right">${subValor.toFixed(2)}</td>
+                <td style="text-align:right">${formatWeight(subPeso)}</td>
+                <td style="text-align:right">${formatCurrency(subValor)}</td>
               </tr>
             </tbody>
           </table>
@@ -188,8 +194,8 @@ const HidracorLoadManager = () => {
           ${shipmentsHtml || '<p>Nenhum embarque configurado.</p>'}
           <div class="grand-total">
             <h3 style="margin-top:0">RESUMO GERAL DA CARGA</h3>
-            <p><strong>PESO TOTAL (TODOS EMBARQUES):</strong> ${grandTotalPeso.toFixed(2)} KG</p>
-            <p><strong>VALOR TOTAL (TODOS EMBARQUES):</strong> R$ ${grandTotalValor.toFixed(2)}</p>
+            <p><strong>PESO TOTAL (TODOS EMBARQUES):</strong> ${formatWeight(grandTotalPeso)}</p>
+            <p><strong>VALOR TOTAL (TODOS EMBARQUES):</strong> ${formatCurrency(grandTotalValor)}</p>
           </div>
         </body>
       </html>
@@ -230,8 +236,8 @@ const HidracorLoadManager = () => {
                   </div>
                   <p className="text-xs font-bold uppercase truncate">{item['Nome Cliente']}</p>
                   <div className="mt-2 flex justify-between text-[10px] font-medium">
-                    <span>PESO: {formatVal(item['peso total'])}</span>
-                    <span className="text-amber-700">VALOR: {formatVal(item['valor total'])}</span>
+                    <span>PESO: {formatWeight(parseFloat(item['peso total']))}</span>
+                    <span className="text-amber-700">VALOR: {formatCurrency(parseFloat(item['valor total']))}</span>
                   </div>
                 </div>
               ))}
@@ -262,7 +268,7 @@ const HidracorLoadManager = () => {
                   <TableRow key={item.Pedido}>
                     <TableCell className="text-xs font-bold">{item.Pedido}</TableCell>
                     <TableCell className="text-xs uppercase truncate max-w-[200px]">{item['Nome Cliente']}</TableCell>
-                    <TableCell className="text-xs">{formatVal(item['peso total'])}</TableCell>
+                    <TableCell className="text-xs">{formatWeight(parseFloat(item['peso total']))}</TableCell>
                     <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => moveToShipment(item.Pedido?.toString(), "0")}><Trash2 size={14} /></Button></TableCell>
                   </TableRow>
                 ))}
@@ -272,7 +278,7 @@ const HidracorLoadManager = () => {
           <div className="p-4 bg-slate-50 border-t flex justify-between items-center">
             <div className="text-xs font-bold text-slate-600">{getShipmentItems(activeShipment).length} ITENS</div>
             <div className="text-xs font-bold text-amber-700">
-              PESO TOTAL: {getShipmentItems(activeShipment).reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0).toFixed(2)} KG
+              PESO TOTAL: {formatWeight(getShipmentItems(activeShipment).reduce((acc: number, i: any) => acc + parseFloat(i['peso total'] || 0), 0))}
             </div>
           </div>
         </Card>
