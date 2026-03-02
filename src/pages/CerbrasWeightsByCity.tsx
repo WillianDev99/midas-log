@@ -14,6 +14,7 @@ import {
   Plus,
   X,
   ChevronRight,
+  ChevronLeft,
   Layers,
   Route as RouteIcon,
   RotateCcw,
@@ -21,7 +22,9 @@ import {
   Printer,
   Edit3,
   User,
-  Navigation
+  Navigation,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -105,6 +108,8 @@ const CerbrasWeightsByCity = () => {
   const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     const init = async () => {
@@ -130,7 +135,6 @@ const CerbrasWeightsByCity = () => {
     }
   }, [cityCoords]);
 
-  // Atualiza a geometria da estrada sempre que a rota mudar
   useEffect(() => {
     if (currentRoute.length > 0) {
       updateRoadRoute();
@@ -154,16 +158,13 @@ const CerbrasWeightsByCity = () => {
         const geometry = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]] as [number, number]);
         setRouteGeometry(geometry);
         
-        // Atualizar distâncias individuais (aproximadas pelo OSRM legs)
         const legs = data.routes[0].legs;
         const updatedRoute = [...currentRoute];
         legs.forEach((leg: any, idx: number) => {
           if (updatedRoute[idx]) {
-            updatedRoute[idx].distanceFromPrev = leg.distance / 1000; // converter para km
+            updatedRoute[idx].distanceFromPrev = leg.distance / 1000;
           }
         });
-        // Não chamamos setCurrentRoute aqui para evitar loop infinito, 
-        // apenas se as distâncias mudarem significativamente ou se for necessário para o UI
       }
     } catch (error) {
       console.error("Erro ao buscar rota OSRM:", error);
@@ -716,25 +717,32 @@ const CerbrasWeightsByCity = () => {
       </header>
 
       <main className="flex-1 flex overflow-hidden relative">
-        <aside className="w-80 bg-white border-r overflow-y-auto hidden lg:flex flex-col">
-          <div className="p-4 border-b bg-slate-50">
+        <aside className={`bg-white border-r overflow-y-auto transition-all duration-300 flex flex-col relative ${isSidebarOpen ? 'w-80' : 'w-0'}`}>
+          <div className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <Layers size={18} className="text-amber-600" /> Rotas Salvas
             </h3>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSidebarOpen(false)}>
+              <PanelLeftClose size={18} />
+            </Button>
           </div>
-          <div className="flex-1 divide-y">
+          <div className="flex-1 divide-y overflow-x-hidden">
             {savedRoutes.map(route => (
-              <div key={route.id} className="p-4 hover:bg-slate-50 group transition-colors">
+              <div 
+                key={route.id} 
+                className={`p-4 hover:bg-slate-50 group transition-colors cursor-pointer ${selectedRouteId === route.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''}`}
+                onClick={() => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)}
+              >
                 <div className="flex justify-between items-start mb-2">
                   <span className="font-bold text-sm text-slate-800">{route.name}</span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={() => handlePrintRoute(route)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={(e) => { e.stopPropagation(); handlePrintRoute(route); }}>
                       <Printer size={14} />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500" onClick={() => editSavedRoute(route)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500" onClick={(e) => { e.stopPropagation(); editSavedRoute(route); }}>
                       <Edit3 size={14} />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => deleteRoute(route.id)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={(e) => { e.stopPropagation(); deleteRoute(route.id); }}>
                       <Trash2 size={14} />
                     </Button>
                   </div>
@@ -751,6 +759,17 @@ const CerbrasWeightsByCity = () => {
             ))}
           </div>
         </aside>
+
+        {!isSidebarOpen && (
+          <Button 
+            variant="secondary" 
+            size="icon" 
+            className="absolute top-4 left-4 z-[1000] shadow-md bg-white border"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <PanelLeftOpen size={20} />
+          </Button>
+        )}
 
         <div className="flex-1 relative z-10">
           <MapContainer center={MARACANAU_COORDS} zoom={7} style={{ height: '100%', width: '100%' }}>
@@ -827,9 +846,22 @@ const CerbrasWeightsByCity = () => {
               <Polyline positions={routeGeometry} color="#16a34a" weight={4} opacity={0.8} />
             )}
 
-            {savedRoutes.map((route, idx) => (
-              <Polyline key={route.id} positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} weight={2} opacity={0.4} dashArray="5, 10" />
-            ))}
+            {savedRoutes.map((route, idx) => {
+              const isSelected = selectedRouteId === route.id;
+              return (
+                <Polyline 
+                  key={route.id} 
+                  positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} 
+                  color={isSelected ? '#f59e0b' : ['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} 
+                  weight={isSelected ? 6 : 2} 
+                  opacity={isSelected ? 1 : 0.4} 
+                  dashArray={isSelected ? "" : "5, 10"} 
+                  eventHandlers={{
+                    click: () => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)
+                  }}
+                />
+              );
+            })}
           </MapContainer>
 
           {isRouteMode && (
