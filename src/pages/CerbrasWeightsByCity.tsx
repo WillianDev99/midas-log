@@ -134,11 +134,19 @@ const CerbrasWeightsByCity = () => {
       }
 
       const savedData = localStorage.getItem('cerbras_map_data');
-      if (savedData) setDeliveries(JSON.parse(savedData));
+      const loadedDeliveries = savedData ? JSON.parse(savedData) : [];
+      setDeliveries(loadedDeliveries);
       
       const savedCredit = localStorage.getItem('cerbras_credit_data');
-      if (savedCredit) setCreditLimits(JSON.parse(savedCredit));
+      const loadedCredits = savedCredit ? JSON.parse(savedCredit) : [];
+      setCreditLimits(loadedCredits);
       
+      // Geocodificar qualquer coisa que tenha sobrado sem coordenadas
+      const allItems = [...loadedDeliveries, ...loadedCredits];
+      if (allItems.length > 0) {
+        await geocodeMissingCities(allItems);
+      }
+
       await fetchSavedRoutes();
       setLoading(false);
     };
@@ -349,7 +357,7 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        await geocodeMissingCities(items.map(i => i.chave));
+        await geocodeMissingCities(items);
         showSuccess(`${items.length} registros de peso carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -392,7 +400,7 @@ const CerbrasWeightsByCity = () => {
 
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
-        await geocodeMissingCities(items.map(i => i.chave));
+        await geocodeMissingCities(items);
         showSuccess(`${items.length} registros de crédito carregados!`);
       } catch (error: any) {
         showError("Erro ao processar crédito: " + error.message);
@@ -404,29 +412,30 @@ const CerbrasWeightsByCity = () => {
     reader.readAsBinaryString(file);
   };
 
-  const geocodeMissingCities = async (chaves: string[]) => {
+  const geocodeMissingCities = async (items: (DeliveryItem | CreditLimitItem)[]) => {
     setGeocoding(true);
-    const uniqueChaves = Array.from(new Set(chaves));
+    const uniqueChaves = Array.from(new Set(items.map(i => i.chave)));
     const newCoords = { ...cityCoords };
     let foundCount = 0;
 
     for (const chave of uniqueChaves) {
       if (!newCoords[chave]) {
-        const parts = chave.split('|');
-        // Tentamos encontrar o nome original a partir dos dados carregados
-        const item = deliveries.find(d => d.chave === chave) || creditLimits.find(c => c.chave === chave);
+        const item = items.find(i => i.chave === chave);
         if (item) {
           const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
           if (coords) {
             newCoords[chave] = coords;
             foundCount++;
-            await new Promise(r => setTimeout(r, 500));
+            // Pequeno delay para não sobrecarregar a API de geocoding gratuita
+            await new Promise(r => setTimeout(r, 300));
           }
         }
       }
     }
 
-    if (foundCount > 0) setCityCoords(newCoords);
+    if (foundCount > 0) {
+      setCityCoords(prev => ({ ...prev, ...newCoords }));
+    }
     setGeocoding(false);
   };
 
