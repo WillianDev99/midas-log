@@ -576,11 +576,6 @@ const ExternalLoads = () => {
           <div class="footer">
             © ${new Date().getFullYear()} Midas Logística - Eficiência em Movimento
           </div>
-          <script>
-            window.onload = () => {
-              setTimeout(() => { window.print(); }, 500);
-            };
-          </script>
         </body>
       </html>
     `;
@@ -606,7 +601,7 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <Link to="/admin/external-loads/saved">
+          <Link to="/admin/external-loads/saved" target="_blank">
             <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
               <Bookmark size={16} /> <span className="hidden sm:inline">Cargas Salvas</span>
             </Button>
@@ -799,7 +794,7 @@ const ExternalLoads = () => {
                                       </TableCell>
                                       <TableCell className="text-xs">
                                         <div className="flex items-center gap-2">
-                                          <Input type="number" step="0.0001" className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`} value={delivery.aliquot} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })} />
+                                          <Input type="number" step="0.00000001" className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`} value={delivery.aliquot} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })} />
                                           <Popover>
                                             <PopoverTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600"><Search size={12} /></Button></PopoverTrigger>
                                             <PopoverContent className="w-80 p-2">

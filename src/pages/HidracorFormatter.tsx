@@ -418,6 +418,11 @@ const HidracorFormatter = () => {
     });
     ws[`H${range + 1}`] = { v: "TOTAL:" };
 
+    // Atualiza o range da planilha para incluir a linha de totais
+    const range_ref = XLSX.utils.decode_range(ws['!ref']!);
+    range_ref.e.r = range;
+    ws['!ref'] = XLSX.utils.encode_range(range_ref);
+
     XLSX.utils.book_append_sheet(wb, ws, "Carteira Hidracor");
     XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_${new Date().toLocaleDateString()}.xlsx`);
   };

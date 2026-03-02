@@ -157,7 +157,6 @@ const SavedExternalLoads = () => {
     `;
     printWindow.document.write(content);
     printWindow.document.close();
-    printWindow.print();
   };
 
   const handlePrintCompleto = (load: any) => {
@@ -218,7 +217,7 @@ const SavedExternalLoads = () => {
                   <td style="text-align:center">${d.uf}</td>
                   <td style="text-align:center">${d.type}</td>
                   <td style="text-align:right">${formatCurrency(d.weight)}</td>
-                  <td style="text-align:right">${d.aliquot.toFixed(4)}</td>
+                  <td style="text-align:right">${d.aliquot}</td>
                   <td style="text-align:right">R$ ${formatCurrency(d.freight)}</td>
                 </tr>
               `).join('')}
@@ -249,7 +248,6 @@ const SavedExternalLoads = () => {
     `;
     printWindow.document.write(content);
     printWindow.document.close();
-    printWindow.print();
   };
 
   const filteredLoads = loads.filter(l => 
