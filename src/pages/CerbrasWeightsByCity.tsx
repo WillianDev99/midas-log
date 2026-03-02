@@ -281,16 +281,35 @@ const CerbrasWeightsByCity = () => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
     
-    const newRoute = [...currentRoute];
+    let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
 
     if (existingPointIdx > -1) {
-      const point = newRoute[existingPointIdx];
-      if (!point.clients.some(c => c.name === clientName)) {
+      const point = { ...newRoute[existingPointIdx] };
+      const clientIdx = point.clients.findIndex(c => c.name === clientName);
+      
+      if (clientIdx > -1) {
+        // Remover cliente se já estiver na rota
+        point.totalWeight -= point.clients[clientIdx].weight;
+        point.clients.splice(clientIdx, 1);
+        
+        if (point.clients.length === 0) {
+          // Se não sobrar nenhum cliente, remove a parada da rota
+          newRoute.splice(existingPointIdx, 1);
+          showSuccess(`${clientName} removido e parada excluída.`);
+        } else {
+          newRoute[existingPointIdx] = point;
+          showSuccess(`${clientName} removido.`);
+        }
+      } else {
+        // Adicionar cliente se não estiver na rota
         point.clients.push({ name: clientName, weight });
         point.totalWeight += weight;
+        newRoute[existingPointIdx] = point;
+        showSuccess(`${clientName} adicionado.`);
       }
     } else {
+      // Adicionar nova parada com o cliente
       newRoute.push({
         city: cityData.originalName,
         uf: cityData.uf,
@@ -298,28 +317,39 @@ const CerbrasWeightsByCity = () => {
         clients: [{ name: clientName, weight }],
         totalWeight: weight
       });
+      showSuccess(`${clientName} adicionado.`);
     }
     setCurrentRoute(newRoute);
-    showSuccess(`${clientName} adicionado.`);
   };
 
   const handleAddAllCityToRoute = (chave: string, coords: [number, number]) => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
     
-    const newRoute = [...currentRoute];
+    let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
 
     const allClients = Object.entries(cityData.clients).map(([name, weight]) => ({ name, weight }));
     const totalWeight = cityData.totalWeight;
 
     if (existingPointIdx > -1) {
-      newRoute[existingPointIdx] = {
-        ...newRoute[existingPointIdx],
-        clients: allClients,
-        totalWeight: totalWeight
-      };
+      // Se a cidade já existe, verifica se todos os clientes já estão lá
+      const currentPoint = newRoute[existingPointIdx];
+      if (currentPoint.clients.length === allClients.length) {
+        // Se todos já estão lá, remove a cidade inteira (toggle)
+        newRoute.splice(existingPointIdx, 1);
+        showSuccess(`Cidade ${cityData.originalName} removida da rota.`);
+      } else {
+        // Se não, garante que todos os clientes da cidade estejam incluídos
+        newRoute[existingPointIdx] = {
+          ...currentPoint,
+          clients: allClients,
+          totalWeight: totalWeight
+        };
+        showSuccess(`Todos os clientes de ${cityData.originalName} incluídos.`);
+      }
     } else {
+      // Adiciona a cidade inteira
       newRoute.push({
         city: cityData.originalName,
         uf: cityData.uf,
@@ -327,9 +357,9 @@ const CerbrasWeightsByCity = () => {
         clients: allClients,
         totalWeight: totalWeight
       });
+      showSuccess(`Cidade ${cityData.originalName} adicionada com todos os clientes.`);
     }
     setCurrentRoute(newRoute);
-    showSuccess(`Todos os clientes de ${cityData.originalName} adicionados.`);
   };
 
   const saveRoute = async () => {
@@ -614,7 +644,7 @@ const CerbrasWeightsByCity = () => {
                                 <Button 
                                   size="icon" 
                                   variant={isClientSelected ? "default" : "outline"} 
-                                  className="h-6 w-6" 
+                                  className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} 
                                   onClick={() => handleAddClientToRoute(chave, coords, client, weight)}
                                 >
                                   {isClientSelected ? <X size={12} /> : <Plus size={12} />}
@@ -626,7 +656,7 @@ const CerbrasWeightsByCity = () => {
                       </div>
                       {isRouteMode && (
                         <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2" onClick={() => handleAddAllCityToRoute(chave, coords)}>
-                          <Plus size={12} /> Incluir Cidade Completa
+                          <Plus size={12} /> {isSelectedInCurrentRoute ? "Remover/Atualizar Cidade" : "Incluir Cidade Completa"}
                         </Button>
                       )}
                     </div>
@@ -682,7 +712,15 @@ const CerbrasWeightsByCity = () => {
                       </div>
                       <div className="pl-7 flex flex-wrap gap-1">
                         {p.clients.map((c, ci) => (
-                          <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500">{c.name.split(' ')[0]}</span>
+                          <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500 flex items-center gap-1">
+                            {c.name.split(' ')[0]}
+                            <button 
+                              onClick={() => handleAddClientToRoute(`${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}`, p.coords, c.name, c.weight)}
+                              className="text-red-400 hover:text-red-600"
+                            >
+                              <X size={8} />
+                            </button>
+                          </span>
                         ))}
                       </div>
                     </div>
