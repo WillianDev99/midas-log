@@ -10,7 +10,8 @@ import {
   Loader2,
   Search,
   FileText,
-  Eye
+  Eye,
+  User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -67,6 +68,7 @@ const SavedExternalLoads = () => {
     if (!printWindow) return;
     const logoUrl = window.location.origin + "/logo.png";
     const totalWeight = load.deliveries?.reduce((acc: number, d: any) => acc + d.weight, 0) || 0;
+    const totalToPayFormatted = formatCurrency(load.total_to_pay || 0);
 
     const content = `
       <html>
@@ -83,7 +85,8 @@ const SavedExternalLoads = () => {
             th { background: #1e293b; color: white; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
             td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
             .total-row { background: #f1f5f9; font-weight: bold; font-size: 16px; }
-            .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: center; font-weight: bold; color: #b91c1c; font-size: 18px; }
+            .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: left; font-size: 14px; }
+            .note-title { font-weight: bold; color: #b91c1c; font-size: 16px; margin-bottom: 10px; display: block; }
             .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; pt: 20px; }
           </style>
         </head>
@@ -96,6 +99,10 @@ const SavedExternalLoads = () => {
             <div class="info-item">
               <div class="info-label">Rota</div>
               <div style="font-size: 16px; font-weight: bold;">${load.rota}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Motorista</div>
+              <div style="font-size: 16px; font-weight: bold;">${load.driver_name || 'NÃO INFORMADO'}</div>
             </div>
             <div class="info-item">
               <div class="info-label">Data de Emissão</div>
@@ -126,9 +133,24 @@ const SavedExternalLoads = () => {
                 <td colspan="4" style="text-align: right">PESO TOTAL:</td>
                 <td style="text-align: right;">${formatCurrency(totalWeight)} KG</td>
               </tr>
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right">VALOR DO FRETE:</td>
+                <td style="text-align: right; color: #15803d;">R$ ${totalToPayFormatted}</td>
+              </tr>
             </tbody>
           </table>
-          <div class="note">⚠️ O DESCARREGO SERÁ POR CONTA DO MOTORISTA.</div>
+
+          <div class="note">
+            <span class="note-title">⚠️ INFORMAÇÕES IMPORTANTES:</span>
+            <p>• O DESCARREGO SERÁ POR CONTA DO MOTORISTA.</p>
+            <p>• QUANTIDADE DE CHAPATEX NECESSÁRIA:<br>
+               &nbsp;&nbsp;- TRUCK: 16 CHAPATEX<br>
+               &nbsp;&nbsp;- BITRUCK: 24 CHAPATEX<br>
+               &nbsp;&nbsp;- CARRETA: 32 CHAPATEX</p>
+            <p>• VESTIMENTA EXIGIDA PELA FÁBRICA: Usar calça e calçado fechado.</p>
+            <p>• AO CHEGAR NA FÁBRICA: Apresentar-se na portaria e informar que está para retirar uma carga contratada com a <strong>Midas Logística</strong>.</p>
+          </div>
+
           <div class="footer">Midas Logística - Eficiência em Movimento</div>
         </body>
       </html>
@@ -146,7 +168,11 @@ const SavedExternalLoads = () => {
     const totalFreight = load.deliveries?.reduce((acc: number, d: any) => acc + d.freight, 0) || 0;
     const totalToPay = load.total_to_pay || 0;
     const tax = totalFreight * 0.0998;
-    const margin = totalFreight - totalToPay - tax;
+    const marginBefore = totalFreight - totalToPay;
+    const marginAfter = totalFreight - totalToPay - tax;
+    
+    const marginBeforePct = totalFreight > 0 ? (marginBefore / totalFreight) * 100 : 0;
+    const marginAfterPct = totalFreight > 0 ? (marginAfter / totalFreight) * 100 : 0;
 
     const content = `
       <html>
@@ -171,6 +197,7 @@ const SavedExternalLoads = () => {
             <div class="title">Relatório Técnico de Carga</div>
           </div>
           <p><strong>Rota:</strong> ${load.rota}</p>
+          <p><strong>Motorista:</strong> ${load.driver_name || 'NÃO INFORMADO'}</p>
           <p><strong>Data Salva:</strong> ${new Date(load.created_at).toLocaleString('pt-BR')}</p>
           
           <table>
@@ -203,9 +230,18 @@ const SavedExternalLoads = () => {
             <div class="summary-item"><span>Frete Total Recebido:</span> <span class="font-bold">R$ ${formatCurrency(totalFreight)}</span></div>
             <div class="summary-item"><span>Total Pago ao Motorista:</span> <span class="font-bold">R$ ${formatCurrency(totalToPay)}</span></div>
             <div class="summary-item"><span>Imposto (9.98%):</span> <span class="font-bold">R$ ${formatCurrency(tax)}</span></div>
+            
             <div class="summary-item" style="border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px;">
-              <span class="font-bold">Margem Líquida:</span> 
-              <span class="font-bold" style="color: ${margin >= 0 ? 'green' : 'red'}">R$ ${formatCurrency(margin)}</span>
+              <span>Margem Bruta (Antes do Imposto):</span> 
+              <span class="font-bold" style="color: ${marginBefore >= 0 ? 'green' : 'red'}">
+                R$ ${formatCurrency(marginBefore)} (${marginBeforePct.toFixed(2)}%)
+              </span>
+            </div>
+            <div class="summary-item">
+              <span class="font-bold">Margem Líquida (Depois do Imposto):</span> 
+              <span class="font-bold" style="color: ${marginAfter >= 0 ? 'green' : 'red'}">
+                R$ ${formatCurrency(marginAfter)} (${marginAfterPct.toFixed(2)}%)
+              </span>
             </div>
           </div>
         </body>
@@ -257,10 +293,13 @@ const SavedExternalLoads = () => {
                       <span className="text-xs font-bold uppercase">Salvo em: {new Date(load.created_at).toLocaleString('pt-BR')}</span>
                     </div>
                     <h3 className="text-lg font-bold text-slate-900 mb-1">{load.rota}</h3>
-                    <div className="flex gap-4 text-sm text-slate-500">
+                    <div className="flex flex-wrap gap-4 text-sm text-slate-500">
                       <span className="flex items-center gap-1"><Truck size={14} /> {load.deliveries?.length} entregas</span>
                       <span className="flex items-center gap-1 font-bold text-slate-700">
                         R$ {formatCurrency(load.total_to_pay)} (Pago)
+                      </span>
+                      <span className="flex items-center gap-1 text-blue-600 font-medium">
+                        <User size={14} /> {load.driver_name || 'Sem motorista'}
                       </span>
                     </div>
                   </div>

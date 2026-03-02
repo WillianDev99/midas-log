@@ -335,6 +335,9 @@ const ExternalLoads = () => {
   };
 
   const handleSaveLoad = async (load: ExternalLoad) => {
+    const driverName = prompt("Nome do motorista que aceitou a carga:");
+    if (!driverName) return;
+
     setSaving(true);
     try {
       const { error } = await supabase.from('hidracor_saved_external_loads').insert([{
@@ -342,7 +345,8 @@ const ExternalLoads = () => {
         rota: load.rota,
         data_original: load.data,
         deliveries: load.parsedDeliveries,
-        total_to_pay: load.totalToPay
+        total_to_pay: load.totalToPay,
+        driver_name: driverName.toUpperCase()
       }]);
 
       if (error) throw error;
@@ -441,13 +445,13 @@ const ExternalLoads = () => {
             .logo { height: 70px; }
             .title { font-size: 28px; font-weight: bold; color: #1e293b; }
             .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; }
-            .info-item { font-size: 14px; }
             .info-label { font-weight: bold; color: #64748b; text-transform: uppercase; font-size: 11px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th { background: #1e293b; color: white; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-size: 12px; text-transform: uppercase; }
             td { padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }
             .total-row { background: #f1f5f9; font-weight: bold; font-size: 16px; }
-            .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: center; font-weight: bold; color: #b91c1c; font-size: 18px; }
+            .note { margin-top: 40px; padding: 20px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: left; font-size: 14px; }
+            .note-title { font-weight: bold; color: #b91c1c; font-size: 16px; margin-bottom: 10px; display: block; }
             .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; pt: 20px; }
           </style>
         </head>
@@ -496,7 +500,18 @@ const ExternalLoads = () => {
               </tr>
             </tbody>
           </table>
-          <div class="note">⚠️ O DESCARREGO SERÁ POR CONTA DO MOTORISTA.</div>
+          
+          <div class="note">
+            <span class="note-title">⚠️ INFORMAÇÕES IMPORTANTES:</span>
+            <p>• O DESCARREGO SERÁ POR CONTA DO MOTORISTA.</p>
+            <p>• QUANTIDADE DE CHAPATEX NECESSÁRIA:<br>
+               &nbsp;&nbsp;- TRUCK: 16 CHAPATEX<br>
+               &nbsp;&nbsp;- BITRUCK: 24 CHAPATEX<br>
+               &nbsp;&nbsp;- CARRETA: 32 CHAPATEX</p>
+            <p>• VESTIMENTA EXIGIDA PELA FÁBRICA: Usar calça e calçado fechado.</p>
+            <p>• AO CHEGAR NA FÁBRICA: Apresentar-se na portaria e informar que está para retirar uma carga contratada com a <strong>Midas Logística</strong>.</p>
+          </div>
+
           <div class="footer">Midas Logística - Eficiência em Movimento</div>
         </body>
       </html>

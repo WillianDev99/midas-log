@@ -168,7 +168,6 @@ const HidracorFormatter = () => {
     return date.toLocaleDateString('pt-BR');
   };
 
-  // Funções de Gestão de Base
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -414,7 +413,8 @@ const HidracorFormatter = () => {
     // Colunas: I (peso poss), J (valor poss), K (peso tot), L (valor tot)
     const colsToSum = ['I', 'J', 'K', 'L']; 
     colsToSum.forEach(col => {
-      ws[`${col}${range + 1}`] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
+      const cellRef = `${col}${range + 1}`;
+      ws[cellRef] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
     });
     ws[`H${range + 1}`] = { v: "TOTAL:" };
 
