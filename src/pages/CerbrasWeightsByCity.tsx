@@ -115,6 +115,7 @@ const CerbrasWeightsByCity = () => {
   const [processing, setProcessing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [routing, setRouting] = useState(false);
+  const [currentSearching, setCurrentSearching] = useState("");
   
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
@@ -238,15 +239,24 @@ const CerbrasWeightsByCity = () => {
   };
 
   const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
-    try {
-      const query = encodeURIComponent(`${cidade}, ${uf}, Brazil`);
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
-      const data = await response.json();
-      if (data && data.length > 0) {
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+    const queries = [
+      `${cidade}, ${uf}, Brazil`,
+      `${cidade}, ${uf}`,
+      `${cidade} ${uf}`
+    ];
+
+    for (const query of queries) {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+        const data = await response.json();
+        if (data && data.length > 0) {
+          return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+        }
+      } catch (error) {
+        console.error(`Erro API para ${query}:`, error);
       }
-    } catch (error) {
-      console.error(`Erro API para ${cidade}:`, error);
+      // Pequeno delay entre tentativas para a mesma cidade
+      await new Promise(r => setTimeout(r, 200));
     }
     return null;
   };
@@ -276,14 +286,18 @@ const CerbrasWeightsByCity = () => {
       const data = citySummary[chave];
       if (!data) continue;
 
+      setCurrentSearching(`${data.originalName} - ${data.uf}`);
       const coords = await fetchCoordsFromAPI(data.originalName, data.uf);
+      
       if (coords) {
         setCityCoords(prev => ({ ...prev, [chave]: coords }));
       }
-      // Delay para respeitar limite da API gratuita
-      await new Promise(r => setTimeout(r, 1000));
+      
+      // Delay para respeitar limite da API gratuita (Nominatim pede 1s)
+      await new Promise(r => setTimeout(r, 800));
     }
 
+    setCurrentSearching("");
     setGeocoding(false);
   };
 
@@ -627,6 +641,18 @@ const CerbrasWeightsByCity = () => {
     printWindow.document.close();
   };
 
+  const totalRouteWeightValue = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + p.totalWeight, 0);
+  }, [currentRoute]);
+
+  const totalRouteClientsCount = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + p.clients.length, 0);
+  }, [currentRoute]);
+
+  const totalRouteDistance = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + (p.distanceFromPrev || 0), 0);
+  }, [currentRoute]);
+
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
@@ -647,7 +673,9 @@ const CerbrasWeightsByCity = () => {
           {geocoding && (
             <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
               <Globe size={16} className="animate-spin" />
-              <span className="text-[10px] font-bold uppercase">Localizando: {stats.citiesWithCoords} / {stats.totalCities}</span>
+              <span className="text-[10px] font-bold uppercase">
+                {currentSearching ? `Buscando: ${currentSearching}` : `Localizando: ${stats.citiesWithCoords} / ${stats.totalCities}`}
+              </span>
             </div>
           )}
 
