@@ -17,7 +17,10 @@ import {
   Layers,
   Route as RouteIcon,
   RotateCcw,
-  Search
+  Search,
+  Printer,
+  Edit3,
+  User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -53,11 +56,17 @@ interface DeliveryItem {
   chave: string; 
 }
 
+interface RouteClient {
+  name: string;
+  weight: number;
+}
+
 interface RoutePoint {
   city: string;
+  uf: string;
   coords: [number, number];
-  selectedClients: string[];
-  weight: number;
+  clients: RouteClient[];
+  totalWeight: number;
 }
 
 const MapController = ({ points }: { points: [number, number][] }) => {
@@ -82,6 +91,7 @@ const CerbrasWeightsByCity = () => {
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -108,7 +118,6 @@ const CerbrasWeightsByCity = () => {
     if (v === null || v === undefined || v === "") return 0;
     if (typeof v === 'number') return v;
     let s = String(v).trim().replace(/\s/g, '');
-    // Trata o caso de -5,092 -> -5.092
     if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
     else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
     return parseFloat(s) || 0;
@@ -125,7 +134,7 @@ const CerbrasWeightsByCity = () => {
       
       const coords: Record<string, [number, number]> = {};
       data.forEach((row, i) => {
-        if (i === 0) return; // Pula cabeçalho
+        if (i === 0) return;
         const city = normalizarParaMatch(row[0]);
         const uf = normalizarParaMatch(row[1]);
         const lat = converterNumero(row[2]);
@@ -137,17 +146,15 @@ const CerbrasWeightsByCity = () => {
       });
       setCityCoords(coords);
     } catch (error) {
-      console.warn("Aviso: Não foi possível carregar CIDADES.xlsx, usaremos busca via API.");
+      console.warn("Aviso: Não foi possível carregar CIDADES.xlsx");
     }
   };
 
-  // Função para buscar coordenadas via API Nominatim (OpenStreetMap)
   const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
     try {
       const query = encodeURIComponent(`${cidade}, ${uf}, Brazil`);
       const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
       const data = await response.json();
-      
       if (data && data.length > 0) {
         return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
       }
@@ -205,10 +212,7 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        
-        // Inicia geocodificação automática para cidades faltantes
         await geocodeMissingCities(items);
-        
         showSuccess(`${items.length} registros carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -234,17 +238,13 @@ const CerbrasWeightsByCity = () => {
           if (coords) {
             newCoords[chave] = coords;
             foundCount++;
-            // Pequeno delay para respeitar rate limit da API gratuita
             await new Promise(r => setTimeout(r, 500));
           }
         }
       }
     }
 
-    if (foundCount > 0) {
-      setCityCoords(newCoords);
-      console.log(`[MAPA] ${foundCount} novas cidades localizadas via API.`);
-    }
+    if (foundCount > 0) setCityCoords(newCoords);
     setGeocoding(false);
   };
 
@@ -277,34 +277,99 @@ const CerbrasWeightsByCity = () => {
       .filter((coords): coords is [number, number] => !!coords);
   }, [citySummary, cityCoords]);
 
-  const handleAddPointToRoute = (chave: string, coords: [number, number], clients: Record<string, number>) => {
+  const handleAddClientToRoute = (chave: string, coords: [number, number], clientName: string, weight: number) => {
     if (!isRouteMode) return;
-    const cityName = citySummary[chave].originalName;
-    const weight = citySummary[chave].totalWeight;
-    setCurrentRoute([...currentRoute, { 
-      city: cityName, 
-      coords, 
-      selectedClients: Object.keys(clients),
-      weight: weight
-    }]);
-    showSuccess(`${cityName} adicionada.`);
+    const cityData = citySummary[chave];
+    
+    const newRoute = [...currentRoute];
+    const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
+
+    if (existingPointIdx > -1) {
+      const point = newRoute[existingPointIdx];
+      if (!point.clients.some(c => c.name === clientName)) {
+        point.clients.push({ name: clientName, weight });
+        point.totalWeight += weight;
+      }
+    } else {
+      newRoute.push({
+        city: cityData.originalName,
+        uf: cityData.uf,
+        coords,
+        clients: [{ name: clientName, weight }],
+        totalWeight: weight
+      });
+    }
+    setCurrentRoute(newRoute);
+    showSuccess(`${clientName} adicionado.`);
+  };
+
+  const handleAddAllCityToRoute = (chave: string, coords: [number, number]) => {
+    if (!isRouteMode) return;
+    const cityData = citySummary[chave];
+    
+    const newRoute = [...currentRoute];
+    const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
+
+    const allClients = Object.entries(cityData.clients).map(([name, weight]) => ({ name, weight }));
+    const totalWeight = cityData.totalWeight;
+
+    if (existingPointIdx > -1) {
+      newRoute[existingPointIdx] = {
+        ...newRoute[existingPointIdx],
+        clients: allClients,
+        totalWeight: totalWeight
+      };
+    } else {
+      newRoute.push({
+        city: cityData.originalName,
+        uf: cityData.uf,
+        coords,
+        clients: allClients,
+        totalWeight: totalWeight
+      });
+    }
+    setCurrentRoute(newRoute);
+    showSuccess(`Todos os clientes de ${cityData.originalName} adicionados.`);
   };
 
   const saveRoute = async () => {
-    const name = prompt("Nome para esta rota:");
+    const name = prompt("Nome para esta rota:", editingRouteId ? savedRoutes.find(r => r.id === editingRouteId)?.name : "");
     if (!name || currentRoute.length === 0) return;
-    const { error } = await supabase.from('cerbras_map_routes').insert([{
-      user_id: user?.id,
-      name: name.toUpperCase(),
-      route_data: currentRoute
-    }]);
-    if (error) showError(error.message);
-    else {
-      showSuccess("Rota salva!");
-      setIsRouteMode(false);
-      setCurrentRoute([]);
-      fetchSavedRoutes();
+
+    if (editingRouteId) {
+      const { error } = await supabase.from('cerbras_map_routes').update({
+        name: name.toUpperCase(),
+        route_data: currentRoute
+      }).eq('id', editingRouteId);
+      if (error) showError(error.message);
+      else {
+        showSuccess("Rota atualizada!");
+        setEditingRouteId(null);
+        setIsRouteMode(false);
+        setCurrentRoute([]);
+        fetchSavedRoutes();
+      }
+    } else {
+      const { error } = await supabase.from('cerbras_map_routes').insert([{
+        user_id: user?.id,
+        name: name.toUpperCase(),
+        route_data: currentRoute
+      }]);
+      if (error) showError(error.message);
+      else {
+        showSuccess("Rota salva!");
+        setIsRouteMode(false);
+        setCurrentRoute([]);
+        fetchSavedRoutes();
+      }
     }
+  };
+
+  const editSavedRoute = (route: any) => {
+    setEditingRouteId(route.id);
+    setCurrentRoute(route.route_data);
+    setIsRouteMode(true);
+    showSuccess(`Editando rota: ${route.name}`);
   };
 
   const deleteRoute = async (id: string) => {
@@ -313,8 +378,96 @@ const CerbrasWeightsByCity = () => {
     if (!error) fetchSavedRoutes();
   };
 
-  const totalRouteWeight = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + p.weight, 0);
+  const handlePrintRoute = (route: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const totalWeight = route.route_data.reduce((acc: number, p: any) => acc + p.totalWeight, 0);
+    const totalClients = route.route_data.reduce((acc: number, p: any) => acc + p.clients.length, 0);
+    const logoUrl = window.location.origin + "/logo.png";
+
+    const content = `
+      <html>
+        <head>
+          <title>Rota Cerbras - ${route.name}</title>
+          <style>
+            body { font-family: sans-serif; padding: 40px; color: #333; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #f59e0b; padding-bottom: 20px; margin-bottom: 30px; }
+            .logo { height: 60px; }
+            .title { font-size: 24px; font-weight: bold; }
+            .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; }
+            .summary-item { text-align: center; }
+            .summary-label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+            .summary-value { font-size: 18px; font-weight: bold; color: #1e293b; }
+            .stop { margin-bottom: 30px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+            .stop-header { background: #1e293b; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+            .stop-title { font-weight: bold; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; }
+            th { text-align: left; padding: 12px 20px; background: #f1f5f9; font-size: 11px; text-transform: uppercase; color: #475569; }
+            td { padding: 12px 20px; border-top: 1px solid #e2e8f0; font-size: 13px; }
+            .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${logoUrl}" class="logo" />
+            <div class="title">Relatório de Rota Cerbras</div>
+          </div>
+          
+          <div class="summary">
+            <div class="summary-item">
+              <div class="summary-label">Nome da Rota</div>
+              <div class="summary-value">${route.name}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Peso Total</div>
+              <div class="summary-value">${totalWeight.toLocaleString('pt-BR')} kg</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total de Clientes</div>
+              <div class="summary-value">${totalClients}</div>
+            </div>
+          </div>
+
+          ${route.route_data.map((p: any, i: number) => `
+            <div class="stop">
+              <div class="stop-header">
+                <div class="stop-title">PARADA ${i + 1}: ${p.city} - ${p.uf}</div>
+                <div>${p.totalWeight.toLocaleString('pt-BR')} kg</div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th style="text-align: right">Peso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${p.clients.map((c: any) => `
+                    <tr>
+                      <td style="text-transform: uppercase">${c.name}</td>
+                      <td style="text-align: right; font-weight: bold;">${c.weight.toLocaleString('pt-BR')} kg</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `).join('')}
+
+          <div class="footer">Midas Logística - Eficiência em Movimento</div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
+  const totalRouteWeightValue = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + p.totalWeight, 0);
+  }, [currentRoute]);
+
+  const totalRouteClientsCount = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + p.clients.length, 0);
   }, [currentRoute]);
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
@@ -362,14 +515,14 @@ const CerbrasWeightsByCity = () => {
           </Button>
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
 
-          <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) setCurrentRoute([]); }} className="gap-2">
+          <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) { setCurrentRoute([]); setEditingRouteId(null); } }} className="gap-2">
             {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
             {isRouteMode ? "Cancelar Rota" : "Montar Rota"}
           </Button>
 
           {isRouteMode && currentRoute.length > 0 && (
             <Button size="sm" onClick={saveRoute} className="bg-green-600 hover:bg-green-700 gap-2">
-              <Save size={16} /> Salvar Rota
+              <Save size={16} /> {editingRouteId ? "Atualizar Rota" : "Salvar Rota"}
             </Button>
           )}
         </div>
@@ -387,15 +540,23 @@ const CerbrasWeightsByCity = () => {
               <div key={route.id} className="p-4 hover:bg-slate-50 group transition-colors">
                 <div className="flex justify-between items-start mb-2">
                   <span className="font-bold text-sm text-slate-800">{route.name}</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 opacity-0 group-hover:opacity-100" onClick={() => deleteRoute(route.id)}>
-                    <Trash2 size={14} />
-                  </Button>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={() => handlePrintRoute(route)}>
+                      <Printer size={14} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500" onClick={() => editSavedRoute(route)}>
+                      <Edit3 size={14} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => deleteRoute(route.id)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   {route.route_data.map((p: any, i: number) => (
                     <div key={i} className="flex items-center gap-2 text-[10px] text-slate-500">
                       <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span className="uppercase">{p.city}</span>
+                      <span className="uppercase">{p.city} ({p.clients.length} cli)</span>
                     </div>
                   ))}
                 </div>
@@ -431,23 +592,41 @@ const CerbrasWeightsByCity = () => {
                   iconAnchor: [8, 8]
                 })}>
                   <Popup className="custom-popup">
-                    <div className="p-2 min-w-[200px]">
+                    <div className="p-2 min-w-[240px]">
                       <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName} - {data.uf}</h3>
                       <div className="flex justify-between items-center mb-3 bg-amber-50 p-2 rounded">
                         <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
                         <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
                       </div>
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                        {Object.entries(data.clients).map(([client, weight]) => (
-                          <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-1">
-                            <span className="font-medium text-slate-600 truncate max-w-[120px]">{client}</span>
-                            <span className="font-bold text-slate-900">{weight.toLocaleString('pt-BR')} kg</span>
-                          </div>
-                        ))}
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1 mb-4">
+                        {Object.entries(data.clients).map(([client, weight]) => {
+                          const isClientSelected = currentRoute.some(p => 
+                            `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && 
+                            p.clients.some(c => c.name === client)
+                          );
+                          return (
+                            <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2 last:border-0">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span>
+                                <span className="font-bold text-slate-900">{weight.toLocaleString('pt-BR')} kg</span>
+                              </div>
+                              {isRouteMode && (
+                                <Button 
+                                  size="icon" 
+                                  variant={isClientSelected ? "default" : "outline"} 
+                                  className="h-6 w-6" 
+                                  onClick={() => handleAddClientToRoute(chave, coords, client, weight)}
+                                >
+                                  {isClientSelected ? <X size={12} /> : <Plus size={12} />}
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                       {isRouteMode && (
-                        <Button size="sm" className="w-full mt-4 bg-amber-600 hover:bg-amber-700 h-8 text-[10px]" onClick={() => handleAddPointToRoute(chave, coords, data.clients)}>
-                          <Plus size={12} className="mr-1" /> Incluir na Rota
+                        <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2" onClick={() => handleAddAllCityToRoute(chave, coords)}>
+                          <Plus size={12} /> Incluir Cidade Completa
                         </Button>
                       )}
                     </div>
@@ -474,13 +653,19 @@ const CerbrasWeightsByCity = () => {
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}><RotateCcw size={14} /></Button>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Cidades Selecionadas:</span>
-                  <span className="font-bold">{currentRoute.length}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-50 p-2 rounded border">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Cidades</p>
+                    <p className="text-sm font-bold">{currentRoute.length}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded border">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p>
+                    <p className="text-sm font-bold">{totalRouteClientsCount}</p>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Peso Total da Rota:</span>
-                  <span className="font-bold text-amber-700">{totalRouteWeight.toLocaleString('pt-BR')} kg</span>
+                <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100">
+                  <span className="text-amber-700 font-bold uppercase">Peso Total:</span>
+                  <span className="font-bold text-amber-900">{totalRouteWeightValue.toLocaleString('pt-BR')} kg</span>
                 </div>
                 <div className="border-t pt-3 mt-3 max-h-40 overflow-y-auto space-y-2">
                   <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
@@ -488,18 +673,27 @@ const CerbrasWeightsByCity = () => {
                     MARACANAÚ
                   </div>
                   {currentRoute.map((p, i) => (
-                    <div key={i} className="flex items-center gap-3 text-[10px] group">
-                      <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
-                      <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
-                      <span className="text-slate-400">{(p.weight/1000).toFixed(1)}t</span>
-                      <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
+                    <div key={i} className="flex flex-col gap-1 p-2 bg-slate-50 rounded border border-slate-100 group">
+                      <div className="flex items-center gap-3 text-[10px]">
+                        <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
+                        <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
+                        <span className="text-slate-400">{(p.totalWeight/1000).toFixed(1)}t</span>
+                        <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
+                      </div>
+                      <div className="pl-7 flex flex-wrap gap-1">
+                        {p.clients.map((c, ci) => (
+                          <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500">{c.name.split(' ')[0]}</span>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-4">
-                <Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => setCurrentRoute([])}>Limpar</Button>
-                <Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>Salvar Rota</Button>
+                <Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => { setCurrentRoute([]); setEditingRouteId(null); }}>Limpar</Button>
+                <Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>
+                  {editingRouteId ? "Atualizar" : "Salvar Rota"}
+                </Button>
               </div>
             </div>
           )}
