@@ -20,7 +20,8 @@ import {
   Search,
   Printer,
   Edit3,
-  User
+  User,
+  Navigation
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -76,6 +77,7 @@ interface RoutePoint {
   coords: [number, number];
   clients: RouteClient[];
   totalWeight: number;
+  distanceFromPrev?: number; // em km
 }
 
 const MapController = ({ points }: { points: [number, number][] }) => {
@@ -95,16 +97,17 @@ const CerbrasWeightsByCity = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [routing, setRouting] = useState(false);
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
+  const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
-      // Carregar coordenadas salvas primeiro
       const savedCoords = localStorage.getItem('cerbras_city_coords');
       if (savedCoords) {
         setCityCoords(JSON.parse(savedCoords));
@@ -121,12 +124,53 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
-  // Salvar coordenadas sempre que mudarem
   useEffect(() => {
     if (Object.keys(cityCoords).length > 0) {
       localStorage.setItem('cerbras_city_coords', JSON.stringify(cityCoords));
     }
   }, [cityCoords]);
+
+  // Atualiza a geometria da estrada sempre que a rota mudar
+  useEffect(() => {
+    if (currentRoute.length > 0) {
+      updateRoadRoute();
+    } else {
+      setRouteGeometry([]);
+    }
+  }, [currentRoute]);
+
+  const updateRoadRoute = async () => {
+    if (currentRoute.length === 0) return;
+    setRouting(true);
+    try {
+      const coords = [MARACANAU_COORDS, ...currentRoute.map(p => p.coords)];
+      const coordString = coords.map(c => `${c[1]},${c[0]}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.code === 'Ok' && data.routes.length > 0) {
+        const geometry = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]] as [number, number]);
+        setRouteGeometry(geometry);
+        
+        // Atualizar distâncias individuais (aproximadas pelo OSRM legs)
+        const legs = data.routes[0].legs;
+        const updatedRoute = [...currentRoute];
+        legs.forEach((leg: any, idx: number) => {
+          if (updatedRoute[idx]) {
+            updatedRoute[idx].distanceFromPrev = leg.distance / 1000; // converter para km
+          }
+        });
+        // Não chamamos setCurrentRoute aqui para evitar loop infinito, 
+        // apenas se as distâncias mudarem significativamente ou se for necessário para o UI
+      }
+    } catch (error) {
+      console.error("Erro ao buscar rota OSRM:", error);
+    } finally {
+      setRouting(false);
+    }
+  };
 
   const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
@@ -196,7 +240,6 @@ const CerbrasWeightsByCity = () => {
     if (!error) setSavedRoutes(data || []);
   };
 
-  // Algoritmo de ordenação lógica (Vizinho Mais Próximo)
   const sortRouteLogically = (points: RoutePoint[]): RoutePoint[] => {
     if (points.length <= 1) return points;
 
@@ -357,7 +400,6 @@ const CerbrasWeightsByCity = () => {
       const alreadyHasClient = point.clients.some(c => c.name === clientName);
       
       if (alreadyHasClient) {
-        // Remover todos os itens desse cliente
         const clientWeight = clientItems.reduce((acc, i) => acc + i.peso, 0);
         point.totalWeight -= clientWeight;
         point.clients = point.clients.filter(c => c.name !== clientName);
@@ -369,7 +411,6 @@ const CerbrasWeightsByCity = () => {
         }
         showSuccess(`${clientName} removido.`);
       } else {
-        // Adicionar todos os itens desse cliente
         clientItems.forEach(item => {
           point.clients.push({
             name: item.cliente,
@@ -612,6 +653,10 @@ const CerbrasWeightsByCity = () => {
     return currentRoute.reduce((acc, p) => acc + p.clients.length, 0);
   }, [currentRoute]);
 
+  const totalRouteDistance = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + (p.distanceFromPrev || 0), 0);
+  }, [currentRoute]);
+
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
@@ -629,10 +674,10 @@ const CerbrasWeightsByCity = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {geocoding && (
+          {(geocoding || routing) && (
             <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4">
-              <Search size={16} className="animate-bounce" />
-              <span className="text-[10px] font-bold uppercase">Buscando Coordenadas...</span>
+              <Navigation size={16} className="animate-bounce" />
+              <span className="text-[10px] font-bold uppercase">{geocoding ? 'Buscando Coordenadas...' : 'Calculando Estradas...'}</span>
             </div>
           )}
 
@@ -778,12 +823,12 @@ const CerbrasWeightsByCity = () => {
               );
             })}
 
-            {isRouteMode && currentRoute.length > 0 && (
-              <Polyline positions={[MARACANAU_COORDS, ...currentRoute.map(p => p.coords)]} color="#16a34a" weight={3} dashArray="5, 10" />
+            {isRouteMode && routeGeometry.length > 0 && (
+              <Polyline positions={routeGeometry} color="#16a34a" weight={4} opacity={0.8} />
             )}
 
             {savedRoutes.map((route, idx) => (
-              <Polyline key={route.id} positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} weight={2} opacity={0.6} />
+              <Polyline key={route.id} positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} weight={2} opacity={0.4} dashArray="5, 10" />
             ))}
           </MapContainer>
 
@@ -796,7 +841,7 @@ const CerbrasWeightsByCity = () => {
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}><RotateCcw size={14} /></Button>
               </div>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="bg-slate-50 p-2 rounded border">
                     <p className="text-[9px] font-bold text-slate-400 uppercase">Cidades</p>
                     <p className="text-sm font-bold">{currentRoute.length}</p>
@@ -804,6 +849,10 @@ const CerbrasWeightsByCity = () => {
                   <div className="bg-slate-50 p-2 rounded border">
                     <p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p>
                     <p className="text-sm font-bold">{totalRouteClientsCount}</p>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded border">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Distância</p>
+                    <p className="text-sm font-bold">{totalRouteDistance.toFixed(0)} km</p>
                   </div>
                 </div>
                 <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100">
@@ -820,7 +869,7 @@ const CerbrasWeightsByCity = () => {
                       <div className="flex items-center gap-3 text-[10px]">
                         <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
                         <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
-                        <span className="text-slate-400">{(p.totalWeight/1000).toFixed(1)}t</span>
+                        <span className="text-blue-600 font-bold">+{p.distanceFromPrev?.toFixed(0)}km</span>
                         <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
                       </div>
                       <div className="pl-7 flex flex-wrap gap-1">
