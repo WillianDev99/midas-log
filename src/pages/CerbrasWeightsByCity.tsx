@@ -102,7 +102,6 @@ const CerbrasWeightsByCity = () => {
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "") // Remove acentos
       .toUpperCase()
-      .split('-')[0] // Remove sufixos após hífen
       .replace(/[^A-Z0-9\s]/g, '') // Remove caracteres especiais
       .trim()
       .replace(/\s+/g, ' ');
@@ -142,7 +141,6 @@ const CerbrasWeightsByCity = () => {
         const lng = converterNumero(row[3]);
         
         if (city && uf && lat !== 0 && lng !== 0) {
-          // Chave composta para evitar duplicidade em estados diferentes
           coords[`${city}|${uf}`] = [lat, lng];
         }
       });
@@ -242,16 +240,24 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
-  // Lógica de busca de coordenadas com Cidade + UF
+  // Lógica de busca de coordenadas com Cidade + UF e Fallback
   const getCoordsForCity = (chave: string) => {
-    // Busca direta na chave composta CIDADE|UF
+    // 1. Busca exata na chave composta CIDADE|UF
     if (cityCoords[chave]) return cityCoords[chave];
     
-    // Fallback: tenta encontrar apenas pela cidade se a UF falhar (menos preciso)
-    const [cidade] = chave.split('|');
+    const [cidade, uf] = chave.split('|');
     const keys = Object.keys(cityCoords);
-    const match = keys.find(k => k.startsWith(cidade));
+
+    // 2. Busca por aproximação (contém o nome e a UF bate)
+    const match = keys.find(k => {
+      const [kCity, kUf] = k.split('|');
+      return (kCity.includes(cidade) || cidade.includes(kCity)) && kUf === uf;
+    });
     if (match) return cityCoords[match];
+    
+    // 3. Busca apenas pela cidade (qualquer UF)
+    const cityOnlyMatch = keys.find(k => k.split('|')[0] === cidade);
+    if (cityOnlyMatch) return cityCoords[cityOnlyMatch];
     
     return null;
   };
