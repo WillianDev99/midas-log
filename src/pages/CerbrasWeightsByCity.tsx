@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -58,6 +58,20 @@ interface RoutePoint {
   weight: number;
 }
 
+// Componente para controlar o zoom e centralização do mapa
+const MapController = ({ points }: { points: [number, number][] }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (points.length > 0) {
+      const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+    }
+  }, [points, map]);
+  
+  return null;
+};
+
 const CerbrasWeightsByCity = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,10 +97,12 @@ const CerbrasWeightsByCity = () => {
   // Função de normalização idêntica ao Python (limpar_texto)
   const limparTexto = (txt: any) => {
     if (!txt) return "";
+    // Remove acentos, converte para maiúsculo e remove sufixos de estado (ex: - CE)
     return String(txt)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toUpperCase()
+      .split('-')[0] // Pega apenas o nome da cidade antes do hífen
       .trim()
       .replace(/\s+/g, ' ');
   };
@@ -98,12 +114,9 @@ const CerbrasWeightsByCity = () => {
     
     let s = String(v).trim();
     try {
-      // Se tem ponto e vírgula (formato 1.234,56)
       if (s.includes('.') && s.includes(',')) {
         s = s.replace(/\./g, '').replace(',', '.');
-      } 
-      // Se tem apenas vírgula (formato 1234,56)
-      else if (s.includes(',')) {
+      } else if (s.includes(',')) {
         s = s.replace(',', '.');
       }
       return parseFloat(s) || 0;
@@ -121,8 +134,7 @@ const CerbrasWeightsByCity = () => {
       const data: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
       const coords: Record<string, [number, number]> = {};
-      // Pula cabeçalho se existir ou tenta detectar
-      data.forEach((row, idx) => {
+      data.forEach((row) => {
         const name = limparTexto(row[0]);
         const lat = parseFloat(row[2]);
         const lng = parseFloat(row[3]);
@@ -154,8 +166,6 @@ const CerbrasWeightsByCity = () => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        
-        // Tenta encontrar a aba "Carteira" ou usa a primeira
         const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes("CARTEIRA")) || wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -217,12 +227,16 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
+  const activeMarkersCoords = useMemo(() => {
+    return Object.keys(citySummary)
+      .map(chave => cityCoords[chave])
+      .filter((coords): coords is [number, number] => !!coords);
+  }, [citySummary, cityCoords]);
+
   const handleAddPointToRoute = (chave: string, coords: [number, number], clients: Record<string, number>) => {
     if (!isRouteMode) return;
-    
     const cityName = citySummary[chave].originalName;
     const weight = citySummary[chave].totalWeight;
-    
     setCurrentRoute([...currentRoute, { 
       city: cityName, 
       coords, 
@@ -235,13 +249,11 @@ const CerbrasWeightsByCity = () => {
   const saveRoute = async () => {
     const name = prompt("Nome para esta rota:");
     if (!name || currentRoute.length === 0) return;
-
     const { error } = await supabase.from('cerbras_map_routes').insert([{
       user_id: user?.id,
       name: name.toUpperCase(),
       route_data: currentRoute
     }]);
-
     if (error) showError(error.message);
     else {
       showSuccess("Rota salva!");
@@ -303,13 +315,7 @@ const CerbrasWeightsByCity = () => {
             {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
             Upload Base
           </Button>
-          <input 
-            type="file" 
-            ref={fileInputRef}
-            className="hidden" 
-            accept=".xlsx, .xls" 
-            onChange={handleFileUpload} 
-          />
+          <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
 
           <Button 
             variant={isRouteMode ? "destructive" : "default"} 
@@ -333,7 +339,6 @@ const CerbrasWeightsByCity = () => {
       </header>
 
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar de Rotas Salvas */}
         <aside className="w-80 bg-white border-r overflow-y-auto hidden lg:flex flex-col">
           <div className="p-4 border-b bg-slate-50">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -359,28 +364,14 @@ const CerbrasWeightsByCity = () => {
                 </div>
               </div>
             ))}
-            {savedRoutes.length === 0 && (
-              <div className="p-8 text-center text-slate-400">
-                <RouteIcon size={32} className="mx-auto mb-2 opacity-20" />
-                <p className="text-xs">Nenhuma rota salva.</p>
-              </div>
-            )}
           </div>
         </aside>
 
-        {/* Mapa */}
         <div className="flex-1 relative z-10">
-          <MapContainer 
-            center={MARACANAU_COORDS} 
-            zoom={7} 
-            style={{ height: '100%', width: '100%' }}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-
-            {/* Ponto Inicial: Maracanaú */}
+          <MapContainer center={MARACANAU_COORDS} zoom={7} style={{ height: '100%', width: '100%' }}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <MapController points={activeMarkersCoords} />
+            
             <Marker position={MARACANAU_COORDS} icon={L.divIcon({
               className: 'custom-div-icon',
               html: `<div style="background-color: #1e293b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
@@ -390,24 +381,18 @@ const CerbrasWeightsByCity = () => {
               <Popup><strong>PONTO INICIAL: MARACANAÚ-CE</strong></Popup>
             </Marker>
 
-            {/* Cidades com Peso */}
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = cityCoords[chave];
               if (!coords) return null;
-
               const isSelectedInCurrentRoute = currentRoute.some(p => limparTexto(p.city) === chave);
 
               return (
-                <Marker 
-                  key={chave} 
-                  position={coords}
-                  icon={L.divIcon({
-                    className: 'custom-div-icon',
-                    html: `<div style="background-color: ${isSelectedInCurrentRoute ? '#16a34a' : '#f59e0b'}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`,
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                  })}
-                >
+                <Marker key={chave} position={coords} icon={L.divIcon({
+                  className: 'custom-div-icon',
+                  html: `<div style="background-color: ${isSelectedInCurrentRoute ? '#16a34a' : '#f59e0b'}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`,
+                  iconSize: [16, 16],
+                  iconAnchor: [8, 8]
+                })}>
                   <Popup className="custom-popup">
                     <div className="p-2 min-w-[200px]">
                       <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName}</h3>
@@ -415,7 +400,6 @@ const CerbrasWeightsByCity = () => {
                         <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
                         <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
                       </div>
-                      
                       <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                         {Object.entries(data.clients).map(([client, weight]) => (
                           <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-1">
@@ -424,13 +408,8 @@ const CerbrasWeightsByCity = () => {
                           </div>
                         ))}
                       </div>
-
                       {isRouteMode && (
-                        <Button 
-                          size="sm" 
-                          className="w-full mt-4 bg-amber-600 hover:bg-amber-700 h-8 text-[10px]"
-                          onClick={() => handleAddPointToRoute(chave, coords, data.clients)}
-                        >
+                        <Button size="sm" className="w-full mt-4 bg-amber-600 hover:bg-amber-700 h-8 text-[10px]" onClick={() => handleAddPointToRoute(chave, coords, data.clients)}>
                           <Plus size={12} className="mr-1" /> Incluir na Rota
                         </Button>
                       )}
@@ -440,40 +419,23 @@ const CerbrasWeightsByCity = () => {
               );
             })}
 
-            {/* Linha da Rota Atual */}
             {isRouteMode && currentRoute.length > 0 && (
-              <Polyline 
-                positions={[MARACANAU_COORDS, ...currentRoute.map(p => p.coords)]} 
-                color="#16a34a" 
-                weight={3} 
-                dashArray="5, 10"
-              />
+              <Polyline positions={[MARACANAU_COORDS, ...currentRoute.map(p => p.coords)]} color="#16a34a" weight={3} dashArray="5, 10" />
             )}
 
-            {/* Linhas das Rotas Salvas */}
             {savedRoutes.map((route, idx) => (
-              <Polyline 
-                key={route.id}
-                positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} 
-                color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} 
-                weight={2}
-                opacity={0.6}
-              />
+              <Polyline key={route.id} positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} weight={2} opacity={0.6} />
             ))}
           </MapContainer>
 
-          {/* Painel de Rota (Estilo Python) */}
           {isRouteMode && (
             <div className="absolute bottom-10 left-10 z-[1000] bg-white p-5 rounded-lg shadow-2xl border-2 border-slate-900 w-80">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="font-bold text-sm uppercase tracking-tight flex items-center gap-2">
                   <Truck size={18} className="text-amber-600" /> Painel de Rota
                 </h4>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}>
-                  <RotateCcw size={14} />
-                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}><RotateCcw size={14} /></Button>
               </div>
-              
               <div className="space-y-3">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Cidades Selecionadas:</span>
@@ -483,7 +445,6 @@ const CerbrasWeightsByCity = () => {
                   <span className="text-slate-500">Peso Total da Rota:</span>
                   <span className="font-bold text-amber-700">{totalRouteWeight.toLocaleString('pt-BR')} kg</span>
                 </div>
-                
                 <div className="border-t pt-3 mt-3 max-h-40 overflow-y-auto space-y-2">
                   <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
                     <div className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[8px]">0</div>
@@ -494,14 +455,11 @@ const CerbrasWeightsByCity = () => {
                       <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
                       <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
                       <span className="text-slate-400">{(p.weight/1000).toFixed(1)}t</span>
-                      <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100">
-                        <X size={12} />
-                      </button>
+                      <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
                     </div>
                   ))}
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => setCurrentRoute([])}>Limpar</Button>
                 <Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>Salvar Rota</Button>
