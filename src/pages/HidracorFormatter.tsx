@@ -24,7 +24,8 @@ import {
   Square,
   ListFilter,
   Settings,
-  MoveHorizontal
+  MoveHorizontal,
+  FileUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -91,6 +92,7 @@ const HidracorFormatter = () => {
   const [pickupClients, setPickupClients] = useState<ClientBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [importingRoutes, setImportingRoutes] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(true);
   
   const [formattedData, setFormattedData] = useState<any[]>([]);
@@ -102,6 +104,7 @@ const HidracorFormatter = () => {
 
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const routeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const savedData = localStorage.getItem('hidracor_last_wallet');
@@ -259,6 +262,69 @@ const HidracorFormatter = () => {
       else setPickupClients(pickupClients.filter(c => c.id !== id));
       showSuccess("Cliente excluído!");
     }
+  };
+
+  const handleRouteImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportingRoutes(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        if (data.length < 2) throw new Error("Arquivo vazio ou inválido.");
+
+        const startRow = (data[0][0]?.toString().toLowerCase().includes('rota')) ? 1 : 0;
+        const rows = data.slice(startRow).filter(r => r[0] && r[1]);
+
+        const uniqueRouteNames = Array.from(new Set(rows.map(r => r[0].toString().toUpperCase().trim())));
+        const currentRoutes = [...routes];
+        const routeMap = new Map<string, string>();
+
+        for (const routeName of uniqueRouteNames) {
+          let existing = currentRoutes.find(r => r.name === routeName);
+          if (!existing) {
+            const { data: newRoute, error } = await supabase
+              .from('hidracor_routes')
+              .insert([{ name: routeName, user_id: user?.id }])
+              .select()
+              .single();
+            if (error) throw error;
+            existing = newRoute;
+            currentRoutes.push(newRoute);
+          }
+          routeMap.set(routeName, existing.id);
+        }
+
+        const citiesToInsert = rows.map(r => ({
+          route_id: routeMap.get(r[0].toString().toUpperCase().trim()),
+          city_name: r[1].toString().toUpperCase().trim(),
+          user_id: user?.id
+        }));
+
+        const { data: newCities, error: cityError } = await supabase
+          .from('hidracor_cities')
+          .insert(citiesToInsert)
+          .select();
+
+        if (cityError) throw cityError;
+
+        setRoutes(currentRoutes);
+        setCities(prev => [...prev, ...(newCities || [])]);
+        showSuccess(`${newCities?.length} cidades importadas com sucesso!`);
+      } catch (error: any) {
+        showError("Erro na importação: " + error.message);
+      } finally {
+        setImportingRoutes(false);
+        if (routeInputRef.current) routeInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -471,7 +537,14 @@ const HidracorFormatter = () => {
                 <TabsContent value="routes" className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-sm font-bold uppercase text-slate-500">Rotas e Cidades</h3>
-                    <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => routeInputRef.current?.click()} disabled={importingRoutes} className="h-8 border-amber-200 text-amber-700">
+                        {importingRoutes ? <Loader2 className="animate-spin" size={14} /> : <FileUp size={14} />}
+                        <span className="ml-2">Importar Excel</span>
+                      </Button>
+                      <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
+                    </div>
+                    <input type="file" ref={routeInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleRouteImport} />
                   </div>
                   <div className="space-y-4">
                     {routes.map(route => (
