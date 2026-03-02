@@ -21,7 +21,8 @@ import {
   Printer,
   Search,
   Trash2,
-  FileText
+  FileText,
+  Bookmark
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -74,6 +75,7 @@ const ExternalLoads = () => {
   const [previousLoads, setPreviousLoads] = useState<ExternalLoad[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState<'current' | 'previous'>('current');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
@@ -332,6 +334,26 @@ const ExternalLoads = () => {
     }
   };
 
+  const handleSaveLoad = async (load: ExternalLoad) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('hidracor_saved_external_loads').insert([{
+        user_id: user?.id,
+        rota: load.rota,
+        data_original: load.data,
+        deliveries: load.parsedDeliveries,
+        total_to_pay: load.totalToPay
+      }]);
+
+      if (error) throw error;
+      showSuccess("Carga salva com sucesso!");
+    } catch (error: any) {
+      showError("Erro ao salvar: " + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -569,6 +591,12 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
+          <Link to="/admin/external-loads/saved">
+            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
+              <Bookmark size={16} /> <span className="hidden sm:inline">Cargas Salvas</span>
+            </Button>
+          </Link>
+
           <a href={VIEW_SHEET_URL} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
               <FileText size={16} /> <span className="hidden sm:inline">Ver Planilha Original</span>
@@ -717,9 +745,14 @@ const ExternalLoads = () => {
                                   Rota: {load.rota}
                                 </DialogDescription>
                               </div>
-                              <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
-                                <Printer size={16} /> Imprimir para Motorista
-                              </Button>
+                              <div className="flex gap-2">
+                                <Button onClick={() => handleSaveLoad(load)} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+                                  {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar Carga
+                                </Button>
+                                <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
+                                  <Printer size={16} /> Imprimir para Motorista
+                                </Button>
+                              </div>
                             </DialogHeader>
                             
                             <div className="mt-4">

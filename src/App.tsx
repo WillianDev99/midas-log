@@ -14,6 +14,7 @@ import HidracorLoadsList from "./pages/HidracorLoadsList";
 import HidracorLoadManager from "./pages/HidracorLoadManager";
 import CerbrasFormatter from "./pages/CerbrasFormatter";
 import ExternalLoads from "./pages/ExternalLoads";
+import SavedExternalLoads from "./pages/SavedExternalLoads";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/admin/hidracor-loads/:id" element={<HidracorLoadManager />} />
             <Route path="/admin/cerbras-formatter" element={<CerbrasFormatter />} />
             <Route path="/admin/external-loads" element={<ExternalLoads />} />
+            <Route path="/admin/external-loads/saved" element={<SavedExternalLoads />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
