@@ -4,7 +4,7 @@ import React from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe } from 'lucide-react';
+import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
@@ -170,7 +170,7 @@ const Index = () => {
                 </div>
                 <a 
                   href="https://www.instagram.com/midaslogistica/" 
-                  target="_blank" 
+                  target="_bold" 
                   rel="noopener noreferrer"
                   className="flex items-center gap-4 hover:text-amber-500 transition-colors"
                 >
