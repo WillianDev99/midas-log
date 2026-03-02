@@ -97,7 +97,6 @@ const CerbrasWeightsByCity = () => {
   // Função de normalização idêntica ao Python (limpar_texto)
   const limparTexto = (txt: any) => {
     if (!txt) return "";
-    // Remove acentos, converte para maiúsculo e remove sufixos de estado (ex: - CE)
     return String(txt)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -107,8 +106,8 @@ const CerbrasWeightsByCity = () => {
       .replace(/\s+/g, ' ');
   };
 
-  // Função de conversão de peso robusta (conv_peso)
-  const converterPeso = (v: any): number => {
+  // Função de conversão de peso/coord robusta
+  const converterNumero = (v: any): number => {
     if (v === null || v === undefined || v === "") return 0;
     if (typeof v === 'number') return v;
     
@@ -131,18 +130,19 @@ const CerbrasWeightsByCity = () => {
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
       const coords: Record<string, [number, number]> = {};
       data.forEach((row) => {
         const name = limparTexto(row[0]);
-        const lat = parseFloat(row[2]);
-        const lng = parseFloat(row[3]);
-        if (name && !isNaN(lat) && !isNaN(lng)) {
+        const lat = converterNumero(row[2]);
+        const lng = converterNumero(row[3]);
+        if (name && lat !== 0 && lng !== 0) {
           coords[name] = [lat, lng];
         }
       });
       setCityCoords(coords);
+      console.log("[CerbrasWeights] Coordenadas carregadas:", Object.keys(coords).length);
     } catch (error) {
       console.error("Erro ao carregar coordenadas:", error);
     }
@@ -192,7 +192,7 @@ const CerbrasWeightsByCity = () => {
               cliente: String(row[idxCli] || 'NÃO INFORMADO').toUpperCase(),
               cidade: cidade,
               chave: limparTexto(cidade),
-              peso: converterPeso(row[idxPeso]),
+              peso: converterNumero(row[idxPeso]),
               pedido: String(row[idxPed] || '')
             };
           });
@@ -227,9 +227,22 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
+  // Lógica de busca de coordenadas com fallback
+  const getCoordsForCity = (chave: string) => {
+    // 1. Busca exata
+    if (cityCoords[chave]) return cityCoords[chave];
+    
+    // 2. Busca por prefixo (ex: "TIANGUA" encontra "TIANGUA - CE")
+    const keys = Object.keys(cityCoords);
+    const match = keys.find(k => k.startsWith(chave) || chave.startsWith(k));
+    if (match) return cityCoords[match];
+    
+    return null;
+  };
+
   const activeMarkersCoords = useMemo(() => {
     return Object.keys(citySummary)
-      .map(chave => cityCoords[chave])
+      .map(chave => getCoordsForCity(chave))
       .filter((coords): coords is [number, number] => !!coords);
   }, [citySummary, cityCoords]);
 
@@ -382,7 +395,7 @@ const CerbrasWeightsByCity = () => {
             </Marker>
 
             {Object.entries(citySummary).map(([chave, data]) => {
-              const coords = cityCoords[chave];
+              const coords = getCoordsForCity(chave);
               if (!coords) return null;
               const isSelectedInCurrentRoute = currentRoute.some(p => limparTexto(p.city) === chave);
 
