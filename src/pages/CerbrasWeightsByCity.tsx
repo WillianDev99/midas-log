@@ -109,6 +109,7 @@ const CerbrasWeightsByCity = () => {
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [selectedRouteGeometry, setSelectedRouteGeometry] = useState<[number, number][]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
@@ -135,19 +136,32 @@ const CerbrasWeightsByCity = () => {
     }
   }, [cityCoords]);
 
+  // Atualiza a geometria da rota atual (em criação)
   useEffect(() => {
     if (currentRoute.length > 0) {
-      updateRoadRoute();
+      updateRoadRoute(currentRoute, setRouteGeometry);
     } else {
       setRouteGeometry([]);
     }
   }, [currentRoute]);
 
-  const updateRoadRoute = async () => {
-    if (currentRoute.length === 0) return;
+  // Atualiza a geometria da rota selecionada (salva)
+  useEffect(() => {
+    if (selectedRouteId) {
+      const route = savedRoutes.find(r => r.id === selectedRouteId);
+      if (route) {
+        updateRoadRoute(route.route_data, setSelectedRouteGeometry);
+      }
+    } else {
+      setSelectedRouteGeometry([]);
+    }
+  }, [selectedRouteId, savedRoutes]);
+
+  const updateRoadRoute = async (points: RoutePoint[], setGeometry: (g: [number, number][]) => void) => {
+    if (points.length === 0) return;
     setRouting(true);
     try {
-      const coords = [MARACANAU_COORDS, ...currentRoute.map(p => p.coords)];
+      const coords = [MARACANAU_COORDS, ...points.map(p => p.coords)];
       const coordString = coords.map(c => `${c[1]},${c[0]}`).join(';');
       const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
       
@@ -156,15 +170,17 @@ const CerbrasWeightsByCity = () => {
       
       if (data.code === 'Ok' && data.routes.length > 0) {
         const geometry = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]] as [number, number]);
-        setRouteGeometry(geometry);
+        setGeometry(geometry);
         
-        const legs = data.routes[0].legs;
-        const updatedRoute = [...currentRoute];
-        legs.forEach((leg: any, idx: number) => {
-          if (updatedRoute[idx]) {
-            updatedRoute[idx].distanceFromPrev = leg.distance / 1000;
-          }
-        });
+        if (points === currentRoute) {
+          const legs = data.routes[0].legs;
+          const updatedRoute = [...currentRoute];
+          legs.forEach((leg: any, idx: number) => {
+            if (updatedRoute[idx]) {
+              updatedRoute[idx].distanceFromPrev = leg.distance / 1000;
+            }
+          });
+        }
       }
     } catch (error) {
       console.error("Erro ao buscar rota OSRM:", error);
@@ -718,11 +734,14 @@ const CerbrasWeightsByCity = () => {
 
       <main className="flex-1 flex overflow-hidden relative">
         <aside className={`bg-white border-r overflow-y-auto transition-all duration-300 flex flex-col relative ${isSidebarOpen ? 'w-80' : 'w-0'}`}>
-          <div className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap">
+          <div 
+            className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <Layers size={18} className="text-amber-600" /> Rotas Salvas
             </h3>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}>
               <PanelLeftClose size={18} />
             </Button>
           </div>
@@ -788,14 +807,19 @@ const CerbrasWeightsByCity = () => {
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = getCoordsForCity(chave);
               if (!coords) return null;
+              
               const isSelectedInCurrentRoute = currentRoute.some(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
+              
+              // Verificar se a cidade pertence à rota salva selecionada
+              const selectedRoute = savedRoutes.find(r => r.id === selectedRouteId);
+              const isPartOfSelectedRoute = selectedRoute?.route_data.some((p: any) => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
 
               return (
                 <Marker key={chave} position={coords} icon={L.divIcon({
                   className: 'custom-div-icon',
-                  html: `<div style="background-color: ${isSelectedInCurrentRoute ? '#16a34a' : '#f59e0b'}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`,
-                  iconSize: [16, 16],
-                  iconAnchor: [8, 8]
+                  html: `<div style="background-color: ${isPartOfSelectedRoute ? '#3b82f6' : isSelectedInCurrentRoute ? '#16a34a' : '#f59e0b'}; width: ${isPartOfSelectedRoute ? '20px' : '16px'}; height: ${isPartOfSelectedRoute ? '20px' : '16px'}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4);"></div>`,
+                  iconSize: isPartOfSelectedRoute ? [20, 20] : [16, 16],
+                  iconAnchor: isPartOfSelectedRoute ? [10, 10] : [8, 8]
                 })}>
                   <Popup className="custom-popup">
                     <div className="p-2 min-w-[240px]">
@@ -842,20 +866,27 @@ const CerbrasWeightsByCity = () => {
               );
             })}
 
+            {/* Geometria da rota em criação */}
             {isRouteMode && routeGeometry.length > 0 && (
               <Polyline positions={routeGeometry} color="#16a34a" weight={4} opacity={0.8} />
             )}
 
+            {/* Geometria da rota salva selecionada (com traçado real) */}
+            {selectedRouteId && selectedRouteGeometry.length > 0 && (
+              <Polyline positions={selectedRouteGeometry} color="#3b82f6" weight={6} opacity={1} />
+            )}
+
+            {/* Outras rotas salvas (linhas simples para não sobrecarregar) */}
             {savedRoutes.map((route, idx) => {
-              const isSelected = selectedRouteId === route.id;
+              if (route.id === selectedRouteId) return null;
               return (
                 <Polyline 
                   key={route.id} 
                   positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} 
-                  color={isSelected ? '#f59e0b' : ['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} 
-                  weight={isSelected ? 6 : 2} 
-                  opacity={isSelected ? 1 : 0.4} 
-                  dashArray={isSelected ? "" : "5, 10"} 
+                  color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} 
+                  weight={2} 
+                  opacity={0.3} 
+                  dashArray="5, 10" 
                   eventHandlers={{
                     click: () => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)
                   }}
