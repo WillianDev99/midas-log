@@ -13,6 +13,7 @@ import HidracorFormatter from "./pages/HidracorFormatter";
 import HidracorLoadsList from "./pages/HidracorLoadsList";
 import HidracorLoadManager from "./pages/HidracorLoadManager";
 import CerbrasFormatter from "./pages/CerbrasFormatter";
+import CerbrasWeightsByCity from "./pages/CerbrasWeightsByCity";
 import ExternalLoads from "./pages/ExternalLoads";
 import SavedExternalLoads from "./pages/SavedExternalLoads";
 import NotFound from "./pages/NotFound";
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/admin/hidracor-loads" element={<HidracorLoadsList />} />
             <Route path="/admin/hidracor-loads/:id" element={<HidracorLoadManager />} />
             <Route path="/admin/cerbras-formatter" element={<CerbrasFormatter />} />
+            <Route path="/admin/cerbras-weights" element={<CerbrasWeightsByCity />} />
             <Route path="/admin/external-loads" element={<ExternalLoads />} />
             <Route path="/admin/external-loads/saved" element={<SavedExternalLoads />} />
             <Route path="*" element={<NotFound />} />

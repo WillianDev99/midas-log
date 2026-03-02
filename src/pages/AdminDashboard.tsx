@@ -154,6 +154,7 @@ const AdminDashboard = () => {
                 title="Pesos por Cidade" 
                 description="Cálculo e análise de distribuição de pesos por região e cidade para a Cerbras."
                 icon={MapPin}
+                href="/admin/cerbras-weights"
               />
             </div>
           </TabsContent>
