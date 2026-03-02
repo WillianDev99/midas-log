@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ArrowLeft, 
   Upload, 
@@ -15,7 +15,8 @@ import {
   X,
   ChevronRight,
   Layers,
-  Route as RouteIcon
+  Route as RouteIcon,
+  RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -24,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -42,27 +43,24 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 const MARACANAU_COORDS: [number, number] = [-3.8767, -38.6256];
 
-interface CityCoord {
-  city: string;
-  lat: number;
-  lng: number;
-}
-
 interface DeliveryItem {
   cliente: string;
   cidade: string;
   peso: number;
   pedido: string;
+  chave: string;
 }
 
 interface RoutePoint {
   city: string;
   coords: [number, number];
   selectedClients: string[];
+  weight: number;
 }
 
 const CerbrasWeightsByCity = () => {
   const { user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
@@ -82,19 +80,52 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
+  // Função de normalização idêntica ao Python (limpar_texto)
+  const limparTexto = (txt: any) => {
+    if (!txt) return "";
+    return String(txt)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .trim()
+      .replace(/\s+/g, ' ');
+  };
+
+  // Função de conversão de peso robusta (conv_peso)
+  const converterPeso = (v: any): number => {
+    if (v === null || v === undefined || v === "") return 0;
+    if (typeof v === 'number') return v;
+    
+    let s = String(v).trim();
+    try {
+      // Se tem ponto e vírgula (formato 1.234,56)
+      if (s.includes('.') && s.includes(',')) {
+        s = s.replace(/\./g, '').replace(',', '.');
+      } 
+      // Se tem apenas vírgula (formato 1234,56)
+      else if (s.includes(',')) {
+        s = s.replace(',', '.');
+      }
+      return parseFloat(s) || 0;
+    } catch {
+      return 0;
+    }
+  };
+
   const loadCityCoords = async () => {
     try {
       const response = await fetch('/CIDADES.xlsx');
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data: any[] = XLSX.utils.sheet_to_json(sheet);
+      const data: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
       const coords: Record<string, [number, number]> = {};
-      data.forEach(row => {
-        const name = String(row['CIDADE'] || '').toUpperCase().trim();
-        const lat = parseFloat(row['LATITUDE']);
-        const lng = parseFloat(row['LONGITUDE']);
+      // Pula cabeçalho se existir ou tenta detectar
+      data.forEach((row, idx) => {
+        const name = limparTexto(row[0]);
+        const lat = parseFloat(row[2]);
+        const lng = parseFloat(row[3]);
         if (name && !isNaN(lat) && !isNaN(lng)) {
           coords[name] = [lat, lng];
         }
@@ -123,15 +154,15 @@ const CerbrasWeightsByCity = () => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        
+        // Tenta encontrar a aba "Carteira" ou usa a primeira
+        const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes("CARTEIRA")) || wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
         const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-        if (rawData.length < 2) throw new Error("Arquivo vazio.");
+        if (rawData.length < 2) throw new Error("Arquivo vazio ou sem dados.");
 
-        // Mapeamento de colunas baseado no arquivo BASE.xlsx
-        // Coluna A: Cliente, Coluna D: Cidade, Coluna P: Peso (Paletes * Peso Unitário)
-        // Como o arquivo BASE já vem formatado pelo sistema, vamos usar as colunas do preview
-        const headers = rawData[0].map(h => String(h).toUpperCase());
+        const headers = rawData[0].map(h => String(h).toUpperCase().trim());
         const getIdx = (name: string) => headers.indexOf(name);
 
         const idxCli = getIdx('CLIENTE');
@@ -139,33 +170,42 @@ const CerbrasWeightsByCity = () => {
         const idxPeso = getIdx('PESO');
         const idxPed = getIdx('PEDIDO');
 
+        if (idxCid === -1 || idxPeso === -1) {
+          throw new Error("Colunas 'CIDADE' ou 'PESO' não encontradas.");
+        }
+
         const items: DeliveryItem[] = rawData.slice(1)
-          .filter(row => row[idxCid])
-          .map(row => ({
-            cliente: String(row[idxCli] || '').toUpperCase(),
-            cidade: String(row[idxCid] || '').toUpperCase().trim(),
-            peso: parseFloat(String(row[idxPeso] || '0').replace(',', '.')),
-            pedido: String(row[idxPed] || '')
-          }));
+          .filter(row => row[idxCid] && !String(row[idxCid]).toUpperCase().includes("TOTAL"))
+          .map(row => {
+            const cidade = String(row[idxCid]).trim();
+            return {
+              cliente: String(row[idxCli] || 'NÃO INFORMADO').toUpperCase(),
+              cidade: cidade,
+              chave: limparTexto(cidade),
+              peso: converterPeso(row[idxPeso]),
+              pedido: String(row[idxPed] || '')
+            };
+          });
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        showSuccess("Dados carregados com sucesso!");
+        showSuccess(`${items.length} registros carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
       } finally {
         setProcessing(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
     reader.readAsBinaryString(file);
   };
 
   const citySummary = useMemo(() => {
-    const summary: Record<string, { totalWeight: number, clients: Record<string, number> }> = {};
+    const summary: Record<string, { totalWeight: number, clients: Record<string, number>, originalName: string }> = {};
     deliveries.forEach(d => {
-      if (!summary[d.cidade]) summary[d.cidade] = { totalWeight: 0, clients: {} };
-      summary[d.cidade].totalWeight += d.peso;
-      summary[d.cidade].clients[d.cliente] = (summary[d.cidade].clients[d.cliente] || 0) + d.peso;
+      if (!summary[d.chave]) summary[d.chave] = { totalWeight: 0, clients: {}, originalName: d.cidade };
+      summary[d.chave].totalWeight += d.peso;
+      summary[d.chave].clients[d.cliente] = (summary[d.chave].clients[d.cliente] || 0) + d.peso;
     });
     return summary;
   }, [deliveries]);
@@ -177,12 +217,19 @@ const CerbrasWeightsByCity = () => {
     return { totalWeight, totalDeliveries, totalCities };
   }, [deliveries, citySummary]);
 
-  const handleAddPointToRoute = (cityName: string, coords: [number, number], selectedClients: string[]) => {
+  const handleAddPointToRoute = (chave: string, coords: [number, number], clients: Record<string, number>) => {
     if (!isRouteMode) return;
     
-    // Se a cidade já está na rota, removemos ou atualizamos? Vamos permitir adicionar sequencialmente
-    setCurrentRoute([...currentRoute, { city: cityName, coords, selectedClients }]);
-    showSuccess(`${cityName} adicionada à rota.`);
+    const cityName = citySummary[chave].originalName;
+    const weight = citySummary[chave].totalWeight;
+    
+    setCurrentRoute([...currentRoute, { 
+      city: cityName, 
+      coords, 
+      selectedClients: Object.keys(clients),
+      weight: weight
+    }]);
+    showSuccess(`${cityName} adicionada.`);
   };
 
   const saveRoute = async () => {
@@ -209,6 +256,10 @@ const CerbrasWeightsByCity = () => {
     const { error } = await supabase.from('cerbras_map_routes').delete().eq('id', id);
     if (!error) fetchSavedRoutes();
   };
+
+  const totalRouteWeight = useMemo(() => {
+    return currentRoute.reduce((acc, p) => acc + p.weight, 0);
+  }, [currentRoute]);
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
@@ -242,12 +293,23 @@ const CerbrasWeightsByCity = () => {
             </div>
           </div>
 
-          <label className="cursor-pointer">
-            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 pointer-events-none">
-              <Upload size={16} /> Upload Base
-            </Button>
-            <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-          </label>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2 border-amber-200 text-amber-700"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={processing}
+          >
+            {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+            Upload Base
+          </Button>
+          <input 
+            type="file" 
+            ref={fileInputRef}
+            className="hidden" 
+            accept=".xlsx, .xls" 
+            onChange={handleFileUpload} 
+          />
 
           <Button 
             variant={isRouteMode ? "destructive" : "default"} 
@@ -264,7 +326,7 @@ const CerbrasWeightsByCity = () => {
 
           {isRouteMode && currentRoute.length > 0 && (
             <Button size="sm" onClick={saveRoute} className="bg-green-600 hover:bg-green-700 gap-2">
-              <Save size={16} /> Salvar Rota ({currentRoute.length})
+              <Save size={16} /> Salvar Rota
             </Button>
           )}
         </div>
@@ -329,15 +391,15 @@ const CerbrasWeightsByCity = () => {
             </Marker>
 
             {/* Cidades com Peso */}
-            {Object.entries(citySummary).map(([cityName, data]) => {
-              const coords = cityCoords[cityName];
+            {Object.entries(citySummary).map(([chave, data]) => {
+              const coords = cityCoords[chave];
               if (!coords) return null;
 
-              const isSelectedInCurrentRoute = currentRoute.some(p => p.city === cityName);
+              const isSelectedInCurrentRoute = currentRoute.some(p => limparTexto(p.city) === chave);
 
               return (
                 <Marker 
-                  key={cityName} 
+                  key={chave} 
                   position={coords}
                   icon={L.divIcon({
                     className: 'custom-div-icon',
@@ -348,7 +410,7 @@ const CerbrasWeightsByCity = () => {
                 >
                   <Popup className="custom-popup">
                     <div className="p-2 min-w-[200px]">
-                      <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{cityName}</h3>
+                      <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName}</h3>
                       <div className="flex justify-between items-center mb-3 bg-amber-50 p-2 rounded">
                         <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
                         <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
@@ -367,7 +429,7 @@ const CerbrasWeightsByCity = () => {
                         <Button 
                           size="sm" 
                           className="w-full mt-4 bg-amber-600 hover:bg-amber-700 h-8 text-[10px]"
-                          onClick={() => handleAddPointToRoute(cityName, coords, Object.keys(data.clients))}
+                          onClick={() => handleAddPointToRoute(chave, coords, data.clients)}
                         >
                           <Plus size={12} className="mr-1" /> Incluir na Rota
                         </Button>
@@ -400,26 +462,49 @@ const CerbrasWeightsByCity = () => {
             ))}
           </MapContainer>
 
-          {/* Overlay de Rota Atual */}
-          {isRouteMode && currentRoute.length > 0 && (
-            <div className="absolute bottom-6 left-6 z-[1000] bg-white p-4 rounded-xl shadow-2xl border border-slate-200 w-64">
-              <h4 className="font-bold text-xs uppercase text-slate-400 mb-3 flex items-center gap-2">
-                <Truck size={14} /> Sequência da Rota
-              </h4>
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                <div className="flex items-center gap-3 text-xs font-bold text-slate-900">
-                  <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">0</div>
-                  MARACANAÚ
+          {/* Painel de Rota (Estilo Python) */}
+          {isRouteMode && (
+            <div className="absolute bottom-10 left-10 z-[1000] bg-white p-5 rounded-lg shadow-2xl border-2 border-slate-900 w-80">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-bold text-sm uppercase tracking-tight flex items-center gap-2">
+                  <Truck size={18} className="text-amber-600" /> Painel de Rota
+                </h4>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}>
+                  <RotateCcw size={14} />
+                </Button>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">Cidades Selecionadas:</span>
+                  <span className="font-bold">{currentRoute.length}</span>
                 </div>
-                {currentRoute.map((p, i) => (
-                  <div key={i} className="flex items-center gap-3 text-xs group">
-                    <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-[10px]">{i + 1}</div>
-                    <span className="uppercase font-medium flex-1">{p.city}</span>
-                    <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100">
-                      <X size={14} />
-                    </button>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-500">Peso Total da Rota:</span>
+                  <span className="font-bold text-amber-700">{totalRouteWeight.toLocaleString('pt-BR')} kg</span>
+                </div>
+                
+                <div className="border-t pt-3 mt-3 max-h-40 overflow-y-auto space-y-2">
+                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
+                    <div className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[8px]">0</div>
+                    MARACANAÚ
                   </div>
-                ))}
+                  {currentRoute.map((p, i) => (
+                    <div key={i} className="flex items-center gap-3 text-[10px] group">
+                      <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
+                      <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
+                      <span className="text-slate-400">{(p.weight/1000).toFixed(1)}t</span>
+                      <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                <Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => setCurrentRoute([])}>Limpar</Button>
+                <Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>Salvar Rota</Button>
               </div>
             </div>
           )}
