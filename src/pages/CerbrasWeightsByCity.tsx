@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Layers,
   Route as RouteIcon,
-  RotateCcw
+  RotateCcw,
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -75,6 +76,7 @@ const CerbrasWeightsByCity = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [isRouteMode, setIsRouteMode] = useState(false);
@@ -92,14 +94,13 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
-  // Normalização agressiva para comparação (remove tudo exceto letras e números)
   const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
     return String(txt)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '') // Remove espaços, hífens, etc.
+      .replace(/[^A-Z0-9]/g, '')
       .trim();
   };
 
@@ -107,48 +108,53 @@ const CerbrasWeightsByCity = () => {
     if (v === null || v === undefined || v === "") return 0;
     if (typeof v === 'number') return v;
     let s = String(v).trim().replace(/\s/g, '');
-    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-    else if (s.includes(',')) s = s.replace(',', '.');
+    // Trata o caso de -5,092 -> -5.092
+    if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+    else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
     return parseFloat(s) || 0;
   };
 
   const loadCityCoords = async () => {
     try {
       const response = await fetch('/CIDADES.xlsx');
+      if (!response.ok) throw new Error("Arquivo CIDADES.xlsx não encontrado");
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
-      if (data.length === 0) return;
-
-      // Tenta encontrar as colunas pelos nomes no cabeçalho
-      const headers = data[0].map(h => normalizarParaMatch(h));
-      let idxCid = headers.indexOf('CIDADE');
-      let idxUF = headers.indexOf('UF');
-      let idxLat = headers.indexOf('LATITUDE');
-      let idxLng = headers.indexOf('LONGITUDE');
-
-      // Fallback se não houver cabeçalho claro
-      if (idxCid === -1) { idxCid = 0; idxUF = 1; idxLat = 2; idxLng = 3; }
-
       const coords: Record<string, [number, number]> = {};
       data.forEach((row, i) => {
-        if (i === 0 && idxCid !== 0) return; // Pula cabeçalho se detectado
-        const city = normalizarParaMatch(row[idxCid]);
-        const uf = normalizarParaMatch(row[idxUF]);
-        const lat = converterNumero(row[idxLat]);
-        const lng = converterNumero(row[idxLng]);
+        if (i === 0) return; // Pula cabeçalho
+        const city = normalizarParaMatch(row[0]);
+        const uf = normalizarParaMatch(row[1]);
+        const lat = converterNumero(row[2]);
+        const lng = converterNumero(row[3]);
         
         if (city && uf && lat !== 0 && lng !== 0) {
           coords[`${city}|${uf}`] = [lat, lng];
         }
       });
       setCityCoords(coords);
-      console.log("[MAPA] Base de coordenadas carregada:", Object.keys(coords).length, "cidades.");
     } catch (error) {
-      console.error("Erro ao carregar coordenadas:", error);
+      console.warn("Aviso: Não foi possível carregar CIDADES.xlsx, usaremos busca via API.");
     }
+  };
+
+  // Função para buscar coordenadas via API Nominatim (OpenStreetMap)
+  const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
+    try {
+      const query = encodeURIComponent(`${cidade}, ${uf}, Brazil`);
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+      }
+    } catch (error) {
+      console.error(`Erro ao buscar coordenadas para ${cidade}:`, error);
+    }
+    return null;
   };
 
   const fetchSavedRoutes = async () => {
@@ -165,7 +171,7 @@ const CerbrasWeightsByCity = () => {
 
     setProcessing(true);
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -199,6 +205,10 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
+        
+        // Inicia geocodificação automática para cidades faltantes
+        await geocodeMissingCities(items);
+        
         showSuccess(`${items.length} registros carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -208,6 +218,34 @@ const CerbrasWeightsByCity = () => {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const geocodeMissingCities = async (items: DeliveryItem[]) => {
+    setGeocoding(true);
+    const uniqueCities = Array.from(new Set(items.map(i => i.chave)));
+    const newCoords = { ...cityCoords };
+    let foundCount = 0;
+
+    for (const chave of uniqueCities) {
+      if (!newCoords[chave]) {
+        const item = items.find(i => i.chave === chave);
+        if (item) {
+          const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
+          if (coords) {
+            newCoords[chave] = coords;
+            foundCount++;
+            // Pequeno delay para respeitar rate limit da API gratuita
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
+      }
+    }
+
+    if (foundCount > 0) {
+      setCityCoords(newCoords);
+      console.log(`[MAPA] ${foundCount} novas cidades localizadas via API.`);
+    }
+    setGeocoding(false);
   };
 
   const citySummary = useMemo(() => {
@@ -230,17 +268,7 @@ const CerbrasWeightsByCity = () => {
   }, [deliveries, citySummary]);
 
   const getCoordsForCity = (chave: string) => {
-    if (cityCoords[chave]) return cityCoords[chave];
-    
-    // Tenta match parcial se o exato falhar
-    const [cidade] = chave.split('|');
-    const keys = Object.keys(cityCoords);
-    const match = keys.find(k => k.startsWith(cidade) || cidade.startsWith(k.split('|')[0]));
-    
-    if (match) return cityCoords[match];
-    
-    console.warn(`[MAPA] Não encontrei coordenadas para: ${chave}`);
-    return null;
+    return cityCoords[chave] || null;
   };
 
   const activeMarkersCoords = useMemo(() => {
@@ -306,6 +334,13 @@ const CerbrasWeightsByCity = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {geocoding && (
+            <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4">
+              <Search size={16} className="animate-bounce" />
+              <span className="text-[10px] font-bold uppercase">Buscando Coordenadas...</span>
+            </div>
+          )}
+
           <div className="hidden md:flex items-center gap-4 mr-6">
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-400 uppercase">Peso Total</p>
