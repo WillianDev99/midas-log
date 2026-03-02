@@ -53,12 +53,21 @@ interface DeliveryItem {
   uf: string;
   peso: number;
   pedido: string;
+  produto: string;
+  palet: number;
+  m2: number;
+  valorTot: number;
   chave: string; 
 }
 
 interface RouteClient {
   name: string;
   weight: number;
+  pedido: string;
+  produto: string;
+  palet: number;
+  m2: number;
+  valorTot: number;
 }
 
 interface RoutePoint {
@@ -95,14 +104,29 @@ const CerbrasWeightsByCity = () => {
 
   useEffect(() => {
     const init = async () => {
-      await loadCityCoords();
+      // Carregar coordenadas salvas primeiro
+      const savedCoords = localStorage.getItem('cerbras_city_coords');
+      if (savedCoords) {
+        setCityCoords(JSON.parse(savedCoords));
+      } else {
+        await loadCityCoords();
+      }
+
       const savedData = localStorage.getItem('cerbras_map_data');
       if (savedData) setDeliveries(JSON.parse(savedData));
+      
       await fetchSavedRoutes();
       setLoading(false);
     };
     init();
   }, []);
+
+  // Salvar coordenadas sempre que mudarem
+  useEffect(() => {
+    if (Object.keys(cityCoords).length > 0) {
+      localStorage.setItem('cerbras_city_coords', JSON.stringify(cityCoords));
+    }
+  }, [cityCoords]);
 
   const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
@@ -172,6 +196,38 @@ const CerbrasWeightsByCity = () => {
     if (!error) setSavedRoutes(data || []);
   };
 
+  // Algoritmo de ordenação lógica (Vizinho Mais Próximo)
+  const sortRouteLogically = (points: RoutePoint[]): RoutePoint[] => {
+    if (points.length <= 1) return points;
+
+    const calculateDistance = (c1: [number, number], c2: [number, number]) => {
+      return Math.sqrt(Math.pow(c1[0] - c2[0], 2) + Math.pow(c1[1] - c2[1], 2));
+    };
+
+    const sorted: RoutePoint[] = [];
+    let remaining = [...points];
+    let currentPos = MARACANAU_COORDS;
+
+    while (remaining.length > 0) {
+      let closestIdx = 0;
+      let minDistance = calculateDistance(currentPos, remaining[0].coords);
+
+      for (let i = 1; i < remaining.length; i++) {
+        const dist = calculateDistance(currentPos, remaining[i].coords);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestIdx = i;
+        }
+      }
+
+      const nextPoint = remaining.splice(closestIdx, 1)[0];
+      sorted.push(nextPoint);
+      currentPos = nextPoint.coords;
+    }
+
+    return sorted;
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -194,6 +250,10 @@ const CerbrasWeightsByCity = () => {
         const idxUF = getIdx('UF');
         const idxPeso = getIdx('PESO');
         const idxPed = getIdx('PEDIDO');
+        const idxProd = getIdx('PRODUTO');
+        const idxPalet = getIdx('PALET');
+        const idxM2 = getIdx('M²');
+        const idxVal = getIdx('VAL TOT');
 
         const items: DeliveryItem[] = rawData.slice(1)
           .filter(row => row[idxCid] && !String(row[idxCid]).toUpperCase().includes("TOTAL"))
@@ -206,7 +266,11 @@ const CerbrasWeightsByCity = () => {
               uf: uf,
               chave: `${normalizarParaMatch(cidade)}|${normalizarParaMatch(uf)}`,
               peso: converterNumero(row[idxPeso]),
-              pedido: String(row[idxPed] || '')
+              pedido: String(row[idxPed] || ''),
+              produto: String(row[idxProd] || ''),
+              palet: converterNumero(row[idxPalet]),
+              m2: converterNumero(row[idxM2]),
+              valorTot: converterNumero(row[idxVal])
             };
           });
 
@@ -249,13 +313,16 @@ const CerbrasWeightsByCity = () => {
   };
 
   const citySummary = useMemo(() => {
-    const summary: Record<string, { totalWeight: number, clients: Record<string, number>, originalName: string, uf: string }> = {};
+    const summary: Record<string, { totalWeight: number, clients: Record<string, DeliveryItem[]>, originalName: string, uf: string }> = {};
     deliveries.forEach(d => {
       if (!summary[d.chave]) {
         summary[d.chave] = { totalWeight: 0, clients: {}, originalName: d.cidade, uf: d.uf };
       }
       summary[d.chave].totalWeight += d.peso;
-      summary[d.chave].clients[d.cliente] = (summary[d.chave].clients[d.cliente] || 0) + d.peso;
+      if (!summary[d.chave].clients[d.cliente]) {
+        summary[d.chave].clients[d.cliente] = [];
+      }
+      summary[d.chave].clients[d.cliente].push(d);
     });
     return summary;
   }, [deliveries]);
@@ -277,49 +344,67 @@ const CerbrasWeightsByCity = () => {
       .filter((coords): coords is [number, number] => !!coords);
   }, [citySummary, cityCoords]);
 
-  const handleAddClientToRoute = (chave: string, coords: [number, number], clientName: string, weight: number) => {
+  const handleAddClientToRoute = (chave: string, coords: [number, number], clientName: string) => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
+    const clientItems = cityData.clients[clientName];
     
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
 
     if (existingPointIdx > -1) {
       const point = { ...newRoute[existingPointIdx] };
-      const clientIdx = point.clients.findIndex(c => c.name === clientName);
+      const alreadyHasClient = point.clients.some(c => c.name === clientName);
       
-      if (clientIdx > -1) {
-        // Remover cliente se já estiver na rota
-        point.totalWeight -= point.clients[clientIdx].weight;
-        point.clients.splice(clientIdx, 1);
+      if (alreadyHasClient) {
+        // Remover todos os itens desse cliente
+        const clientWeight = clientItems.reduce((acc, i) => acc + i.peso, 0);
+        point.totalWeight -= clientWeight;
+        point.clients = point.clients.filter(c => c.name !== clientName);
         
         if (point.clients.length === 0) {
-          // Se não sobrar nenhum cliente, remove a parada da rota
           newRoute.splice(existingPointIdx, 1);
-          showSuccess(`${clientName} removido e parada excluída.`);
         } else {
           newRoute[existingPointIdx] = point;
-          showSuccess(`${clientName} removido.`);
         }
+        showSuccess(`${clientName} removido.`);
       } else {
-        // Adicionar cliente se não estiver na rota
-        point.clients.push({ name: clientName, weight });
-        point.totalWeight += weight;
+        // Adicionar todos os itens desse cliente
+        clientItems.forEach(item => {
+          point.clients.push({
+            name: item.cliente,
+            weight: item.peso,
+            pedido: item.pedido,
+            produto: item.produto,
+            palet: item.palet,
+            m2: item.m2,
+            valorTot: item.valorTot
+          });
+          point.totalWeight += item.peso;
+        });
         newRoute[existingPointIdx] = point;
         showSuccess(`${clientName} adicionado.`);
       }
     } else {
-      // Adicionar nova parada com o cliente
+      const clientsToAdd = clientItems.map(item => ({
+        name: item.cliente,
+        weight: item.peso,
+        pedido: item.pedido,
+        produto: item.produto,
+        palet: item.palet,
+        m2: item.m2,
+        valorTot: item.valorTot
+      }));
       newRoute.push({
         city: cityData.originalName,
         uf: cityData.uf,
         coords,
-        clients: [{ name: clientName, weight }],
-        totalWeight: weight
+        clients: clientsToAdd,
+        totalWeight: clientItems.reduce((acc, i) => acc + i.peso, 0)
       });
       showSuccess(`${clientName} adicionado.`);
     }
-    setCurrentRoute(newRoute);
+    setCurrentRoute(sortRouteLogically(newRoute));
   };
 
   const handleAddAllCityToRoute = (chave: string, coords: [number, number]) => {
@@ -329,37 +414,45 @@ const CerbrasWeightsByCity = () => {
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
 
-    const allClients = Object.entries(cityData.clients).map(([name, weight]) => ({ name, weight }));
-    const totalWeight = cityData.totalWeight;
+    const allClients: RouteClient[] = [];
+    Object.values(cityData.clients).forEach(items => {
+      items.forEach(item => {
+        allClients.push({
+          name: item.cliente,
+          weight: item.peso,
+          pedido: item.pedido,
+          produto: item.produto,
+          palet: item.palet,
+          m2: item.m2,
+          valorTot: item.valorTot
+        });
+      });
+    });
 
     if (existingPointIdx > -1) {
-      // Se a cidade já existe, verifica se todos os clientes já estão lá
       const currentPoint = newRoute[existingPointIdx];
       if (currentPoint.clients.length === allClients.length) {
-        // Se todos já estão lá, remove a cidade inteira (toggle)
         newRoute.splice(existingPointIdx, 1);
-        showSuccess(`Cidade ${cityData.originalName} removida da rota.`);
+        showSuccess(`Cidade ${cityData.originalName} removida.`);
       } else {
-        // Se não, garante que todos os clientes da cidade estejam incluídos
         newRoute[existingPointIdx] = {
           ...currentPoint,
           clients: allClients,
-          totalWeight: totalWeight
+          totalWeight: cityData.totalWeight
         };
-        showSuccess(`Todos os clientes de ${cityData.originalName} incluídos.`);
+        showSuccess(`Cidade ${cityData.originalName} completa.`);
       }
     } else {
-      // Adiciona a cidade inteira
       newRoute.push({
         city: cityData.originalName,
         uf: cityData.uf,
         coords,
         clients: allClients,
-        totalWeight: totalWeight
+        totalWeight: cityData.totalWeight
       });
-      showSuccess(`Cidade ${cityData.originalName} adicionada com todos os clientes.`);
+      showSuccess(`Cidade ${cityData.originalName} adicionada.`);
     }
-    setCurrentRoute(newRoute);
+    setCurrentRoute(sortRouteLogically(newRoute));
   };
 
   const saveRoute = async () => {
@@ -413,7 +506,10 @@ const CerbrasWeightsByCity = () => {
     if (!printWindow) return;
 
     const totalWeight = route.route_data.reduce((acc: number, p: any) => acc + p.totalWeight, 0);
-    const totalClients = route.route_data.reduce((acc: number, p: any) => acc + p.clients.length, 0);
+    const totalPalet = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.palet || 0), 0), 0);
+    const totalM2 = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.m2 || 0), 0), 0);
+    const totalVal = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.valorTot || 0), 0), 0);
+    
     const logoUrl = window.location.origin + "/logo.png";
 
     const content = `
@@ -421,21 +517,23 @@ const CerbrasWeightsByCity = () => {
         <head>
           <title>Rota Cerbras - ${route.name}</title>
           <style>
-            body { font-family: sans-serif; padding: 40px; color: #333; }
-            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #f59e0b; padding-bottom: 20px; margin-bottom: 30px; }
-            .logo { height: 60px; }
-            .title { font-size: 24px; font-weight: bold; }
-            .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; }
+            body { font-family: sans-serif; padding: 30px; color: #333; font-size: 12px; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #f59e0b; padding-bottom: 15px; margin-bottom: 20px; }
+            .logo { height: 50px; }
+            .title { font-size: 20px; font-weight: bold; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
             .summary-item { text-align: center; }
-            .summary-label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
-            .summary-value { font-size: 18px; font-weight: bold; color: #1e293b; }
-            .stop { margin-bottom: 30px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
-            .stop-header { background: #1e293b; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
-            .stop-title { font-weight: bold; text-transform: uppercase; }
+            .summary-label { font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+            .summary-value { font-size: 14px; font-weight: bold; color: #1e293b; }
+            .stop { margin-bottom: 25px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+            .stop-header { background: #1e293b; color: white; padding: 8px 15px; display: flex; justify-content: space-between; align-items: center; }
+            .stop-title { font-weight: bold; text-transform: uppercase; font-size: 11px; }
             table { width: 100%; border-collapse: collapse; }
-            th { text-align: left; padding: 12px 20px; background: #f1f5f9; font-size: 11px; text-transform: uppercase; color: #475569; }
-            td { padding: 12px 20px; border-top: 1px solid #e2e8f0; font-size: 13px; }
-            .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+            th { text-align: left; padding: 8px 12px; background: #f1f5f9; font-size: 9px; text-transform: uppercase; color: #475569; border-bottom: 1px solid #e2e8f0; }
+            td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-size: 10px; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
           </style>
         </head>
         <body>
@@ -446,7 +544,7 @@ const CerbrasWeightsByCity = () => {
           
           <div class="summary">
             <div class="summary-item">
-              <div class="summary-label">Nome da Rota</div>
+              <div class="summary-label">Rota</div>
               <div class="summary-value">${route.name}</div>
             </div>
             <div class="summary-item">
@@ -454,8 +552,12 @@ const CerbrasWeightsByCity = () => {
               <div class="summary-value">${totalWeight.toLocaleString('pt-BR')} kg</div>
             </div>
             <div class="summary-item">
-              <div class="summary-label">Total de Clientes</div>
-              <div class="summary-value">${totalClients}</div>
+              <div class="summary-label">Total M²</div>
+              <div class="summary-value">${totalM2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Valor Total</div>
+              <div class="summary-value">R$ ${totalVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
             </div>
           </div>
 
@@ -463,20 +565,30 @@ const CerbrasWeightsByCity = () => {
             <div class="stop">
               <div class="stop-header">
                 <div class="stop-title">PARADA ${i + 1}: ${p.city} - ${p.uf}</div>
-                <div>${p.totalWeight.toLocaleString('pt-BR')} kg</div>
+                <div style="font-size: 10px">${p.totalWeight.toLocaleString('pt-BR')} kg</div>
               </div>
               <table>
                 <thead>
                   <tr>
+                    <th>Pedido</th>
                     <th>Cliente</th>
-                    <th style="text-align: right">Peso</th>
+                    <th>Produto</th>
+                    <th class="text-right">Palet</th>
+                    <th class="text-right">M²</th>
+                    <th class="text-right">Peso</th>
+                    <th class="text-right">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${p.clients.map((c: any) => `
                     <tr>
+                      <td>${c.pedido}</td>
                       <td style="text-transform: uppercase">${c.name}</td>
-                      <td style="text-align: right; font-weight: bold;">${c.weight.toLocaleString('pt-BR')} kg</td>
+                      <td style="text-transform: uppercase">${c.produto}</td>
+                      <td class="text-right">${c.palet}</td>
+                      <td class="text-right">${c.m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                      <td class="text-right font-bold">${c.weight.toLocaleString('pt-BR')} kg</td>
+                      <td class="text-right">R$ ${c.valorTot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -629,23 +741,24 @@ const CerbrasWeightsByCity = () => {
                         <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
                       </div>
                       <div className="space-y-2 max-h-48 overflow-y-auto pr-1 mb-4">
-                        {Object.entries(data.clients).map(([client, weight]) => {
+                        {Object.entries(data.clients).map(([client, items]) => {
                           const isClientSelected = currentRoute.some(p => 
                             `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && 
                             p.clients.some(c => c.name === client)
                           );
+                          const clientWeight = items.reduce((acc, i) => acc + i.peso, 0);
                           return (
                             <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2 last:border-0">
                               <div className="flex flex-col">
                                 <span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span>
-                                <span className="font-bold text-slate-900">{weight.toLocaleString('pt-BR')} kg</span>
+                                <span className="font-bold text-slate-900">{clientWeight.toLocaleString('pt-BR')} kg</span>
                               </div>
                               {isRouteMode && (
                                 <Button 
                                   size="icon" 
                                   variant={isClientSelected ? "default" : "outline"} 
                                   className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} 
-                                  onClick={() => handleAddClientToRoute(chave, coords, client, weight)}
+                                  onClick={() => handleAddClientToRoute(chave, coords, client)}
                                 >
                                   {isClientSelected ? <X size={12} /> : <Plus size={12} />}
                                 </Button>
@@ -715,7 +828,7 @@ const CerbrasWeightsByCity = () => {
                           <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500 flex items-center gap-1">
                             {c.name.split(' ')[0]}
                             <button 
-                              onClick={() => handleAddClientToRoute(`${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}`, p.coords, c.name, c.weight)}
+                              onClick={() => handleAddClientToRoute(`${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}`, p.coords, c.name)}
                               className="text-red-400 hover:text-red-600"
                             >
                               <X size={8} />
