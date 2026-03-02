@@ -28,10 +28,12 @@ import {
   CreditCard,
   Coins,
   Globe,
-  Database
+  Database,
+  Filter
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -120,6 +122,7 @@ const CerbrasWeightsByCity = () => {
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [creditLimits, setCreditLimits] = useState<CreditLimitItem[]>([]);
+  const [minCreditFilter, setMinCreditFilter] = useState<number>(0);
   
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
@@ -133,16 +136,11 @@ const CerbrasWeightsByCity = () => {
   // Inicialização
   useEffect(() => {
     const init = async () => {
-      // 1. Carregar coordenadas do Supabase (Cache Permanente)
       await fetchCoordsFromSupabase();
-
-      // 2. Carregar dados de pesos e créditos do cache local (sessão)
       const savedData = localStorage.getItem('cerbras_map_data');
       if (savedData) setDeliveries(JSON.parse(savedData));
-      
       const savedCredit = localStorage.getItem('cerbras_credit_data');
       if (savedCredit) setCreditLimits(JSON.parse(savedCredit));
-
       await fetchSavedRoutes();
       setLoading(false);
     };
@@ -152,22 +150,33 @@ const CerbrasWeightsByCity = () => {
   // Monitor de Geocodificação Automática
   useEffect(() => {
     if (loading) return;
-    
     const missingChaves = Object.keys(citySummary).filter(chave => !cityCoords[chave]);
-    
     if (missingChaves.length > 0 && !geocoding) {
       processMissingCoords(missingChaves);
     }
-  }, [deliveries, creditLimits, cityCoords, loading]);
+  }, [deliveries, creditLimits, cityCoords, loading, minCreditFilter]);
+
+  // Lógica de Rotas
+  useEffect(() => {
+    if (currentRoute.length > 0) {
+      updateRoadRoute(currentRoute, setRouteGeometry);
+    } else {
+      setRouteGeometry([]);
+    }
+  }, [currentRoute]);
+
+  useEffect(() => {
+    if (selectedRouteId) {
+      const route = savedRoutes.find(r => r.id === selectedRouteId);
+      if (route) updateRoadRoute(route.route_data, setSelectedRouteGeometry);
+    } else {
+      setSelectedRouteGeometry([]);
+    }
+  }, [selectedRouteId, savedRoutes]);
 
   const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
-    return String(txt)
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '')
-      .trim();
+    return String(txt).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
   };
 
   const converterNumero = (v: any): number => {
@@ -181,34 +190,18 @@ const CerbrasWeightsByCity = () => {
 
   const fetchCoordsFromSupabase = async () => {
     try {
-      const { data, error } = await supabase
-        .from('cerbras_city_coords')
-        .select('chave, lat, lng');
-      
+      const { data, error } = await supabase.from('cerbras_city_coords').select('chave, lat, lng');
       if (error) throw error;
-
       if (data) {
         const coords: Record<string, [number, number]> = {};
-        data.forEach(item => {
-          coords[item.chave] = [Number(item.lat), Number(item.lng)];
-        });
+        data.forEach(item => { coords[item.chave] = [Number(item.lat), Number(item.lng)]; });
         setCityCoords(coords);
       }
-    } catch (e) {
-      console.error("Erro ao carregar coordenadas do Supabase:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const saveCoordToSupabase = async (chave: string, lat: number, lng: number) => {
-    try {
-      await supabase.from('cerbras_city_coords').upsert({
-        chave,
-        lat,
-        lng
-      });
-    } catch (e) {
-      console.error("Erro ao salvar coordenada no Supabase:", e);
-    }
+    try { await supabase.from('cerbras_city_coords').upsert({ chave, lat, lng }); } catch (e) { console.error(e); }
   };
 
   const loadLocalBase = async () => {
@@ -219,7 +212,6 @@ const CerbrasWeightsByCity = () => {
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      
       const newCoords: any[] = [];
       data.forEach((row, i) => {
         if (i === 0) return;
@@ -229,39 +221,25 @@ const CerbrasWeightsByCity = () => {
         const lng = converterNumero(row[3]);
         if (city && uf && lat !== 0 && lng !== 0) {
           const chave = `${city}|${uf}`;
-          if (!cityCoords[chave]) {
-            newCoords.push({ chave, lat, lng });
-          }
+          if (!cityCoords[chave]) newCoords.push({ chave, lat, lng });
         }
       });
-
       if (newCoords.length > 0) {
         await supabase.from('cerbras_city_coords').upsert(newCoords);
         await fetchCoordsFromSupabase();
-        showSuccess(`${newCoords.length} novas coordenadas importadas do Excel!`);
+        showSuccess(`${newCoords.length} coordenadas sincronizadas!`);
       }
-    } catch (e) {
-      console.error("Erro ao carregar base local:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
-    const queries = [
-      `${cidade}, ${uf}, Brazil`,
-      `${cidade}, ${uf}`,
-      `${cidade} ${uf}`
-    ];
-
+    const queries = [`${cidade}, ${uf}, Brazil`, `${cidade}, ${uf}`, `${cidade} ${uf}`];
     for (const query of queries) {
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
         const data = await response.json();
-        if (data && data.length > 0) {
-          return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
-        }
-      } catch (error) {
-        console.error(`Erro API para ${query}:`, error);
-      }
+        if (data && data.length > 0) return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+      } catch (error) { console.error(error); }
       await new Promise(r => setTimeout(r, 200));
     }
     return null;
@@ -269,24 +247,17 @@ const CerbrasWeightsByCity = () => {
 
   const processMissingCoords = async (chaves: string[]) => {
     setGeocoding(true);
-    
     for (const chave of chaves) {
       const data = citySummary[chave];
       if (!data) continue;
-
       setCurrentSearching(`${data.originalName} - ${data.uf}`);
       const coords = await fetchCoordsFromAPI(data.originalName, data.uf);
-      
       if (coords) {
-        // Salvar no Supabase para nunca mais precisar buscar
         await saveCoordToSupabase(chave, coords[0], coords[1]);
-        // Atualizar estado local para plotar no mapa imediatamente
         setCityCoords(prev => ({ ...prev, [chave]: coords }));
       }
-      
       await new Promise(r => setTimeout(r, 1000));
     }
-
     setCurrentSearching("");
     setGeocoding(false);
   };
@@ -298,44 +269,28 @@ const CerbrasWeightsByCity = () => {
       const coords = [MARACANAU_COORDS, ...points.map(p => p.coords)];
       const coordString = coords.map(c => `${c[1]},${c[0]}`).join(';');
       const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
-      
       const response = await fetch(url);
       const data = await response.json();
-      
       if (data.code === 'Ok' && data.routes.length > 0) {
         const geometry = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]] as [number, number]);
         setGeometry(geometry);
-        
         if (points === currentRoute) {
           const legs = data.routes[0].legs;
           const updatedRoute = [...currentRoute];
-          legs.forEach((leg: any, idx: number) => {
-            if (updatedRoute[idx]) {
-              updatedRoute[idx].distanceFromPrev = leg.distance / 1000;
-            }
-          });
+          legs.forEach((leg: any, idx: number) => { if (updatedRoute[idx]) updatedRoute[idx].distanceFromPrev = leg.distance / 1000; });
         }
       }
-    } catch (error) {
-      console.error("Erro ao buscar rota OSRM:", error);
-    } finally {
-      setRouting(false);
-    }
+    } catch (error) { console.error(error); } finally { setRouting(false); }
   };
 
   const fetchSavedRoutes = async () => {
-    const { data, error } = await supabase
-      .from('cerbras_map_routes')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('cerbras_map_routes').select('*').order('created_at', { ascending: false });
     if (!error) setSavedRoutes(data || []);
   };
 
   const sortRouteLogically = (points: RoutePoint[]): RoutePoint[] => {
     if (points.length <= 1) return points;
-    const calculateDistance = (c1: [number, number], c2: [number, number]) => {
-      return Math.sqrt(Math.pow(c1[0] - c2[0], 2) + Math.pow(c1[1] - c2[1], 2));
-    };
+    const calculateDistance = (c1: [number, number], c2: [number, number]) => Math.sqrt(Math.pow(c1[0] - c2[0], 2) + Math.pow(c1[1] - c2[1], 2));
     const sorted: RoutePoint[] = [];
     let remaining = [...points];
     let currentPos = MARACANAU_COORDS;
@@ -344,10 +299,7 @@ const CerbrasWeightsByCity = () => {
       let minDistance = calculateDistance(currentPos, remaining[0].coords);
       for (let i = 1; i < remaining.length; i++) {
         const dist = calculateDistance(currentPos, remaining[i].coords);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestIdx = i;
-        }
+        if (dist < minDistance) { minDistance = dist; closestIdx = i; }
       }
       const nextPoint = remaining.splice(closestIdx, 1)[0];
       sorted.push(nextPoint);
@@ -379,7 +331,6 @@ const CerbrasWeightsByCity = () => {
         const idxPalet = getIdx('PALET');
         const idxM2 = getIdx('M²');
         const idxVal = getIdx('VAL TOT');
-
         const items: DeliveryItem[] = rawData.slice(1)
           .filter(row => row[idxCid] && !String(row[idxCid]).toUpperCase().includes("TOTAL"))
           .map(row => {
@@ -398,16 +349,10 @@ const CerbrasWeightsByCity = () => {
               valorTot: converterNumero(row[idxVal])
             };
           });
-
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        showSuccess(`${items.length} registros de peso carregados!`);
-      } catch (error: any) {
-        showError("Erro ao processar: " + error.message);
-      } finally {
-        setProcessing(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
+        showSuccess(`${items.length} registros carregados!`);
+      } catch (error: any) { showError(error.message); } finally { setProcessing(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
     };
     reader.readAsBinaryString(file);
   };
@@ -437,16 +382,10 @@ const CerbrasWeightsByCity = () => {
             };
           })
           .filter(item => item.limite > 0 && item.cidade !== "");
-
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
         showSuccess(`${items.length} registros de crédito carregados!`);
-      } catch (error: any) {
-        showError("Erro ao processar crédito: " + error.message);
-      } finally {
-        setProcessing(false);
-        if (creditInputRef.current) creditInputRef.current.value = '';
-      }
+      } catch (error: any) { showError(error.message); } finally { setProcessing(false); if (creditInputRef.current) creditInputRef.current.value = ''; }
     };
     reader.readAsBinaryString(file);
   };
@@ -461,41 +400,40 @@ const CerbrasWeightsByCity = () => {
     }> = {};
 
     deliveries.forEach(d => {
-      if (!summary[d.chave]) {
-        summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
-      }
+      if (!summary[d.chave]) summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
       summary[d.chave].totalWeight += d.peso;
       if (!summary[d.chave].weightClients[d.cliente]) summary[d.chave].weightClients[d.cliente] = [];
       summary[d.chave].weightClients[d.cliente].push(d);
     });
 
     creditLimits.forEach(c => {
-      if (!summary[c.chave]) {
-        summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
-      }
+      // Filtro de Crédito Mínimo aplicado aqui
+      if (c.limite < minCreditFilter) return;
+
+      if (!summary[c.chave]) summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
       if (!summary[c.chave].creditClients[c.cliente]) summary[c.chave].creditClients[c.cliente] = [];
       summary[c.chave].creditClients[c.cliente].push(c);
     });
 
+    // Limpeza: remover cidades que ficaram vazias após o filtro de crédito e não possuem peso
+    Object.keys(summary).forEach(chave => {
+      const hasWeight = summary[chave].totalWeight > 0;
+      const hasCredit = Object.keys(summary[chave].creditClients).length > 0;
+      if (!hasWeight && !hasCredit) delete summary[chave];
+    });
+
     return summary;
-  }, [deliveries, creditLimits]);
+  }, [deliveries, creditLimits, minCreditFilter]);
 
   const stats = useMemo(() => {
     const totalWeight = deliveries.reduce((acc, d) => acc + d.peso, 0);
-    const totalDeliveries = new Set(deliveries.map(d => d.cliente)).size;
     const totalCities = Object.keys(citySummary).length;
     const citiesWithCoords = Object.keys(citySummary).filter(k => !!cityCoords[k]).length;
-    return { totalWeight, totalDeliveries, totalCities, citiesWithCoords };
+    return { totalWeight, totalCities, citiesWithCoords };
   }, [deliveries, citySummary, cityCoords]);
 
-  const getCoordsForCity = (chave: string) => {
-    return cityCoords[chave] || null;
-  };
-
   const activeMarkersCoords = useMemo(() => {
-    return Object.keys(citySummary)
-      .map(chave => getCoordsForCity(chave))
-      .filter((coords): coords is [number, number] => !!coords);
+    return Object.keys(citySummary).map(chave => cityCoords[chave]).filter((coords): coords is [number, number] => !!coords);
   }, [citySummary, cityCoords]);
 
   const handleAddClientToRoute = (chave: string, coords: [number, number], clientName: string) => {
@@ -568,6 +506,7 @@ const CerbrasWeightsByCity = () => {
     setEditingRouteId(route.id);
     setCurrentRoute(route.route_data);
     setIsRouteMode(true);
+    showSuccess("Modo de edição ativado!");
   };
 
   const deleteRoute = async (id: string) => {
@@ -651,21 +590,22 @@ const CerbrasWeightsByCity = () => {
           {geocoding && (
             <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
               <Globe size={16} className="animate-spin" />
-              <span className="text-[10px] font-bold uppercase">
-                {currentSearching ? `Buscando: ${currentSearching}` : `Localizando: ${stats.citiesWithCoords} / ${stats.totalCities}`}
-              </span>
+              <span className="text-[10px] font-bold uppercase">Localizando: {stats.citiesWithCoords} / {stats.totalCities}</span>
             </div>
           )}
 
-          <div className="hidden md:flex items-center gap-4 mr-6">
-            <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Peso Total</p>
-              <p className="text-sm font-bold text-amber-600">{stats.totalWeight.toLocaleString('pt-BR')} kg</p>
+          <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border mr-4">
+            <div className="flex items-center gap-2 px-2 border-r">
+              <Coins size={14} className="text-red-500" />
+              <span className="text-[10px] font-bold text-slate-500 uppercase">Crédito Mínimo:</span>
             </div>
-            <div className="text-right border-l pl-4">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Cidades</p>
-              <p className="text-sm font-bold text-slate-700">{stats.totalCities}</p>
-            </div>
+            <Input 
+              type="number" 
+              className="h-8 w-24 border-none bg-transparent text-xs font-bold focus-visible:ring-0" 
+              placeholder="0,00"
+              value={minCreditFilter || ''}
+              onChange={(e) => setMinCreditFilter(Number(e.target.value))}
+            />
           </div>
 
           <div className="flex gap-2">
@@ -684,9 +624,23 @@ const CerbrasWeightsByCity = () => {
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
           <input type="file" ref={creditInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleCreditUpload} />
 
-          <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) { setCurrentRoute([]); setEditingRouteId(null); } }} className="gap-2">
+          <Button 
+            variant={isRouteMode ? "destructive" : "default"} 
+            size="sm" 
+            onClick={() => { 
+              const newState = !isRouteMode;
+              setIsRouteMode(newState); 
+              if (newState) {
+                showSuccess("Modo de Montagem de Rota Ativado! Clique nos pontos do mapa.");
+              } else {
+                setCurrentRoute([]); 
+                setEditingRouteId(null); 
+              }
+            }} 
+            className={`gap-2 ${isRouteMode ? 'animate-pulse' : ''}`}
+          >
             {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
-            {isRouteMode ? "Cancelar" : "Montar Rota"}
+            {isRouteMode ? "Cancelar Rota" : "Montar Rota"}
           </Button>
 
           {isRouteMode && currentRoute.length > 0 && (
@@ -738,14 +692,13 @@ const CerbrasWeightsByCity = () => {
             })}><Popup><strong>PONTO INICIAL: MARACANAÚ-CE</strong></Popup></Marker>
 
             {Object.entries(citySummary).map(([chave, data]) => {
-              const coords = getCoordsForCity(chave);
+              const coords = cityCoords[chave];
               if (!coords) return null;
               
               const isSelectedInCurrentRoute = currentRoute.some(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
               const selectedRoute = savedRoutes.find(r => r.id === selectedRouteId);
               const isPartOfSelectedRoute = selectedRoute?.route_data.some((p: any) => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
 
-              // Lógica de cor: Amarelo se tiver peso, Vermelho se tiver APENAS crédito
               const markerColor = data.totalWeight > 0 ? '#f59e0b' : '#ef4444';
 
               return (
@@ -810,10 +763,10 @@ const CerbrasWeightsByCity = () => {
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Cidades</p><p className="text-sm font-bold">{currentRoute.length}</p></div>
-                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p><p className="text-sm font-bold">{totalRouteClientsCount}</p></div>
-                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Distância</p><p className="text-sm font-bold">{totalRouteDistance.toFixed(0)} km</p></div>
+                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p><p className="text-sm font-bold">{currentRoute.reduce((acc, p) => acc + p.clients.length, 0)}</p></div>
+                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Distância</p><p className="text-sm font-bold">{currentRoute.reduce((acc, p) => acc + (p.distanceFromPrev || 0), 0).toFixed(0)} km</p></div>
                 </div>
-                <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100"><span className="text-amber-700 font-bold uppercase">Peso Total:</span><span className="font-bold text-amber-900">{totalRouteWeightValue.toLocaleString('pt-BR')} kg</span></div>
+                <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100"><span className="text-amber-700 font-bold uppercase">Peso Total:</span><span className="font-bold text-amber-900">{currentRoute.reduce((acc, p) => acc + p.totalWeight, 0).toLocaleString('pt-BR')} kg</span></div>
                 <div className="border-t pt-3 mt-3 max-h-40 overflow-y-auto space-y-2">
                   <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400"><div className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[8px]">0</div>MARACANAÚ</div>
                   {currentRoute.map((p, i) => (
