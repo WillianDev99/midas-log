@@ -24,7 +24,9 @@ import {
   User,
   Navigation,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  CreditCard,
+  Coins
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -64,6 +66,14 @@ interface DeliveryItem {
   chave: string; 
 }
 
+interface CreditLimitItem {
+  cliente: string;
+  cidade: string;
+  uf: string;
+  limite: number;
+  chave: string;
+}
+
 interface RouteClient {
   name: string;
   weight: number;
@@ -97,12 +107,14 @@ const MapController = ({ points }: { points: [number, number][] }) => {
 const CerbrasWeightsByCity = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const creditInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [routing, setRouting] = useState(false);
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
+  const [creditLimits, setCreditLimits] = useState<CreditLimitItem[]>([]);
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
   const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
@@ -124,6 +136,9 @@ const CerbrasWeightsByCity = () => {
       const savedData = localStorage.getItem('cerbras_map_data');
       if (savedData) setDeliveries(JSON.parse(savedData));
       
+      const savedCredit = localStorage.getItem('cerbras_credit_data');
+      if (savedCredit) setCreditLimits(JSON.parse(savedCredit));
+      
       await fetchSavedRoutes();
       setLoading(false);
     };
@@ -136,7 +151,6 @@ const CerbrasWeightsByCity = () => {
     }
   }, [cityCoords]);
 
-  // Atualiza a geometria da rota atual (em criação)
   useEffect(() => {
     if (currentRoute.length > 0) {
       updateRoadRoute(currentRoute, setRouteGeometry);
@@ -145,7 +159,6 @@ const CerbrasWeightsByCity = () => {
     }
   }, [currentRoute]);
 
-  // Atualiza a geometria da rota selecionada (salva)
   useEffect(() => {
     if (selectedRouteId) {
       const route = savedRoutes.find(r => r.id === selectedRouteId);
@@ -336,8 +349,8 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        await geocodeMissingCities(items);
-        showSuccess(`${items.length} registros carregados!`);
+        await geocodeMissingCities(items.map(i => i.chave));
+        showSuccess(`${items.length} registros de peso carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
       } finally {
@@ -348,15 +361,60 @@ const CerbrasWeightsByCity = () => {
     reader.readAsBinaryString(file);
   };
 
-  const geocodeMissingCities = async (items: DeliveryItem[]) => {
+  const handleCreditUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProcessing(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        // Coluna C (2): Cliente, Coluna I (8): Cidade, Coluna J (9): UF, Coluna G (6): Limite
+        const items: CreditLimitItem[] = rawData.slice(1)
+          .map(row => {
+            const cidade = String(row[8] || '').trim();
+            const uf = String(row[9] || '').trim();
+            const limite = converterNumero(row[6]);
+            return {
+              cliente: String(row[2] || 'NÃO INFORMADO').toUpperCase(),
+              cidade: cidade,
+              uf: uf,
+              limite: limite,
+              chave: `${normalizarParaMatch(cidade)}|${normalizarParaMatch(uf)}`
+            };
+          })
+          .filter(item => item.limite > 0 && item.cidade !== "");
+
+        setCreditLimits(items);
+        localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
+        await geocodeMissingCities(items.map(i => i.chave));
+        showSuccess(`${items.length} registros de crédito carregados!`);
+      } catch (error: any) {
+        showError("Erro ao processar crédito: " + error.message);
+      } finally {
+        setProcessing(false);
+        if (creditInputRef.current) creditInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const geocodeMissingCities = async (chaves: string[]) => {
     setGeocoding(true);
-    const uniqueCities = Array.from(new Set(items.map(i => i.chave)));
+    const uniqueChaves = Array.from(new Set(chaves));
     const newCoords = { ...cityCoords };
     let foundCount = 0;
 
-    for (const chave of uniqueCities) {
+    for (const chave of uniqueChaves) {
       if (!newCoords[chave]) {
-        const item = items.find(i => i.chave === chave);
+        const parts = chave.split('|');
+        // Tentamos encontrar o nome original a partir dos dados carregados
+        const item = deliveries.find(d => d.chave === chave) || creditLimits.find(c => c.chave === chave);
         if (item) {
           const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
           if (coords) {
@@ -373,19 +431,39 @@ const CerbrasWeightsByCity = () => {
   };
 
   const citySummary = useMemo(() => {
-    const summary: Record<string, { totalWeight: number, clients: Record<string, DeliveryItem[]>, originalName: string, uf: string }> = {};
+    const summary: Record<string, { 
+      totalWeight: number, 
+      weightClients: Record<string, DeliveryItem[]>, 
+      creditClients: Record<string, CreditLimitItem[]>,
+      originalName: string, 
+      uf: string 
+    }> = {};
+
+    // Processar Pesos
     deliveries.forEach(d => {
       if (!summary[d.chave]) {
-        summary[d.chave] = { totalWeight: 0, clients: {}, originalName: d.cidade, uf: d.uf };
+        summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
       }
       summary[d.chave].totalWeight += d.peso;
-      if (!summary[d.chave].clients[d.cliente]) {
-        summary[d.chave].clients[d.cliente] = [];
+      if (!summary[d.chave].weightClients[d.cliente]) {
+        summary[d.chave].weightClients[d.cliente] = [];
       }
-      summary[d.chave].clients[d.cliente].push(d);
+      summary[d.chave].weightClients[d.cliente].push(d);
     });
+
+    // Processar Créditos
+    creditLimits.forEach(c => {
+      if (!summary[c.chave]) {
+        summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
+      }
+      if (!summary[c.chave].creditClients[c.cliente]) {
+        summary[c.chave].creditClients[c.cliente] = [];
+      }
+      summary[c.chave].creditClients[c.cliente].push(c);
+    });
+
     return summary;
-  }, [deliveries]);
+  }, [deliveries, creditLimits]);
 
   const stats = useMemo(() => {
     const totalWeight = deliveries.reduce((acc, d) => acc + d.peso, 0);
@@ -407,7 +485,8 @@ const CerbrasWeightsByCity = () => {
   const handleAddClientToRoute = (chave: string, coords: [number, number], clientName: string) => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
-    const clientItems = cityData.clients[clientName];
+    const clientItems = cityData.weightClients[clientName];
+    if (!clientItems) return; // Só permite adicionar clientes com peso
     
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
@@ -468,12 +547,13 @@ const CerbrasWeightsByCity = () => {
   const handleAddAllCityToRoute = (chave: string, coords: [number, number]) => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
+    if (cityData.totalWeight === 0) return; // Só permite se tiver peso
     
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
 
     const allClients: RouteClient[] = [];
-    Object.values(cityData.clients).forEach(items => {
+    Object.values(cityData.weightClients).forEach(items => {
       items.forEach(item => {
         allClients.push({
           name: item.cliente,
@@ -564,7 +644,6 @@ const CerbrasWeightsByCity = () => {
     if (!printWindow) return;
 
     const totalWeight = route.route_data.reduce((acc: number, p: any) => acc + p.totalWeight, 0);
-    const totalPalet = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.palet || 0), 0), 0);
     const totalM2 = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.m2 || 0), 0), 0);
     const totalVal = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.valorTot || 0), 0), 0);
     
@@ -713,11 +792,18 @@ const CerbrasWeightsByCity = () => {
             </div>
           </div>
 
-          <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => fileInputRef.current?.click()} disabled={processing}>
-            {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-            Upload Base
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => fileInputRef.current?.click()} disabled={processing}>
+              {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+              Upload Pesos
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2 border-red-200 text-red-700" onClick={() => creditInputRef.current?.click()} disabled={processing}>
+              {processing ? <Loader2 className="animate-spin" size={16} /> : <CreditCard size={16} />}
+              Upload Crédito
+            </Button>
+          </div>
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+          <input type="file" ref={creditInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleCreditUpload} />
 
           <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) { setCurrentRoute([]); setEditingRouteId(null); } }} className="gap-2">
             {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
@@ -814,49 +900,80 @@ const CerbrasWeightsByCity = () => {
               const selectedRoute = savedRoutes.find(r => r.id === selectedRouteId);
               const isPartOfSelectedRoute = selectedRoute?.route_data.some((p: any) => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
 
+              // Lógica de cor: Amarelo se tiver peso, Vermelho se tiver apenas crédito
+              const markerColor = data.totalWeight > 0 ? '#f59e0b' : '#ef4444';
+
               return (
                 <Marker key={chave} position={coords} icon={L.divIcon({
                   className: 'custom-div-icon',
-                  html: `<div style="background-color: ${isPartOfSelectedRoute ? '#3b82f6' : isSelectedInCurrentRoute ? '#16a34a' : '#f59e0b'}; width: ${isPartOfSelectedRoute ? '20px' : '16px'}; height: ${isPartOfSelectedRoute ? '20px' : '16px'}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4);"></div>`,
+                  html: `<div style="background-color: ${isPartOfSelectedRoute ? '#3b82f6' : isSelectedInCurrentRoute ? '#16a34a' : markerColor}; width: ${isPartOfSelectedRoute ? '20px' : '16px'}; height: ${isPartOfSelectedRoute ? '20px' : '16px'}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4);"></div>`,
                   iconSize: isPartOfSelectedRoute ? [20, 20] : [16, 16],
                   iconAnchor: isPartOfSelectedRoute ? [10, 10] : [8, 8]
                 })}>
                   <Popup className="custom-popup">
-                    <div className="p-2 min-w-[240px]">
+                    <div className="p-2 min-w-[260px]">
                       <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName} - {data.uf}</h3>
-                      <div className="flex justify-between items-center mb-3 bg-amber-50 p-2 rounded">
-                        <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
-                        <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
-                      </div>
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1 mb-4">
-                        {Object.entries(data.clients).map(([client, items]) => {
-                          const isClientSelected = currentRoute.some(p => 
-                            `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && 
-                            p.clients.some(c => c.name === client)
-                          );
-                          const clientWeight = items.reduce((acc, i) => acc + i.peso, 0);
-                          return (
-                            <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2 last:border-0">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span>
-                                <span className="font-bold text-slate-900">{clientWeight.toLocaleString('pt-BR')} kg</span>
-                              </div>
-                              {isRouteMode && (
-                                <Button 
-                                  size="icon" 
-                                  variant={isClientSelected ? "default" : "outline"} 
-                                  className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} 
-                                  onClick={() => handleAddClientToRoute(chave, coords, client)}
-                                >
-                                  {isClientSelected ? <X size={12} /> : <Plus size={12} />}
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {isRouteMode && (
-                        <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2" onClick={() => handleAddAllCityToRoute(chave, coords)}>
+                      
+                      {/* Seção de Pesos */}
+                      {Object.keys(data.weightClients).length > 0 && (
+                        <div className="mb-4">
+                          <div className="flex justify-between items-center mb-2 bg-amber-50 p-2 rounded">
+                            <span className="text-xs font-bold text-amber-700">PESO TOTAL:</span>
+                            <span className="font-bold text-amber-900">{data.totalWeight.toLocaleString('pt-BR')} kg</span>
+                          </div>
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {Object.entries(data.weightClients).map(([client, items]) => {
+                              const isClientSelected = currentRoute.some(p => 
+                                `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && 
+                                p.clients.some(c => c.name === client)
+                              );
+                              const clientWeight = items.reduce((acc, i) => acc + i.peso, 0);
+                              return (
+                                <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2 last:border-0">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span>
+                                    <span className="font-bold text-slate-900">{clientWeight.toLocaleString('pt-BR')} kg</span>
+                                  </div>
+                                  {isRouteMode && (
+                                    <Button 
+                                      size="icon" 
+                                      variant={isClientSelected ? "default" : "outline"} 
+                                      className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} 
+                                      onClick={() => handleAddClientToRoute(chave, coords, client)}
+                                    >
+                                      {isClientSelected ? <X size={12} /> : <Plus size={12} />}
+                                    </Button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seção de Créditos (Oculta no modo de rota se tiver peso) */}
+                      {!isRouteMode && Object.keys(data.creditClients).length > 0 && (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="flex items-center gap-2 mb-2 text-red-600">
+                            <Coins size={14} />
+                            <span className="text-[10px] font-bold uppercase">Limite de Crédito Disponível</span>
+                          </div>
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {Object.entries(data.creditClients).map(([client, items]) => {
+                              const totalCredit = items.reduce((acc, i) => acc + i.limite, 0);
+                              return (
+                                <div key={client} className="flex justify-between items-center text-[10px] bg-red-50/50 p-1.5 rounded border border-red-100">
+                                  <span className="font-medium text-slate-700 truncate max-w-[140px]">{client}</span>
+                                  <span className="font-bold text-red-700">R$ {totalCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {isRouteMode && data.totalWeight > 0 && (
+                        <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2 mt-2" onClick={() => handleAddAllCityToRoute(chave, coords)}>
                           <Plus size={12} /> {isSelectedInCurrentRoute ? "Remover/Atualizar Cidade" : "Incluir Cidade Completa"}
                         </Button>
                       )}
