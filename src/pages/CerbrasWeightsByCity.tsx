@@ -142,7 +142,10 @@ const CerbrasWeightsByCity = () => {
       setCreditLimits(loadedCredits);
       
       // Geocodificar qualquer coisa que tenha sobrado sem coordenadas
-      await geocodeAllMissing([...loadedDeliveries, ...loadedCredits]);
+      const allItems = [...loadedDeliveries, ...loadedCredits];
+      if (allItems.length > 0) {
+        await geocodeItems(allItems);
+      }
 
       await fetchSavedRoutes();
       setLoading(false);
@@ -354,7 +357,7 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        await geocodeAllMissing([...items, ...creditLimits]);
+        await geocodeItems(items);
         showSuccess(`${items.length} registros de peso carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -397,7 +400,7 @@ const CerbrasWeightsByCity = () => {
 
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
-        await geocodeAllMissing([...deliveries, ...items]);
+        await geocodeItems(items);
         showSuccess(`${items.length} registros de crédito carregados!`);
       } catch (error: any) {
         showError("Erro ao processar crédito: " + error.message);
@@ -409,23 +412,23 @@ const CerbrasWeightsByCity = () => {
     reader.readAsBinaryString(file);
   };
 
-  const geocodeAllMissing = async (allItems: (DeliveryItem | CreditLimitItem)[]) => {
+  const geocodeItems = async (items: (DeliveryItem | CreditLimitItem)[]) => {
     setGeocoding(true);
-    const uniqueChaves = Array.from(new Set(allItems.map(i => i.chave)));
+    const uniqueChaves = Array.from(new Set(items.map(i => i.chave)));
     const currentCoords = { ...cityCoords };
     const newCoords: Record<string, [number, number]> = {};
     let foundCount = 0;
 
     for (const chave of uniqueChaves) {
       if (!currentCoords[chave]) {
-        const item = allItems.find(i => i.chave === chave);
+        const item = items.find(i => i.chave === chave);
         if (item) {
           const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
           if (coords) {
             newCoords[chave] = coords;
             foundCount++;
-            // Pequeno delay para não sobrecarregar a API de geocoding gratuita
-            await new Promise(r => setTimeout(r, 300));
+            // Delay para respeitar limites da API Nominatim
+            await new Promise(r => setTimeout(r, 600));
           }
         }
       }
