@@ -403,6 +403,10 @@ const HidracorFormatter = () => {
   const downloadExcel = () => {
     const dataWithLoads = filteredData.map(row => ({
       ...row,
+      'peso possível': parseFloat(row['peso possível']),
+      'valor possível': parseFloat(row['valor possível']),
+      'peso total': parseFloat(row['peso total']),
+      'valor total': parseFloat(row['valor total']),
       'CARGAS': usedOrderIds.get(row.Pedido?.toString()) || ''
     }));
 

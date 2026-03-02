@@ -140,7 +140,6 @@ const HidracorLoadManager = () => {
     `;
     printWindow.document.write(content);
     printWindow.document.close();
-    printWindow.print();
   };
 
   const handlePrintShipments = () => {
@@ -210,7 +209,6 @@ const HidracorLoadManager = () => {
     `;
     printWindow.document.write(content);
     printWindow.document.close();
-    printWindow.print();
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
