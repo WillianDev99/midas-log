@@ -26,7 +26,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   CreditCard,
-  Coins
+  Coins,
+  Globe
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -108,13 +109,17 @@ const CerbrasWeightsByCity = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creditInputRef = useRef<HTMLInputElement>(null);
+  const localBaseRef = useRef<Record<string, [number, number]>>({});
+  
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [routing, setRouting] = useState(false);
+  
   const [cityCoords, setCityCoords] = useState<Record<string, [number, number]>>({});
   const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [creditLimits, setCreditLimits] = useState<CreditLimitItem[]>([]);
+  
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
   const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
@@ -124,28 +129,24 @@ const CerbrasWeightsByCity = () => {
   const [selectedRouteGeometry, setSelectedRouteGeometry] = useState<[number, number][]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Inicialização
   useEffect(() => {
     const init = async () => {
+      // 1. Carregar base local CIDADES.xlsx
+      await loadLocalBase();
+
+      // 2. Carregar coordenadas salvas no cache
       const savedCoords = localStorage.getItem('cerbras_city_coords');
       if (savedCoords) {
         setCityCoords(JSON.parse(savedCoords));
-      } else {
-        await loadCityCoords();
       }
 
+      // 3. Carregar dados de pesos e créditos
       const savedData = localStorage.getItem('cerbras_map_data');
-      const loadedDeliveries = savedData ? JSON.parse(savedData) : [];
-      setDeliveries(loadedDeliveries);
+      if (savedData) setDeliveries(JSON.parse(savedData));
       
       const savedCredit = localStorage.getItem('cerbras_credit_data');
-      const loadedCredits = savedCredit ? JSON.parse(savedCredit) : [];
-      setCreditLimits(loadedCredits);
-      
-      // Geocodificar qualquer coisa que tenha sobrado sem coordenadas
-      const allItems = [...loadedDeliveries, ...loadedCredits];
-      if (allItems.length > 0) {
-        await geocodeItems(allItems);
-      }
+      if (savedCredit) setCreditLimits(JSON.parse(savedCredit));
 
       await fetchSavedRoutes();
       setLoading(false);
@@ -153,12 +154,25 @@ const CerbrasWeightsByCity = () => {
     init();
   }, []);
 
+  // Monitor de Geocodificação Automática
+  useEffect(() => {
+    if (loading) return;
+    
+    const missingChaves = Object.keys(citySummary).filter(chave => !cityCoords[chave]);
+    
+    if (missingChaves.length > 0 && !geocoding) {
+      processMissingCoords(missingChaves);
+    }
+  }, [deliveries, creditLimits, cityCoords, loading]);
+
+  // Salvar coordenadas no cache sempre que mudar
   useEffect(() => {
     if (Object.keys(cityCoords).length > 0) {
       localStorage.setItem('cerbras_city_coords', JSON.stringify(cityCoords));
     }
   }, [cityCoords]);
 
+  // Lógica de Rotas
   useEffect(() => {
     if (currentRoute.length > 0) {
       updateRoadRoute(currentRoute, setRouteGeometry);
@@ -177,6 +191,101 @@ const CerbrasWeightsByCity = () => {
       setSelectedRouteGeometry([]);
     }
   }, [selectedRouteId, savedRoutes]);
+
+  const normalizarParaMatch = (txt: any) => {
+    if (!txt) return "";
+    return String(txt)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .trim();
+  };
+
+  const converterNumero = (v: any): number => {
+    if (v === null || v === undefined || v === "") return 0;
+    if (typeof v === 'number') return v;
+    let s = String(v).trim().replace(/\s/g, '');
+    if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+    else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    return parseFloat(s) || 0;
+  };
+
+  const loadLocalBase = async () => {
+    try {
+      const response = await fetch('/CIDADES.xlsx');
+      if (!response.ok) return;
+      const arrayBuffer = await response.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      
+      const base: Record<string, [number, number]> = {};
+      data.forEach((row, i) => {
+        if (i === 0) return;
+        const city = normalizarParaMatch(row[0]);
+        const uf = normalizarParaMatch(row[1]);
+        const lat = converterNumero(row[2]);
+        const lng = converterNumero(row[3]);
+        if (city && uf && lat !== 0 && lng !== 0) {
+          base[`${city}|${uf}`] = [lat, lng];
+        }
+      });
+      localBaseRef.current = base;
+    } catch (e) {
+      console.error("Erro ao carregar base local:", e);
+    }
+  };
+
+  const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
+    try {
+      const query = encodeURIComponent(`${cidade}, ${uf}, Brazil`);
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
+      const data = await response.json();
+      if (data && data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+      }
+    } catch (error) {
+      console.error(`Erro API para ${cidade}:`, error);
+    }
+    return null;
+  };
+
+  const processMissingCoords = async (chaves: string[]) => {
+    setGeocoding(true);
+    
+    const newCoords: Record<string, [number, number]> = {};
+    const apiQueue: string[] = [];
+
+    // 1. Tentar primeiro na base local (instantâneo)
+    chaves.forEach(chave => {
+      if (localBaseRef.current[chave]) {
+        newCoords[chave] = localBaseRef.current[chave];
+      } else {
+        apiQueue.push(chave);
+      }
+    });
+
+    // Atualizar o que foi encontrado na base local imediatamente
+    if (Object.keys(newCoords).length > 0) {
+      setCityCoords(prev => ({ ...prev, ...newCoords }));
+    }
+
+    // 2. Processar o que sobrou via API (com delay)
+    for (const chave of apiQueue) {
+      const data = citySummary[chave];
+      if (!data) continue;
+
+      const coords = await fetchCoordsFromAPI(data.originalName, data.uf);
+      if (coords) {
+        setCityCoords(prev => ({ ...prev, [chave]: coords }));
+      }
+      // Delay para respeitar limite da API gratuita
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    setGeocoding(false);
+  };
 
   const updateRoadRoute = async (points: RoutePoint[], setGeometry: (g: [number, number][]) => void) => {
     if (points.length === 0) return;
@@ -210,66 +319,6 @@ const CerbrasWeightsByCity = () => {
     }
   };
 
-  const normalizarParaMatch = (txt: any) => {
-    if (!txt) return "";
-    return String(txt)
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '')
-      .trim();
-  };
-
-  const converterNumero = (v: any): number => {
-    if (v === null || v === undefined || v === "") return 0;
-    if (typeof v === 'number') return v;
-    let s = String(v).trim().replace(/\s/g, '');
-    if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
-    else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-    return parseFloat(s) || 0;
-  };
-
-  const loadCityCoords = async () => {
-    try {
-      const response = await fetch('/CIDADES.xlsx');
-      if (!response.ok) throw new Error("Arquivo CIDADES.xlsx não encontrado");
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      
-      const coords: Record<string, [number, number]> = {};
-      data.forEach((row, i) => {
-        if (i === 0) return;
-        const city = normalizarParaMatch(row[0]);
-        const uf = normalizarParaMatch(row[1]);
-        const lat = converterNumero(row[2]);
-        const lng = converterNumero(row[3]);
-        
-        if (city && uf && lat !== 0 && lng !== 0) {
-          coords[`${city}|${uf}`] = [lat, lng];
-        }
-      });
-      setCityCoords(coords);
-    } catch (error) {
-      console.warn("Aviso: Não foi possível carregar CIDADES.xlsx");
-    }
-  };
-
-  const fetchCoordsFromAPI = async (cidade: string, uf: string) => {
-    try {
-      const query = encodeURIComponent(`${cidade}, ${uf}, Brazil`);
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
-      const data = await response.json();
-      if (data && data.length > 0) {
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
-      }
-    } catch (error) {
-      console.error(`Erro ao buscar coordenadas para ${cidade}:`, error);
-    }
-    return null;
-  };
-
   const fetchSavedRoutes = async () => {
     const { data, error } = await supabase
       .from('cerbras_map_routes')
@@ -280,19 +329,15 @@ const CerbrasWeightsByCity = () => {
 
   const sortRouteLogically = (points: RoutePoint[]): RoutePoint[] => {
     if (points.length <= 1) return points;
-
     const calculateDistance = (c1: [number, number], c2: [number, number]) => {
       return Math.sqrt(Math.pow(c1[0] - c2[0], 2) + Math.pow(c1[1] - c2[1], 2));
     };
-
     const sorted: RoutePoint[] = [];
     let remaining = [...points];
     let currentPos = MARACANAU_COORDS;
-
     while (remaining.length > 0) {
       let closestIdx = 0;
       let minDistance = calculateDistance(currentPos, remaining[0].coords);
-
       for (let i = 1; i < remaining.length; i++) {
         const dist = calculateDistance(currentPos, remaining[i].coords);
         if (dist < minDistance) {
@@ -300,19 +345,16 @@ const CerbrasWeightsByCity = () => {
           closestIdx = i;
         }
       }
-
       const nextPoint = remaining.splice(closestIdx, 1)[0];
       sorted.push(nextPoint);
       currentPos = nextPoint.coords;
     }
-
     return sorted;
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setProcessing(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -322,10 +364,8 @@ const CerbrasWeightsByCity = () => {
         const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes("CARTEIRA")) || wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
         const headers = rawData[0].map(h => String(h).toUpperCase().trim());
         const getIdx = (name: string) => headers.indexOf(name);
-
         const idxCli = getIdx('CLIENTE');
         const idxCid = getIdx('CIDADE');
         const idxUF = getIdx('UF');
@@ -357,7 +397,6 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        await geocodeItems(items);
         showSuccess(`${items.length} registros de peso carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -372,7 +411,6 @@ const CerbrasWeightsByCity = () => {
   const handleCreditUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setProcessing(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -381,8 +419,6 @@ const CerbrasWeightsByCity = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-        // Coluna C (2): Cliente, Coluna I (8): Cidade, Coluna J (9): UF, Coluna G (6): Limite
         const items: CreditLimitItem[] = rawData.slice(1)
           .map(row => {
             const cidade = String(row[8] || '').trim();
@@ -400,7 +436,6 @@ const CerbrasWeightsByCity = () => {
 
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
-        await geocodeItems(items);
         showSuccess(`${items.length} registros de crédito carregados!`);
       } catch (error: any) {
         showError("Erro ao processar crédito: " + error.message);
@@ -412,34 +447,6 @@ const CerbrasWeightsByCity = () => {
     reader.readAsBinaryString(file);
   };
 
-  const geocodeItems = async (items: (DeliveryItem | CreditLimitItem)[]) => {
-    setGeocoding(true);
-    const uniqueChaves = Array.from(new Set(items.map(i => i.chave)));
-    const currentCoords = { ...cityCoords };
-    const newCoords: Record<string, [number, number]> = {};
-    let foundCount = 0;
-
-    for (const chave of uniqueChaves) {
-      if (!currentCoords[chave]) {
-        const item = items.find(i => i.chave === chave);
-        if (item) {
-          const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
-          if (coords) {
-            newCoords[chave] = coords;
-            foundCount++;
-            // Delay para respeitar limites da API Nominatim
-            await new Promise(r => setTimeout(r, 600));
-          }
-        }
-      }
-    }
-
-    if (foundCount > 0) {
-      setCityCoords(prev => ({ ...prev, ...newCoords }));
-    }
-    setGeocoding(false);
-  };
-
   const citySummary = useMemo(() => {
     const summary: Record<string, { 
       totalWeight: number, 
@@ -449,26 +456,20 @@ const CerbrasWeightsByCity = () => {
       uf: string 
     }> = {};
 
-    // Processar Pesos
     deliveries.forEach(d => {
       if (!summary[d.chave]) {
         summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
       }
       summary[d.chave].totalWeight += d.peso;
-      if (!summary[d.chave].weightClients[d.cliente]) {
-        summary[d.chave].weightClients[d.cliente] = [];
-      }
+      if (!summary[d.chave].weightClients[d.cliente]) summary[d.chave].weightClients[d.cliente] = [];
       summary[d.chave].weightClients[d.cliente].push(d);
     });
 
-    // Processar Créditos
     creditLimits.forEach(c => {
       if (!summary[c.chave]) {
         summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
       }
-      if (!summary[c.chave].creditClients[c.cliente]) {
-        summary[c.chave].creditClients[c.cliente] = [];
-      }
+      if (!summary[c.chave].creditClients[c.cliente]) summary[c.chave].creditClients[c.cliente] = [];
       summary[c.chave].creditClients[c.cliente].push(c);
     });
 
@@ -479,8 +480,9 @@ const CerbrasWeightsByCity = () => {
     const totalWeight = deliveries.reduce((acc, d) => acc + d.peso, 0);
     const totalDeliveries = new Set(deliveries.map(d => d.cliente)).size;
     const totalCities = Object.keys(citySummary).length;
-    return { totalWeight, totalDeliveries, totalCities };
-  }, [deliveries, citySummary]);
+    const citiesWithCoords = Object.keys(citySummary).filter(k => !!cityCoords[k]).length;
+    return { totalWeight, totalDeliveries, totalCities, citiesWithCoords };
+  }, [deliveries, citySummary, cityCoords]);
 
   const getCoordsForCity = (chave: string) => {
     return cityCoords[chave] || null;
@@ -496,60 +498,28 @@ const CerbrasWeightsByCity = () => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
     const clientItems = cityData.weightClients[clientName];
-    if (!clientItems) return; // Só permite adicionar clientes com peso
-    
+    if (!clientItems) return;
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
-
     if (existingPointIdx > -1) {
       const point = { ...newRoute[existingPointIdx] };
       const alreadyHasClient = point.clients.some(c => c.name === clientName);
-      
       if (alreadyHasClient) {
         const clientWeight = clientItems.reduce((acc, i) => acc + i.peso, 0);
         point.totalWeight -= clientWeight;
         point.clients = point.clients.filter(c => c.name !== clientName);
-        
-        if (point.clients.length === 0) {
-          newRoute.splice(existingPointIdx, 1);
-        } else {
-          newRoute[existingPointIdx] = point;
-        }
-        showSuccess(`${clientName} removido.`);
+        if (point.clients.length === 0) newRoute.splice(existingPointIdx, 1);
+        else newRoute[existingPointIdx] = point;
       } else {
         clientItems.forEach(item => {
-          point.clients.push({
-            name: item.cliente,
-            weight: item.peso,
-            pedido: item.pedido,
-            produto: item.produto,
-            palet: item.palet,
-            m2: item.m2,
-            valorTot: item.valorTot
-          });
+          point.clients.push({ name: item.cliente, weight: item.peso, pedido: item.pedido, produto: item.produto, palet: item.palet, m2: item.m2, valorTot: item.valorTot });
           point.totalWeight += item.peso;
         });
         newRoute[existingPointIdx] = point;
-        showSuccess(`${clientName} adicionado.`);
       }
     } else {
-      const clientsToAdd = clientItems.map(item => ({
-        name: item.cliente,
-        weight: item.peso,
-        pedido: item.pedido,
-        produto: item.produto,
-        palet: item.palet,
-        m2: item.m2,
-        valorTot: item.valorTot
-      }));
-      newRoute.push({
-        city: cityData.originalName,
-        uf: cityData.uf,
-        coords,
-        clients: clientsToAdd,
-        totalWeight: clientItems.reduce((acc, i) => acc + i.peso, 0)
-      });
-      showSuccess(`${clientName} adicionado.`);
+      const clientsToAdd = clientItems.map(item => ({ name: item.cliente, weight: item.peso, pedido: item.pedido, produto: item.produto, palet: item.palet, m2: item.m2, valorTot: item.valorTot }));
+      newRoute.push({ city: cityData.originalName, uf: cityData.uf, coords, clients: clientsToAdd, totalWeight: clientItems.reduce((acc, i) => acc + i.peso, 0) });
     }
     setCurrentRoute(sortRouteLogically(newRoute));
   };
@@ -557,48 +527,21 @@ const CerbrasWeightsByCity = () => {
   const handleAddAllCityToRoute = (chave: string, coords: [number, number]) => {
     if (!isRouteMode) return;
     const cityData = citySummary[chave];
-    if (cityData.totalWeight === 0) return; // Só permite se tiver peso
-    
+    if (cityData.totalWeight === 0) return;
     let newRoute = [...currentRoute];
     const existingPointIdx = newRoute.findIndex(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}` === chave);
-
     const allClients: RouteClient[] = [];
     Object.values(cityData.weightClients).forEach(items => {
       items.forEach(item => {
-        allClients.push({
-          name: item.cliente,
-          weight: item.peso,
-          pedido: item.pedido,
-          produto: item.produto,
-          palet: item.palet,
-          m2: item.m2,
-          valorTot: item.valorTot
-        });
+        allClients.push({ name: item.cliente, weight: item.peso, pedido: item.pedido, produto: item.produto, palet: item.palet, m2: item.m2, valorTot: item.valorTot });
       });
     });
-
     if (existingPointIdx > -1) {
       const currentPoint = newRoute[existingPointIdx];
-      if (currentPoint.clients.length === allClients.length) {
-        newRoute.splice(existingPointIdx, 1);
-        showSuccess(`Cidade ${cityData.originalName} removida.`);
-      } else {
-        newRoute[existingPointIdx] = {
-          ...currentPoint,
-          clients: allClients,
-          totalWeight: cityData.totalWeight
-        };
-        showSuccess(`Cidade ${cityData.originalName} completa.`);
-      }
+      if (currentPoint.clients.length === allClients.length) newRoute.splice(existingPointIdx, 1);
+      else newRoute[existingPointIdx] = { ...currentPoint, clients: allClients, totalWeight: cityData.totalWeight };
     } else {
-      newRoute.push({
-        city: cityData.originalName,
-        uf: cityData.uf,
-        coords,
-        clients: allClients,
-        totalWeight: cityData.totalWeight
-      });
-      showSuccess(`Cidade ${cityData.originalName} adicionada.`);
+      newRoute.push({ city: cityData.originalName, uf: cityData.uf, coords, clients: allClients, totalWeight: cityData.totalWeight });
     }
     setCurrentRoute(sortRouteLogically(newRoute));
   };
@@ -606,33 +549,14 @@ const CerbrasWeightsByCity = () => {
   const saveRoute = async () => {
     const name = prompt("Nome para esta rota:", editingRouteId ? savedRoutes.find(r => r.id === editingRouteId)?.name : "");
     if (!name || currentRoute.length === 0) return;
-
     if (editingRouteId) {
-      const { error } = await supabase.from('cerbras_map_routes').update({
-        name: name.toUpperCase(),
-        route_data: currentRoute
-      }).eq('id', editingRouteId);
+      const { error } = await supabase.from('cerbras_map_routes').update({ name: name.toUpperCase(), route_data: currentRoute }).eq('id', editingRouteId);
       if (error) showError(error.message);
-      else {
-        showSuccess("Rota atualizada!");
-        setEditingRouteId(null);
-        setIsRouteMode(false);
-        setCurrentRoute([]);
-        fetchSavedRoutes();
-      }
+      else { showSuccess("Rota atualizada!"); setEditingRouteId(null); setIsRouteMode(false); setCurrentRoute([]); fetchSavedRoutes(); }
     } else {
-      const { error } = await supabase.from('cerbras_map_routes').insert([{
-        user_id: user?.id,
-        name: name.toUpperCase(),
-        route_data: currentRoute
-      }]);
+      const { error } = await supabase.from('cerbras_map_routes').insert([{ user_id: user?.id, name: name.toUpperCase(), route_data: currentRoute }]);
       if (error) showError(error.message);
-      else {
-        showSuccess("Rota salva!");
-        setIsRouteMode(false);
-        setCurrentRoute([]);
-        fetchSavedRoutes();
-      }
+      else { showSuccess("Rota salva!"); setIsRouteMode(false); setCurrentRoute([]); fetchSavedRoutes(); }
     }
   };
 
@@ -640,7 +564,6 @@ const CerbrasWeightsByCity = () => {
     setEditingRouteId(route.id);
     setCurrentRoute(route.route_data);
     setIsRouteMode(true);
-    showSuccess(`Editando rota: ${route.name}`);
   };
 
   const deleteRoute = async (id: string) => {
@@ -652,13 +575,10 @@ const CerbrasWeightsByCity = () => {
   const handlePrintRoute = (route: any) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-
     const totalWeight = route.route_data.reduce((acc: number, p: any) => acc + p.totalWeight, 0);
     const totalM2 = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.m2 || 0), 0), 0);
     const totalVal = route.route_data.reduce((acc: number, p: any) => acc + p.clients.reduce((a: number, c: any) => a + (c.valorTot || 0), 0), 0);
-    
     const logoUrl = window.location.origin + "/logo.png";
-
     const content = `
       <html>
         <head>
@@ -679,70 +599,26 @@ const CerbrasWeightsByCity = () => {
             th { text-align: left; padding: 8px 12px; background: #f1f5f9; font-size: 9px; text-transform: uppercase; color: #475569; border-bottom: 1px solid #e2e8f0; }
             td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-size: 10px; }
             .text-right { text-align: right; }
-            .font-bold { font-weight: bold; }
             .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; }
           </style>
         </head>
         <body>
-          <div class="header">
-            <img src="${logoUrl}" class="logo" />
-            <div class="title">Relatório de Rota Cerbras</div>
-          </div>
-          
+          <div class="header"><img src="${logoUrl}" class="logo" /><div class="title">Relatório de Rota Cerbras</div></div>
           <div class="summary">
-            <div class="summary-item">
-              <div class="summary-label">Rota</div>
-              <div class="summary-value">${route.name}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Peso Total</div>
-              <div class="summary-value">${totalWeight.toLocaleString('pt-BR')} kg</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Total M²</div>
-              <div class="summary-value">${totalM2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Valor Total</div>
-              <div class="summary-value">R$ ${totalVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-            </div>
+            <div class="summary-item"><div class="summary-label">Rota</div><div class="summary-value">${route.name}</div></div>
+            <div class="summary-item"><div class="summary-label">Peso Total</div><div class="summary-value">${totalWeight.toLocaleString('pt-BR')} kg</div></div>
+            <div class="summary-item"><div class="summary-label">Total M²</div><div class="summary-value">${totalM2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²</div></div>
+            <div class="summary-item"><div class="summary-label">Valor Total</div><div class="summary-value">R$ ${totalVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div></div>
           </div>
-
           ${route.route_data.map((p: any, i: number) => `
             <div class="stop">
-              <div class="stop-header">
-                <div class="stop-title">PARADA ${i + 1}: ${p.city} - ${p.uf}</div>
-                <div style="font-size: 10px">${p.totalWeight.toLocaleString('pt-BR')} kg</div>
-              </div>
+              <div class="stop-header"><div class="stop-title">PARADA ${i + 1}: ${p.city} - ${p.uf}</div><div style="font-size: 10px">${p.totalWeight.toLocaleString('pt-BR')} kg</div></div>
               <table>
-                <thead>
-                  <tr>
-                    <th>Pedido</th>
-                    <th>Cliente</th>
-                    <th>Produto</th>
-                    <th class="text-right">Palet</th>
-                    <th class="text-right">M²</th>
-                    <th class="text-right">Peso</th>
-                    <th class="text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${p.clients.map((c: any) => `
-                    <tr>
-                      <td>${c.pedido}</td>
-                      <td style="text-transform: uppercase">${c.name}</td>
-                      <td style="text-transform: uppercase">${c.produto}</td>
-                      <td class="text-right">${c.palet}</td>
-                      <td class="text-right">${c.m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                      <td class="text-right font-bold">${c.weight.toLocaleString('pt-BR')} kg</td>
-                      <td class="text-right">R$ ${c.valorTot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
+                <thead><tr><th>Pedido</th><th>Cliente</th><th>Produto</th><th class="text-right">Palet</th><th class="text-right">M²</th><th class="text-right">Peso</th><th class="text-right">Valor</th></tr></thead>
+                <tbody>${p.clients.map((c: any) => `<tr><td>${c.pedido}</td><td style="text-transform: uppercase">${c.name}</td><td style="text-transform: uppercase">${c.produto}</td><td class="text-right">${c.palet}</td><td class="text-right">${c.m2.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td class="text-right font-bold">${c.weight.toLocaleString('pt-BR')} kg</td><td class="text-right">R$ ${c.valorTot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td></tr>`).join('')}</tbody>
               </table>
             </div>
           `).join('')}
-
           <div class="footer">Midas Logística - Eficiência em Movimento</div>
         </body>
       </html>
@@ -750,18 +626,6 @@ const CerbrasWeightsByCity = () => {
     printWindow.document.write(content);
     printWindow.document.close();
   };
-
-  const totalRouteWeightValue = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + p.totalWeight, 0);
-  }, [currentRoute]);
-
-  const totalRouteClientsCount = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + p.clients.length, 0);
-  }, [currentRoute]);
-
-  const totalRouteDistance = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + (p.distanceFromPrev || 0), 0);
-  }, [currentRoute]);
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
@@ -780,10 +644,10 @@ const CerbrasWeightsByCity = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {(geocoding || routing) && (
-            <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4">
-              <Navigation size={16} className="animate-bounce" />
-              <span className="text-[10px] font-bold uppercase">{geocoding ? 'Buscando Coordenadas...' : 'Calculando Estradas...'}</span>
+          {geocoding && (
+            <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+              <Globe size={16} className="animate-spin" />
+              <span className="text-[10px] font-bold uppercase">Localizando: {stats.citiesWithCoords} / {stats.totalCities}</span>
             </div>
           )}
 
@@ -791,10 +655,6 @@ const CerbrasWeightsByCity = () => {
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-400 uppercase">Peso Total</p>
               <p className="text-sm font-bold text-amber-600">{stats.totalWeight.toLocaleString('pt-BR')} kg</p>
-            </div>
-            <div className="text-right border-l pl-4">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">Entregas</p>
-              <p className="text-sm font-bold text-blue-600">{stats.totalDeliveries}</p>
             </div>
             <div className="text-right border-l pl-4">
               <p className="text-[10px] font-bold text-slate-400 uppercase">Cidades</p>
@@ -817,12 +677,12 @@ const CerbrasWeightsByCity = () => {
 
           <Button variant={isRouteMode ? "destructive" : "default"} size="sm" onClick={() => { setIsRouteMode(!isRouteMode); if (!isRouteMode) { setCurrentRoute([]); setEditingRouteId(null); } }} className="gap-2">
             {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
-            {isRouteMode ? "Cancelar Rota" : "Montar Rota"}
+            {isRouteMode ? "Cancelar" : "Montar Rota"}
           </Button>
 
           {isRouteMode && currentRoute.length > 0 && (
             <Button size="sm" onClick={saveRoute} className="bg-green-600 hover:bg-green-700 gap-2">
-              <Save size={16} /> {editingRouteId ? "Atualizar Rota" : "Salvar Rota"}
+              <Save size={16} /> {editingRouteId ? "Atualizar" : "Salvar"}
             </Button>
           )}
         </div>
@@ -830,44 +690,24 @@ const CerbrasWeightsByCity = () => {
 
       <main className="flex-1 flex overflow-hidden relative">
         <aside className={`bg-white border-r overflow-y-auto transition-all duration-300 flex flex-col relative ${isSidebarOpen ? 'w-80' : 'w-0'}`}>
-          <div 
-            className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors"
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          >
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <Layers size={18} className="text-amber-600" /> Rotas Salvas
-            </h3>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}>
-              <PanelLeftClose size={18} />
-            </Button>
+          <div className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
+            <h3 className="font-bold text-slate-900 flex items-center gap-2"><Layers size={18} className="text-amber-600" /> Rotas Salvas</h3>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}><PanelLeftClose size={18} /></Button>
           </div>
           <div className="flex-1 divide-y overflow-x-hidden">
             {savedRoutes.map(route => (
-              <div 
-                key={route.id} 
-                className={`p-4 hover:bg-slate-50 group transition-colors cursor-pointer ${selectedRouteId === route.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''}`}
-                onClick={() => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)}
-              >
+              <div key={route.id} className={`p-4 hover:bg-slate-50 group transition-colors cursor-pointer ${selectedRouteId === route.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''}`} onClick={() => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)}>
                 <div className="flex justify-between items-start mb-2">
                   <span className="font-bold text-sm text-slate-800">{route.name}</span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={(e) => { e.stopPropagation(); handlePrintRoute(route); }}>
-                      <Printer size={14} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500" onClick={(e) => { e.stopPropagation(); editSavedRoute(route); }}>
-                      <Edit3 size={14} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={(e) => { e.stopPropagation(); deleteRoute(route.id); }}>
-                      <Trash2 size={14} />
-                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={(e) => { e.stopPropagation(); handlePrintRoute(route); }}><Printer size={14} /></Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-500" onClick={(e) => { e.stopPropagation(); editSavedRoute(route); }}><Edit3 size={14} /></Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={(e) => { e.stopPropagation(); deleteRoute(route.id); }}><Trash2 size={14} /></Button>
                   </div>
                 </div>
                 <div className="space-y-1">
                   {route.route_data.map((p: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-[10px] text-slate-500">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span className="uppercase">{p.city} ({p.clients.length} cli)</span>
-                    </div>
+                    <div key={i} className="flex items-center gap-2 text-[10px] text-slate-500"><div className="w-1.5 h-1.5 rounded-full bg-amber-400" /><span className="uppercase">{p.city} ({p.clients.length} cli)</span></div>
                   ))}
                 </div>
               </div>
@@ -875,16 +715,7 @@ const CerbrasWeightsByCity = () => {
           </div>
         </aside>
 
-        {!isSidebarOpen && (
-          <Button 
-            variant="secondary" 
-            size="icon" 
-            className="absolute top-4 left-4 z-[1000] shadow-md bg-white border"
-            onClick={() => setIsSidebarOpen(true)}
-          >
-            <PanelLeftOpen size={20} />
-          </Button>
-        )}
+        {!isSidebarOpen && <Button variant="secondary" size="icon" className="absolute top-4 left-4 z-[1000] shadow-md bg-white border" onClick={() => setIsSidebarOpen(true)}><PanelLeftOpen size={20} /></Button>}
 
         <div className="flex-1 relative z-10">
           <MapContainer center={MARACANAU_COORDS} zoom={7} style={{ height: '100%', width: '100%' }}>
@@ -894,37 +725,30 @@ const CerbrasWeightsByCity = () => {
             <Marker position={MARACANAU_COORDS} icon={L.divIcon({
               className: 'custom-div-icon',
               html: `<div style="background-color: #1e293b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
-              iconSize: [12, 12],
-              iconAnchor: [6, 6]
-            })}>
-              <Popup><strong>PONTO INICIAL: MARACANAÚ-CE</strong></Popup>
-            </Marker>
+              iconSize: [12, 12], iconAnchor: [6, 6]
+            })}><Popup><strong>PONTO INICIAL: MARACANAÚ-CE</strong></Popup></Marker>
 
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = getCoordsForCity(chave);
               if (!coords) return null;
               
               const isSelectedInCurrentRoute = currentRoute.some(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
-              
-              // Verificar se a cidade pertence à rota salva selecionada
               const selectedRoute = savedRoutes.find(r => r.id === selectedRouteId);
               const isPartOfSelectedRoute = selectedRoute?.route_data.some((p: any) => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave);
 
-              // Lógica de cor: Amarelo se tiver peso, Vermelho se tiver apenas crédito
+              // Lógica de cor: Amarelo se tiver peso, Vermelho se tiver APENAS crédito
               const markerColor = data.totalWeight > 0 ? '#f59e0b' : '#ef4444';
 
               return (
                 <Marker key={chave} position={coords} icon={L.divIcon({
                   className: 'custom-div-icon',
                   html: `<div style="background-color: ${isPartOfSelectedRoute ? '#3b82f6' : isSelectedInCurrentRoute ? '#16a34a' : markerColor}; width: ${isPartOfSelectedRoute ? '20px' : '16px'}; height: ${isPartOfSelectedRoute ? '20px' : '16px'}; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4);"></div>`,
-                  iconSize: isPartOfSelectedRoute ? [20, 20] : [16, 16],
-                  iconAnchor: isPartOfSelectedRoute ? [10, 10] : [8, 8]
+                  iconSize: isPartOfSelectedRoute ? [20, 20] : [16, 16], iconAnchor: isPartOfSelectedRoute ? [10, 10] : [8, 8]
                 })}>
                   <Popup className="custom-popup">
                     <div className="p-2 min-w-[260px]">
                       <h3 className="font-bold text-lg border-b pb-1 mb-2 uppercase">{data.originalName} - {data.uf}</h3>
                       
-                      {/* Seção de Pesos */}
                       {Object.keys(data.weightClients).length > 0 && (
                         <div className="mb-4">
                           <div className="flex justify-between items-center mb-2 bg-amber-50 p-2 rounded">
@@ -933,27 +757,12 @@ const CerbrasWeightsByCity = () => {
                           </div>
                           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                             {Object.entries(data.weightClients).map(([client, items]) => {
-                              const isClientSelected = currentRoute.some(p => 
-                                `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && 
-                                p.clients.some(c => c.name === client)
-                              );
+                              const isClientSelected = currentRoute.some(p => `${normalizarParaMatch(p.city)}|${normalizarParaMatch(data.uf)}` === chave && p.clients.some(c => c.name === client));
                               const clientWeight = items.reduce((acc, i) => acc + i.peso, 0);
                               return (
                                 <div key={client} className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2 last:border-0">
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span>
-                                    <span className="font-bold text-slate-900">{clientWeight.toLocaleString('pt-BR')} kg</span>
-                                  </div>
-                                  {isRouteMode && (
-                                    <Button 
-                                      size="icon" 
-                                      variant={isClientSelected ? "default" : "outline"} 
-                                      className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} 
-                                      onClick={() => handleAddClientToRoute(chave, coords, client)}
-                                    >
-                                      {isClientSelected ? <X size={12} /> : <Plus size={12} />}
-                                    </Button>
-                                  )}
+                                  <div className="flex flex-col"><span className="font-medium text-slate-600 truncate max-w-[140px]">{client}</span><span className="font-bold text-slate-900">{clientWeight.toLocaleString('pt-BR')} kg</span></div>
+                                  {isRouteMode && <Button size="icon" variant={isClientSelected ? "default" : "outline"} className={`h-6 w-6 ${isClientSelected ? 'bg-red-500 hover:bg-red-600 border-red-500' : ''}`} onClick={() => handleAddClientToRoute(chave, coords, client)}>{isClientSelected ? <X size={12} /> : <Plus size={12} />}</Button>}
                                 </div>
                               );
                             })}
@@ -961,130 +770,52 @@ const CerbrasWeightsByCity = () => {
                         </div>
                       )}
 
-                      {/* Seção de Créditos (Oculta no modo de rota se tiver peso) */}
-                      {!isRouteMode && Object.keys(data.creditClients).length > 0 && (
+                      {Object.keys(data.creditClients).length > 0 && (
                         <div className="mt-2 border-t pt-2">
-                          <div className="flex items-center gap-2 mb-2 text-red-600">
-                            <Coins size={14} />
-                            <span className="text-[10px] font-bold uppercase">Limite de Crédito Disponível</span>
-                          </div>
+                          <div className="flex items-center gap-2 mb-2 text-red-600"><Coins size={14} /><span className="text-[10px] font-bold uppercase">Limite de Crédito Disponível</span></div>
                           <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                             {Object.entries(data.creditClients).map(([client, items]) => {
                               const totalCredit = items.reduce((acc, i) => acc + i.limite, 0);
                               return (
-                                <div key={client} className="flex justify-between items-center text-[10px] bg-red-50/50 p-1.5 rounded border border-red-100">
-                                  <span className="font-medium text-slate-700 truncate max-w-[140px]">{client}</span>
-                                  <span className="font-bold text-red-700">R$ {totalCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                </div>
+                                <div key={client} className="flex justify-between items-center text-[10px] bg-red-50/50 p-1.5 rounded border border-red-100"><span className="font-medium text-slate-700 truncate max-w-[140px]">{client}</span><span className="font-bold text-red-700">R$ {totalCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                               );
                             })}
                           </div>
                         </div>
                       )}
 
-                      {isRouteMode && data.totalWeight > 0 && (
-                        <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2 mt-2" onClick={() => handleAddAllCityToRoute(chave, coords)}>
-                          <Plus size={12} /> {isSelectedInCurrentRoute ? "Remover/Atualizar Cidade" : "Incluir Cidade Completa"}
-                        </Button>
-                      )}
+                      {isRouteMode && data.totalWeight > 0 && <Button size="sm" className="w-full bg-amber-600 hover:bg-amber-700 h-8 text-[10px] gap-2 mt-2" onClick={() => handleAddAllCityToRoute(chave, coords)}><Plus size={12} /> {isSelectedInCurrentRoute ? "Remover/Atualizar" : "Incluir Cidade"}</Button>}
                     </div>
                   </Popup>
                 </Marker>
               );
             })}
 
-            {/* Geometria da rota em criação */}
-            {isRouteMode && routeGeometry.length > 0 && (
-              <Polyline positions={routeGeometry} color="#16a34a" weight={4} opacity={0.8} />
-            )}
-
-            {/* Geometria da rota salva selecionada (com traçado real) */}
-            {selectedRouteId && selectedRouteGeometry.length > 0 && (
-              <Polyline positions={selectedRouteGeometry} color="#3b82f6" weight={6} opacity={1} />
-            )}
-
-            {/* Outras rotas salvas (linhas simples para não sobrecarregar) */}
-            {savedRoutes.map((route, idx) => {
-              if (route.id === selectedRouteId) return null;
-              return (
-                <Polyline 
-                  key={route.id} 
-                  positions={[MARACANAU_COORDS, ...route.route_data.map((p: any) => p.coords)]} 
-                  color={['#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'][idx % 4]} 
-                  weight={2} 
-                  opacity={0.3} 
-                  dashArray="5, 10" 
-                  eventHandlers={{
-                    click: () => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)
-                  }}
-                />
-              );
-            })}
+            {isRouteMode && routeGeometry.length > 0 && <Polyline positions={routeGeometry} color="#16a34a" weight={4} opacity={0.8} />}
+            {selectedRouteId && selectedRouteGeometry.length > 0 && <Polyline positions={selectedRouteGeometry} color="#3b82f6" weight={6} opacity={1} />}
           </MapContainer>
 
           {isRouteMode && (
             <div className="absolute bottom-10 left-10 z-[1000] bg-white p-5 rounded-lg shadow-2xl border-2 border-slate-900 w-80">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="font-bold text-sm uppercase tracking-tight flex items-center gap-2">
-                  <Truck size={18} className="text-amber-600" /> Painel de Rota
-                </h4>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}><RotateCcw size={14} /></Button>
-              </div>
+              <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-sm uppercase tracking-tight flex items-center gap-2"><Truck size={18} className="text-amber-600" /> Painel de Rota</h4><Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentRoute([])}><RotateCcw size={14} /></Button></div>
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-slate-50 p-2 rounded border">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Cidades</p>
-                    <p className="text-sm font-bold">{currentRoute.length}</p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded border">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p>
-                    <p className="text-sm font-bold">{totalRouteClientsCount}</p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded border">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Distância</p>
-                    <p className="text-sm font-bold">{totalRouteDistance.toFixed(0)} km</p>
-                  </div>
+                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Cidades</p><p className="text-sm font-bold">{currentRoute.length}</p></div>
+                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Clientes</p><p className="text-sm font-bold">{totalRouteClientsCount}</p></div>
+                  <div className="bg-slate-50 p-2 rounded border"><p className="text-[9px] font-bold text-slate-400 uppercase">Distância</p><p className="text-sm font-bold">{totalRouteDistance.toFixed(0)} km</p></div>
                 </div>
-                <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100">
-                  <span className="text-amber-700 font-bold uppercase">Peso Total:</span>
-                  <span className="font-bold text-amber-900">{totalRouteWeightValue.toLocaleString('pt-BR')} kg</span>
-                </div>
+                <div className="flex justify-between text-xs bg-amber-50 p-2 rounded border border-amber-100"><span className="text-amber-700 font-bold uppercase">Peso Total:</span><span className="font-bold text-amber-900">{totalRouteWeightValue.toLocaleString('pt-BR')} kg</span></div>
                 <div className="border-t pt-3 mt-3 max-h-40 overflow-y-auto space-y-2">
-                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                    <div className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[8px]">0</div>
-                    MARACANAÚ
-                  </div>
+                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400"><div className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-[8px]">0</div>MARACANAÚ</div>
                   {currentRoute.map((p, i) => (
                     <div key={i} className="flex flex-col gap-1 p-2 bg-slate-50 rounded border border-slate-100 group">
-                      <div className="flex items-center gap-3 text-[10px]">
-                        <div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div>
-                        <span className="uppercase font-bold flex-1 truncate">{p.city}</span>
-                        <span className="text-blue-600 font-bold">+{p.distanceFromPrev?.toFixed(0)}km</span>
-                        <button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
-                      </div>
-                      <div className="pl-7 flex flex-wrap gap-1">
-                        {p.clients.map((c, ci) => (
-                          <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500 flex items-center gap-1">
-                            {c.name.split(' ')[0]}
-                            <button 
-                              onClick={() => handleAddClientToRoute(`${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}`, p.coords, c.name)}
-                              className="text-red-400 hover:text-red-600"
-                            >
-                              <X size={8} />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
+                      <div className="flex items-center gap-3 text-[10px]"><div className="w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center text-[8px]">{i + 1}</div><span className="uppercase font-bold flex-1 truncate">{p.city}</span><span className="text-blue-600 font-bold">+{p.distanceFromPrev?.toFixed(0)}km</span><button onClick={() => setCurrentRoute(currentRoute.filter((_, idx) => idx !== i))} className="text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button></div>
+                      <div className="pl-7 flex flex-wrap gap-1">{p.clients.map((c, ci) => <span key={ci} className="text-[8px] bg-white px-1 rounded border text-slate-500 flex items-center gap-1">{c.name.split(' ')[0]}<button onClick={() => handleAddClientToRoute(`${normalizarParaMatch(p.city)}|${normalizarParaMatch(p.uf)}`, p.coords, c.name)} className="text-red-400 hover:text-red-600"><X size={8} /></button></span>)}</div>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                <Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => { setCurrentRoute([]); setEditingRouteId(null); }}>Limpar</Button>
-                <Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>
-                  {editingRouteId ? "Atualizar" : "Salvar Rota"}
-                </Button>
-              </div>
+              <div className="grid grid-cols-2 gap-2 mt-4"><Button variant="outline" size="sm" className="text-[10px] h-8" onClick={() => { setCurrentRoute([]); setEditingRouteId(null); }}>Limpar</Button><Button size="sm" className="text-[10px] h-8 bg-slate-900" onClick={saveRoute} disabled={currentRoute.length === 0}>{editingRouteId ? "Atualizar" : "Salvar Rota"}</Button></div>
             </div>
           )}
         </div>
