@@ -24,7 +24,8 @@ import {
   Users,
   MapPin,
   MoreVertical,
-  Copy
+  Copy,
+  Eraser
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -252,6 +253,17 @@ const CerbrasFormatter = () => {
     else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); }
   };
 
+  const deleteAllRoutes = async () => {
+    if (!confirm("ATENÇÃO: Isso excluirá TODAS as rotas e cidades cadastradas permanentemente. Deseja continuar?")) return;
+    const { error } = await supabase.from('cerbras_routes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) showError(error.message);
+    else {
+      setRoutes([]);
+      setCities([]);
+      showSuccess("Base de rotas limpa com sucesso!");
+    }
+  };
+
   const deleteCity = async (id: string) => {
     const { error } = await supabase.from('cerbras_cities').delete().eq('id', id);
     if (error) showError(error.message);
@@ -280,10 +292,11 @@ const CerbrasFormatter = () => {
 
         if (data.length < 2) throw new Error("Arquivo vazio ou inválido.");
 
-        const startRow = (data[0][0]?.toString().toLowerCase().includes('rota')) ? 1 : 0;
-        const rows = data.slice(startRow).filter(r => r[0] && r[1]);
+        // Coluna A (0): Cidade, Coluna C (2): Rota
+        const startRow = (data[0][0]?.toString().toLowerCase().includes('cidade')) ? 1 : 0;
+        const rows = data.slice(startRow).filter(r => r[0] && r[2]);
 
-        const uniqueRouteNames = Array.from(new Set(rows.map(r => r[0].toString().toUpperCase().trim())));
+        const uniqueRouteNames = Array.from(new Set(rows.map(r => r[2].toString().toUpperCase().trim())));
         const currentRoutes = [...routes];
         const routeMap = new Map<string, string>();
 
@@ -303,8 +316,8 @@ const CerbrasFormatter = () => {
         }
 
         const citiesToInsert = rows.map(r => ({
-          route_id: routeMap.get(r[0].toString().toUpperCase().trim()),
-          city_name: r[1].toString().toUpperCase().trim(),
+          route_id: routeMap.get(r[2].toString().toUpperCase().trim()),
+          city_name: r[0].toString().toUpperCase().trim(),
           user_id: user?.id
         }));
 
@@ -578,6 +591,9 @@ const CerbrasFormatter = () => {
                       <Button size="sm" variant="outline" onClick={() => routeInputRef.current?.click()} disabled={importingRoutes} className="h-8 border-amber-200 text-amber-700">
                         {importingRoutes ? <Loader2 className="animate-spin" size={14} /> : <FileUp size={14} />}
                         <span className="ml-2">Importar Excel</span>
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={deleteAllRoutes} className="h-8 gap-2">
+                        <Eraser size={14} /> Limpar Tudo
                       </Button>
                       <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
                     </div>
