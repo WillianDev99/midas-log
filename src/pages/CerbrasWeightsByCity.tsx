@@ -27,7 +27,8 @@ import {
   PanelLeftOpen,
   CreditCard,
   Coins,
-  Globe
+  Globe,
+  Database
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -109,7 +110,6 @@ const CerbrasWeightsByCity = () => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creditInputRef = useRef<HTMLInputElement>(null);
-  const localBaseRef = useRef<Record<string, [number, number]>>({});
   
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -133,16 +133,10 @@ const CerbrasWeightsByCity = () => {
   // Inicialização
   useEffect(() => {
     const init = async () => {
-      // 1. Carregar base local CIDADES.xlsx
-      await loadLocalBase();
+      // 1. Carregar coordenadas do Supabase (Cache Permanente)
+      await fetchCoordsFromSupabase();
 
-      // 2. Carregar coordenadas salvas no cache
-      const savedCoords = localStorage.getItem('cerbras_city_coords');
-      if (savedCoords) {
-        setCityCoords(JSON.parse(savedCoords));
-      }
-
-      // 3. Carregar dados de pesos e créditos
+      // 2. Carregar dados de pesos e créditos do cache local (sessão)
       const savedData = localStorage.getItem('cerbras_map_data');
       if (savedData) setDeliveries(JSON.parse(savedData));
       
@@ -166,33 +160,6 @@ const CerbrasWeightsByCity = () => {
     }
   }, [deliveries, creditLimits, cityCoords, loading]);
 
-  // Salvar coordenadas no cache sempre que mudar
-  useEffect(() => {
-    if (Object.keys(cityCoords).length > 0) {
-      localStorage.setItem('cerbras_city_coords', JSON.stringify(cityCoords));
-    }
-  }, [cityCoords]);
-
-  // Lógica de Rotas
-  useEffect(() => {
-    if (currentRoute.length > 0) {
-      updateRoadRoute(currentRoute, setRouteGeometry);
-    } else {
-      setRouteGeometry([]);
-    }
-  }, [currentRoute]);
-
-  useEffect(() => {
-    if (selectedRouteId) {
-      const route = savedRoutes.find(r => r.id === selectedRouteId);
-      if (route) {
-        updateRoadRoute(route.route_data, setSelectedRouteGeometry);
-      }
-    } else {
-      setSelectedRouteGeometry([]);
-    }
-  }, [selectedRouteId, savedRoutes]);
-
   const normalizarParaMatch = (txt: any) => {
     if (!txt) return "";
     return String(txt)
@@ -212,6 +179,38 @@ const CerbrasWeightsByCity = () => {
     return parseFloat(s) || 0;
   };
 
+  const fetchCoordsFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cerbras_city_coords')
+        .select('chave, lat, lng');
+      
+      if (error) throw error;
+
+      if (data) {
+        const coords: Record<string, [number, number]> = {};
+        data.forEach(item => {
+          coords[item.chave] = [Number(item.lat), Number(item.lng)];
+        });
+        setCityCoords(coords);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar coordenadas do Supabase:", e);
+    }
+  };
+
+  const saveCoordToSupabase = async (chave: string, lat: number, lng: number) => {
+    try {
+      await supabase.from('cerbras_city_coords').upsert({
+        chave,
+        lat,
+        lng
+      });
+    } catch (e) {
+      console.error("Erro ao salvar coordenada no Supabase:", e);
+    }
+  };
+
   const loadLocalBase = async () => {
     try {
       const response = await fetch('/CIDADES.xlsx');
@@ -221,7 +220,7 @@ const CerbrasWeightsByCity = () => {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
-      const base: Record<string, [number, number]> = {};
+      const newCoords: any[] = [];
       data.forEach((row, i) => {
         if (i === 0) return;
         const city = normalizarParaMatch(row[0]);
@@ -229,10 +228,18 @@ const CerbrasWeightsByCity = () => {
         const lat = converterNumero(row[2]);
         const lng = converterNumero(row[3]);
         if (city && uf && lat !== 0 && lng !== 0) {
-          base[`${city}|${uf}`] = [lat, lng];
+          const chave = `${city}|${uf}`;
+          if (!cityCoords[chave]) {
+            newCoords.push({ chave, lat, lng });
+          }
         }
       });
-      localBaseRef.current = base;
+
+      if (newCoords.length > 0) {
+        await supabase.from('cerbras_city_coords').upsert(newCoords);
+        await fetchCoordsFromSupabase();
+        showSuccess(`${newCoords.length} novas coordenadas importadas do Excel!`);
+      }
     } catch (e) {
       console.error("Erro ao carregar base local:", e);
     }
@@ -255,7 +262,6 @@ const CerbrasWeightsByCity = () => {
       } catch (error) {
         console.error(`Erro API para ${query}:`, error);
       }
-      // Pequeno delay entre tentativas para a mesma cidade
       await new Promise(r => setTimeout(r, 200));
     }
     return null;
@@ -264,25 +270,7 @@ const CerbrasWeightsByCity = () => {
   const processMissingCoords = async (chaves: string[]) => {
     setGeocoding(true);
     
-    const newCoords: Record<string, [number, number]> = {};
-    const apiQueue: string[] = [];
-
-    // 1. Tentar primeiro na base local (instantâneo)
-    chaves.forEach(chave => {
-      if (localBaseRef.current[chave]) {
-        newCoords[chave] = localBaseRef.current[chave];
-      } else {
-        apiQueue.push(chave);
-      }
-    });
-
-    // Atualizar o que foi encontrado na base local imediatamente
-    if (Object.keys(newCoords).length > 0) {
-      setCityCoords(prev => ({ ...prev, ...newCoords }));
-    }
-
-    // 2. Processar o que sobrou via API (com delay)
-    for (const chave of apiQueue) {
+    for (const chave of chaves) {
       const data = citySummary[chave];
       if (!data) continue;
 
@@ -290,11 +278,13 @@ const CerbrasWeightsByCity = () => {
       const coords = await fetchCoordsFromAPI(data.originalName, data.uf);
       
       if (coords) {
+        // Salvar no Supabase para nunca mais precisar buscar
+        await saveCoordToSupabase(chave, coords[0], coords[1]);
+        // Atualizar estado local para plotar no mapa imediatamente
         setCityCoords(prev => ({ ...prev, [chave]: coords }));
       }
       
-      // Delay para respeitar limite da API gratuita (Nominatim pede 1s)
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
     }
 
     setCurrentSearching("");
@@ -641,18 +631,6 @@ const CerbrasWeightsByCity = () => {
     printWindow.document.close();
   };
 
-  const totalRouteWeightValue = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + p.totalWeight, 0);
-  }, [currentRoute]);
-
-  const totalRouteClientsCount = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + p.clients.length, 0);
-  }, [currentRoute]);
-
-  const totalRouteDistance = useMemo(() => {
-    return currentRoute.reduce((acc, p) => acc + (p.distanceFromPrev || 0), 0);
-  }, [currentRoute]);
-
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
@@ -691,6 +669,9 @@ const CerbrasWeightsByCity = () => {
           </div>
 
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => loadLocalBase()} disabled={processing}>
+              <Database size={16} /> Sincronizar Excel
+            </Button>
             <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => fileInputRef.current?.click()} disabled={processing}>
               {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
               Upload Pesos
