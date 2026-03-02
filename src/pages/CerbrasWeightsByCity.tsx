@@ -142,10 +142,7 @@ const CerbrasWeightsByCity = () => {
       setCreditLimits(loadedCredits);
       
       // Geocodificar qualquer coisa que tenha sobrado sem coordenadas
-      const allItems = [...loadedDeliveries, ...loadedCredits];
-      if (allItems.length > 0) {
-        await geocodeMissingCities(allItems);
-      }
+      await geocodeAllMissing([...loadedDeliveries, ...loadedCredits]);
 
       await fetchSavedRoutes();
       setLoading(false);
@@ -357,7 +354,7 @@ const CerbrasWeightsByCity = () => {
 
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
-        await geocodeMissingCities(items);
+        await geocodeAllMissing([...items, ...creditLimits]);
         showSuccess(`${items.length} registros de peso carregados!`);
       } catch (error: any) {
         showError("Erro ao processar: " + error.message);
@@ -400,7 +397,7 @@ const CerbrasWeightsByCity = () => {
 
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
-        await geocodeMissingCities(items);
+        await geocodeAllMissing([...deliveries, ...items]);
         showSuccess(`${items.length} registros de crédito carregados!`);
       } catch (error: any) {
         showError("Erro ao processar crédito: " + error.message);
@@ -412,15 +409,16 @@ const CerbrasWeightsByCity = () => {
     reader.readAsBinaryString(file);
   };
 
-  const geocodeMissingCities = async (items: (DeliveryItem | CreditLimitItem)[]) => {
+  const geocodeAllMissing = async (allItems: (DeliveryItem | CreditLimitItem)[]) => {
     setGeocoding(true);
-    const uniqueChaves = Array.from(new Set(items.map(i => i.chave)));
-    const newCoords = { ...cityCoords };
+    const uniqueChaves = Array.from(new Set(allItems.map(i => i.chave)));
+    const currentCoords = { ...cityCoords };
+    const newCoords: Record<string, [number, number]> = {};
     let foundCount = 0;
 
     for (const chave of uniqueChaves) {
-      if (!newCoords[chave]) {
-        const item = items.find(i => i.chave === chave);
+      if (!currentCoords[chave]) {
+        const item = allItems.find(i => i.chave === chave);
         if (item) {
           const coords = await fetchCoordsFromAPI(item.cidade, item.uf);
           if (coords) {
