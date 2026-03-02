@@ -48,11 +48,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
-import { 
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
@@ -96,14 +91,18 @@ const HidracorFormatter = () => {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   
-  // Seleção de Carga
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [usedOrderIds, setUsedOrderIds] = useState<Set<string>>(new Set());
+  const [usedOrderIds, setUsedOrderIds] = useState<Map<string, string>>(new Map());
 
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const savedData = localStorage.getItem('hidracor_last_wallet');
+    if (savedData) {
+      setFormattedData(JSON.parse(savedData));
+      setIsUploadOpen(false);
+    }
     fetchBaseData();
     fetchUsedOrders();
   }, []);
@@ -129,12 +128,12 @@ const HidracorFormatter = () => {
   };
 
   const fetchUsedOrders = async () => {
-    const { data } = await supabase.from('hidracor_saved_loads').select('items');
-    const ids = new Set<string>();
+    const { data } = await supabase.from('hidracor_saved_loads').select('name, items');
+    const orderMap = new Map<string, string>();
     data?.forEach(load => {
-      load.items.forEach((item: any) => ids.add(item.Pedido?.toString()));
+      load.items.forEach((item: any) => orderMap.set(item.Pedido?.toString(), load.name));
     });
-    setUsedOrderIds(ids);
+    setUsedOrderIds(orderMap);
   };
 
   const handleTopScroll = () => {
@@ -155,7 +154,6 @@ const HidracorFormatter = () => {
     return date.toLocaleDateString('pt-BR');
   };
 
-  // Funções de Base
   const addRoute = async () => {
     const name = prompt("Nome da nova rota:");
     if (!name) return;
@@ -164,48 +162,13 @@ const HidracorFormatter = () => {
     else { setRoutes([...routes, data[0]]); showSuccess("Rota adicionada!"); }
   };
 
-  const renameRoute = async (id: string, currentName: string) => {
-    const newName = prompt("Novo nome para a rota:", currentName);
-    if (!newName || newName === currentName) return;
-    const { error } = await supabase.from('hidracor_routes').update({ name: newName.toUpperCase() }).eq('id', id);
-    if (error) showError(error.message);
-    else { setRoutes(routes.map(r => r.id === id ? { ...r, name: newName.toUpperCase() } : r)); showSuccess("Rota renomeada!"); }
-  };
-
-  const deleteRoute = async (id: string) => {
-    if (!confirm("Excluir rota e cidades?")) return;
-    const { error } = await supabase.from('hidracor_routes').delete().eq('id', id);
-    if (error) showError(error.message);
-    else { setRoutes(routes.filter(r => r.id !== id)); setCities(cities.filter(c => c.route_id !== id)); showSuccess("Rota excluída!"); }
-  };
-
   const addCity = async (routeId: string) => {
-    const input = prompt("Nomes das cidades:");
+    const input = prompt("Nomes das cidades (separe por vírgula ou linha):");
     if (!input) return;
     const names = input.split(/[,\n]/).map(n => n.trim().toUpperCase()).filter(n => n.length > 0);
     const { data, error } = await supabase.from('hidracor_cities').insert(names.map(n => ({ route_id: routeId, city_name: n, user_id: user?.id }))).select();
     if (error) showError(error.message);
     else { setCities([...cities, ...(data || [])]); showSuccess("Cidades adicionadas!"); }
-  };
-
-  const renameCity = async (id: string, currentName: string) => {
-    const newName = prompt("Novo nome:", currentName);
-    if (!newName) return;
-    const { error } = await supabase.from('hidracor_cities').update({ city_name: newName.toUpperCase() }).eq('id', id);
-    if (error) showError(error.message);
-    else setCities(cities.map(c => c.id === id ? { ...c, city_name: newName.toUpperCase() } : c));
-  };
-
-  const moveCity = async (cityId: string, newRouteId: string) => {
-    const { error } = await supabase.from('hidracor_cities').update({ route_id: newRouteId }).eq('id', cityId);
-    if (error) showError(error.message);
-    else setCities(cities.map(c => c.id === cityId ? { ...c, route_id: newRouteId } : c));
-  };
-
-  const deleteCity = async (id: string) => {
-    const { error } = await supabase.from('hidracor_cities').delete().eq('id', id);
-    if (error) showError(error.message);
-    else setCities(cities.filter(c => c.id !== id));
   };
 
   const addClientsToBase = async (table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
@@ -218,28 +181,6 @@ const HidracorFormatter = () => {
       if (table === 'hidracor_awaiting_clients') setAwaitingClients([...awaitingClients, ...(data || [])]);
       else setPickupClients([...pickupClients, ...(data || [])]);
       showSuccess("Clientes adicionados!");
-    }
-  };
-
-  const renameClientInBase = async (id: string, currentName: string, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
-    const newName = prompt("Novo nome para o cliente:", currentName);
-    if (!newName || newName === currentName) return;
-    const { error } = await supabase.from(table).update({ client_name: newName.toUpperCase() }).eq('id', id);
-    if (error) showError(error.message);
-    else {
-      if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.map(c => c.id === id ? { ...c, client_name: newName.toUpperCase() } : c));
-      else setPickupClients(pickupClients.map(c => c.id === id ? { ...c, client_name: newName.toUpperCase() } : c));
-      showSuccess("Cliente renomeado!");
-    }
-  };
-
-  const deleteClientFromBase = async (id: string, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
-    if (!confirm("Excluir cliente da base?")) return;
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) showError(error.message);
-    else {
-      if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.filter(c => c.id !== id));
-      else setPickupClients(pickupClients.filter(c => c.id !== id));
     }
   };
 
@@ -282,12 +223,6 @@ const HidracorFormatter = () => {
     const idxPT = getIdx('peso total');
     const idxVT = getIdx('valor total');
 
-    if (idxFrete === -1 || idxNom === -1 || idxMun === -1) {
-      showError("Colunas obrigatórias não encontradas na planilha.");
-      setProcessing(false);
-      return;
-    }
-
     const dataRows = rows.slice(1);
     const awaitingSet = new Set(awaitingClients.map(c => c.client_name.toUpperCase()));
     const pickupSet = new Set(pickupClients.map(c => c.client_name.toUpperCase()));
@@ -307,15 +242,9 @@ const HidracorFormatter = () => {
       if (freightType === 'CIF' || freightType === 'FOB DIRIGIDO') {
         finalRoute = 'LOG. HIDRACOR';
       } else if (freightType === 'FOB RETIRA') {
-        if (awaitingSet.has(clientName)) {
-          finalRoute = 'AG. CONFIRMAÇÃO';
-        } 
-        else if (pickupSet.has(clientName)) {
-          finalRoute = 'CLIENTE RETIRA';
-        } 
-        else if (cityToRouteMap[cityName]) {
-          finalRoute = cityToRouteMap[cityName];
-        }
+        if (awaitingSet.has(clientName)) finalRoute = 'AG. CONFIRMAÇÃO';
+        else if (pickupSet.has(clientName)) finalRoute = 'CLIENTE RETIRA';
+        else if (cityToRouteMap[cityName]) finalRoute = cityToRouteMap[cityName];
       }
 
       return {
@@ -327,14 +256,15 @@ const HidracorFormatter = () => {
         'Pedido': row[idxPed],
         'Cód.Cliente': row[idxCod],
         'Nome Cliente': row[idxNom],
-        'peso possível': row[idxPP],
-        'valor possível': row[idxVP],
-        'peso total': row[idxPT],
-        'valor total': row[idxVT]
+        'peso possível': parseFloat(row[idxPP]?.toString().replace(',', '.') || '0').toFixed(2),
+        'valor possível': parseFloat(row[idxVP]?.toString().replace(',', '.') || '0').toFixed(2),
+        'peso total': parseFloat(row[idxPT]?.toString().replace(',', '.') || '0').toFixed(2),
+        'valor total': parseFloat(row[idxVT]?.toString().replace(',', '.') || '0').toFixed(2)
       };
     });
 
     setFormattedData(formatted);
+    localStorage.setItem('hidracor_last_wallet', JSON.stringify(formatted));
     setProcessing(false);
     setIsUploadOpen(false);
     showSuccess("Carteira formatada!");
@@ -342,84 +272,73 @@ const HidracorFormatter = () => {
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
-      direction = null;
-    }
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    else if (sortConfig.key === key && sortConfig.direction === 'desc') direction = null;
     setSortConfig({ key, direction });
   };
 
-  const sortedData = useMemo(() => {
-    let sortableItems = [...formattedData];
+  const filteredData = useMemo(() => {
+    let data = [...formattedData];
     if (sortConfig.direction !== null) {
-      sortableItems.sort((a, b) => {
-        const aValue = a[sortConfig.key];
-        const bValue = b[sortConfig.key];
-        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      data.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
-    return sortableItems;
-  }, [formattedData, sortConfig]);
-
-  const filteredData = useMemo(() => {
-    return sortedData.filter(row => {
-      return Object.entries(columnFilters).every(([col, value]) => {
-        if (!value) return true;
-        return row[col]?.toString().toLowerCase().includes(value.toLowerCase());
-      });
-    });
-  }, [sortedData, columnFilters]);
+    return data.filter(row => 
+      Object.entries(columnFilters).every(([col, val]) => 
+        !val || row[col]?.toString().toLowerCase().includes(val.toLowerCase())
+      )
+    );
+  }, [formattedData, columnFilters, sortConfig]);
 
   const totals = useMemo(() => {
     const result: Record<string, number> = {};
     const numericCols = ['peso possível', 'valor possível', 'peso total', 'valor total'];
-    
     filteredData.forEach(row => {
       numericCols.forEach(col => {
-        let val = row[col];
-        if (typeof val === 'string') val = parseFloat(val.replace('.', '').replace(',', '.'));
-        if (!isNaN(val)) result[col] = (result[col] || 0) + val;
+        const val = parseFloat(row[col] || '0');
+        result[col] = (result[col] || 0) + val;
       });
     });
     return result;
   }, [filteredData]);
 
-  const handleFilterChange = (col: string, value: string) => {
-    setColumnFilters(prev => ({ ...prev, [col]: value }));
-  };
-
-  const toggleItemSelection = (pedido: string) => {
-    setSelectedItems(prev => 
-      prev.includes(pedido) ? prev.filter(id => id !== pedido) : [...prev, pedido]
-    );
-  };
-
   const handleCreateLoad = async () => {
-    const loadName = prompt("Nome para esta carga (ex: CARGA NORTE):");
+    const loadName = prompt("Nome para esta carga:");
     if (!loadName) return;
-
     const itemsToSave = formattedData.filter(item => selectedItems.includes(item.Pedido?.toString()));
-    
     const { data, error } = await supabase.from('hidracor_saved_loads').insert([{
       user_id: user?.id,
       name: loadName.toUpperCase(),
       items: itemsToSave,
       shipments: { "1": [], "2": [], "3": [] }
     }]).select();
-
     if (error) showError(error.message);
     else {
-      showSuccess("Carga criada com sucesso!");
+      showSuccess("Carga criada!");
+      fetchUsedOrders();
       navigate(`/admin/hidracor-loads/${data[0].id}`);
     }
   };
 
   const downloadExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData);
+    const dataWithLoads = filteredData.map(row => ({
+      ...row,
+      'CARGAS': usedOrderIds.get(row.Pedido?.toString()) || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataWithLoads);
     const wb = XLSX.utils.book_new();
+    
+    const range = dataWithLoads.length + 1;
+    const colsToSum = ['I', 'J', 'K', 'L']; // peso poss, valor poss, peso tot, valor tot
+    colsToSum.forEach(col => {
+      ws[`${col}${range + 1}`] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
+    });
+    ws[`H${range + 1}`] = { v: "TOTAL:" };
+
     XLSX.utils.book_append_sheet(wb, ws, "Carteira Hidracor");
     XLSX.writeFile(wb, `CARTEIRA_HIDRACOR_${new Date().toLocaleDateString()}.xlsx`);
   };
@@ -430,170 +349,20 @@ const HidracorFormatter = () => {
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
       <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
         <div className="flex items-center gap-4">
-          <Link to="/admin">
-            <Button variant="ghost" size="icon"><ArrowLeft /></Button>
-          </Link>
+          <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-              <p className="text-slate-500 text-xs">Saída com 12 colunas e lógica de prioridade ROTA.</p>
+              <p className="text-slate-500 text-xs">Lógica de prioridade ROTA e persistência de dados.</p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to="/admin/hidracor-loads">
-            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
-              <ListFilter size={16} /> <span className="hidden sm:inline">Minhas Cargas</span>
-            </Button>
-          </Link>
-
-          {selectedItems.length > 0 && (
-            <Button onClick={handleCreateLoad} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white gap-2 animate-pulse">
-              <Truck size={16} /> Criar Carga ({selectedItems.length})
-            </Button>
-          )}
-
-          {formattedData.length > 0 && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setIsUploadOpen(!isUploadOpen)}
-              className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
-            >
-              <RefreshCw size={14} /> 
-              <span className="hidden sm:inline">{isUploadOpen ? "Fechar Upload" : "Novo Upload"}</span>
-            </Button>
-          )}
-          
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
-                <Settings2 size={16} /> <span className="hidden sm:inline">Gerenciar Bases</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
-              <SheetHeader className="mb-6">
-                <SheetTitle>Configuração de Bases</SheetTitle>
-                <SheetDescription>Ajuste as rotas e prioridades para o processamento automático.</SheetDescription>
-              </SheetHeader>
-              
-              <Tabs defaultValue="routes" className="w-full">
-                <TabsList className="w-full grid grid-cols-3 mb-6">
-                  <TabsTrigger value="routes">Rotas</TabsTrigger>
-                  <TabsTrigger value="awaiting">Aguard.</TabsTrigger>
-                  <TabsTrigger value="pickup">Retira</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="routes" className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold uppercase text-slate-500">Cidades por Rota</h3>
-                    <Button size="sm" onClick={addRoute} className="h-8 gap-1 bg-amber-600 hover:bg-amber-700">
-                      <Plus size={14} /> Nova Rota
-                    </Button>
-                  </div>
-                  <div className="space-y-4">
-                    {routes.map(route => (
-                      <div key={route.id} className="border rounded-lg p-3 bg-slate-50">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="font-bold text-amber-700 text-sm uppercase">{route.name}</span>
-                          <div className="flex items-center gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => addCity(route.id)} className="h-7 w-7 p-0 text-green-600"><Plus size={14} /></Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" className="h-7 w-7 p-0"><MoreVertical size={14} /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => renameRoute(route.id, route.name)}><Edit2 className="mr-2 h-4 w-4" /> Renomear</DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => deleteRoute(route.id)} className="text-red-600"><Trash2 className="mr-2 h-4 w-4" /> Excluir</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {cities.filter(c => c.route_id === route.id).map(city => (
-                            <DropdownMenu key={city.id}>
-                              <DropdownMenuTrigger asChild>
-                                <button className="bg-white px-2 py-1 rounded text-[10px] border border-slate-200 hover:border-amber-500">{city.city_name}</button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => renameCity(city.id, city.city_name)}>Renomear</DropdownMenuItem>
-                                <DropdownMenuSub>
-                                  <DropdownMenuSubTrigger>Mover para...</DropdownMenuSubTrigger>
-                                  <DropdownMenuPortal>
-                                    <DropdownMenuSubContent>
-                                      {routes.filter(r => r.id !== route.id).map(r => (
-                                        <DropdownMenuItem key={r.id} onClick={() => moveCity(city.id, r.id)}>{r.name}</DropdownMenuItem>
-                                      ))}
-                                    </DropdownMenuSubContent>
-                                  </DropdownMenuPortal>
-                                </DropdownMenuSub>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => deleteCity(city.id)} className="text-red-600">Excluir</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="awaiting" className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold uppercase text-slate-500">Prioridade 1 (Aguardando)</h3>
-                    <Button size="sm" onClick={() => addClientsToBase('hidracor_awaiting_clients')} className="h-8 gap-1 bg-amber-600 hover:bg-amber-700">
-                      <Plus size={14} /> Cliente
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {awaitingClients.map(client => (
-                      <div key={client.id} className="flex justify-between items-center p-3 bg-slate-50 border rounded-md text-xs">
-                        <span className="font-medium">{client.client_name}</span>
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => renameClientInBase(client.id, client.client_name, 'hidracor_awaiting_clients')} className="h-6 w-6 p-0 text-slate-400 hover:text-amber-600">
-                            <Edit2 size={14} />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteClientFromBase(client.id, 'hidracor_awaiting_clients')} className="h-6 w-6 p-0 text-red-500">
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="pickup" className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold uppercase text-slate-500">Prioridade 2 (Retira)</h3>
-                    <Button size="sm" onClick={() => addClientsToBase('hidracor_pickup_clients')} className="h-8 gap-1 bg-amber-600 hover:bg-amber-700">
-                      <Plus size={14} /> Cliente
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {pickupClients.map(client => (
-                      <div key={client.id} className="flex justify-between items-center p-3 bg-slate-50 border rounded-md text-xs">
-                        <span className="font-medium">{client.client_name}</span>
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => renameClientInBase(client.id, client.client_name, 'hidracor_pickup_clients')} className="h-6 w-6 p-0 text-slate-400 hover:text-amber-600">
-                            <Edit2 size={14} />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteClientFromBase(client.id, 'hidracor_pickup_clients')} className="h-6 w-6 p-0 text-red-500">
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </SheetContent>
-          </Sheet>
-
-          {formattedData.length > 0 && (
-            <Button onClick={downloadExcel} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
-              <Download size={16} /> <span className="hidden sm:inline">Baixar Excel</span>
-            </Button>
-          )}
+          <Link to="/admin/hidracor-loads"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
+          {selectedItems.length > 0 && <Button onClick={handleCreateLoad} size="sm" className="bg-amber-600 text-white gap-2 animate-pulse"><Truck size={16} /> Criar Carga ({selectedItems.length})</Button>}
+          {formattedData.length > 0 && <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(!isUploadOpen)} className="gap-2 border-amber-200 text-amber-700"><RefreshCw size={14} /> {isUploadOpen ? "Fechar" : "Novo Upload"}</Button>}
+          <Button onClick={downloadExcel} size="sm" className="bg-green-600 text-white gap-2"><Download size={16} /> Baixar Excel</Button>
         </div>
       </header>
 
@@ -601,27 +370,13 @@ const HidracorFormatter = () => {
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between py-4">
-                <div>
-                  <CardTitle className="text-lg">Upload da Carteira</CardTitle>
-                  <CardDescription>Selecione o arquivo CARTEIRA.xlsx para processamento.</CardDescription>
-                </div>
-                {formattedData.length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={() => setIsUploadOpen(false)}>
-                    <ChevronUp size={18} /> Recolher
-                  </Button>
-                )}
-              </CardHeader>
+              <CardHeader className="py-4"><CardTitle className="text-lg">Upload da Carteira</CardTitle></CardHeader>
               <CardContent className="pb-6">
-                <div className="flex items-center justify-center w-full">
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                      <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Clique para upload</span></p>
-                    </div>
-                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-                  </label>
-                </div>
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">
+                  <Upload className="w-8 h-8 mb-3 text-slate-400" />
+                  <p className="text-sm text-slate-500 font-semibold">Clique para upload</p>
+                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+                </label>
               </CardContent>
             </Card>
           </CollapsibleContent>
@@ -631,12 +386,8 @@ const HidracorFormatter = () => {
           <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
               <div className="flex items-center gap-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Filter size={18} className="text-amber-600" /> Preview com Filtros
-                </CardTitle>
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">
-                  {filteredData.length} registros
-                </span>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">{filteredData.length} registros</span>
               </div>
               <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
                 <Calculator size={16} className="text-slate-400" />
@@ -650,12 +401,12 @@ const HidracorFormatter = () => {
             </CardHeader>
 
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto bg-slate-100 border-b h-4 min-h-[16px]">
-              <div style={{ width: '2600px', height: '1px' }} />
+              <div style={{ width: '2800px', height: '1px' }} />
             </div>
 
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
-                <div className="min-w-[2600px]">
+                <div className="min-w-[2800px]">
                   <Table>
                     <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                       <TableRow>
@@ -663,59 +414,40 @@ const HidracorFormatter = () => {
                         {Object.keys(formattedData[0]).map(col => (
                           <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                             <div className="space-y-2">
-                              <div className="flex items-center justify-between cursor-pointer hover:text-amber-600 transition-colors" onClick={() => handleSort(col)}>
+                              <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
                                 <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
-                                {sortConfig.key === col ? (
-                                  sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                                ) : (
-                                  <ArrowUpDown size={12} className="text-slate-300" />
-                                )}
+                                <ArrowUpDown size={12} className="text-slate-300" />
                               </div>
-                              <Input placeholder={`Filtrar...`} className="h-7 text-[10px] bg-slate-50 border-slate-200" value={columnFilters[col] || ''} onChange={(e) => handleFilterChange(col, e.target.value)} />
+                              <Input placeholder={`Filtrar...`} className="h-7 text-[10px]" onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} />
                             </div>
                           </TableHead>
                         ))}
+                        <TableHead className="w-[200px] bg-white text-[10px] font-bold uppercase text-slate-500">Cargas</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredData.map((row, idx) => {
                         const pedidoId = row.Pedido?.toString();
-                        const isFobRetira = row.Frete === 'FOB RETIRA';
-                        const isRestrictedRoute = row.ROTA === 'AG. CONFIRMAÇÃO' || row.ROTA === 'CLIENTE RETIRA';
-                        const isAlreadyUsed = usedOrderIds.has(pedidoId);
-                        const canSelect = isFobRetira && !isRestrictedRoute && !isAlreadyUsed;
-
+                        const loadName = usedOrderIds.get(pedidoId);
                         return (
-                          <TableRow key={idx} className={`hover:bg-slate-50/50 ${isAlreadyUsed ? 'opacity-50 bg-slate-100' : ''}`}>
+                          <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
                             <TableCell className="p-2 text-center">
                               <Checkbox 
                                 checked={selectedItems.includes(pedidoId)}
-                                onCheckedChange={() => toggleItemSelection(pedidoId)}
-                                disabled={!canSelect}
-                                className={!canSelect ? "cursor-not-allowed" : ""}
+                                onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
+                                disabled={!!loadName}
                               />
                             </TableCell>
                             {Object.keys(row).map(col => (
                               <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
                                 {col === 'ROTA' ? (
-                                  <div className={`px-2 py-1 rounded font-bold text-center border ${
-                                    row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white border-slate-900' :
-                                    row[col] === 'AG. CONFIRMAÇÃO' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                    row[col] === 'CLIENTE RETIRA' ? 'bg-green-50 text-green-700 border-green-200' :
-                                    row[col] === 'NÃO ENCONTRADA' ? 'bg-red-50 text-red-600 border-red-200' :
-                                    'bg-amber-50 text-amber-700 border-amber-200'
-                                  }`}>
-                                    {row[col]}
-                                  </div>
+                                  <div className={`px-2 py-1 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                                 ) : (
-                                  <span className="block truncate max-w-[180px]">
-                                    {typeof row[col] === 'number' && (col.includes('peso') || col.includes('valor')) 
-                                      ? row[col].toLocaleString('pt-BR', { minimumFractionDigits: 2 }) 
-                                      : row[col]}
-                                  </span>
+                                  <span className="block truncate max-w-[180px]">{row[col]}</span>
                                 )}
                               </TableCell>
                             ))}
+                            <TableCell className="text-[11px] font-bold text-amber-600">{loadName || '-'}</TableCell>
                           </TableRow>
                         );
                       })}
