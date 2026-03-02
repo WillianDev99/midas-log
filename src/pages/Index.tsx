@@ -4,7 +4,7 @@ import React from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe, Users } from 'lucide-react';
+import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe, Users, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
@@ -165,12 +165,19 @@ const Index = () => {
                   <div className="bg-amber-600 p-3 rounded-full"><MapPin size={24} /></div>
                   <div>
                     <p className="font-bold">Endereço</p>
-                    <p className="text-slate-400">R. Cel. Diogo Lopes, 100 - Centro, Sobral - CE</p>
+                    <p className="text-slate-400">R. Ver. Manoel Frota, 35 - Centro, Tianguá - CE, 62320-000</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="bg-amber-600 p-3 rounded-full"><Phone size={24} /></div>
+                  <div>
+                    <p className="font-bold">Telefone</p>
+                    <p className="text-slate-400">(88) 99362-1738</p>
                   </div>
                 </div>
                 <a 
                   href="https://www.instagram.com/midaslogistica/" 
-                  target="_bold" 
+                  target="_blank" 
                   rel="noopener noreferrer"
                   className="flex items-center gap-4 hover:text-amber-500 transition-colors"
                 >
@@ -184,7 +191,7 @@ const Index = () => {
             </div>
             <div className="h-[400px] rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-800">
               <iframe 
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3979.86456789!2d-40.35!3d-3.68!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zM8KwNDAnNDguMCJTIDQwwrAyMScwMC4wIlc!5e0!3m2!1spt-BR!2sbr!4v1600000000000!5m2!1spt-BR!2sbr" 
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3979.86456789!2d-40.991!3d-3.731!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x795333333333333%3A0x333333333333333!2sR.%20Ver.%20Manoel%20Frota%2C%2035%20-%20Centro%2C%20Tiangu%C3%A1%20-%20CE%2C%2062320-000!5e0!3m2!1spt-BR!2sbr!4v1600000000000!5m2!1spt-BR!2sbr" 
                 width="100%" 
                 height="100%" 
                 style={{ border: 0 }} 

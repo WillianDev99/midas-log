@@ -38,6 +38,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { 
+  Collapsible, 
+  CollapsibleContent 
+} from "@/components/ui/collapsible";
+import { 
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
