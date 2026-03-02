@@ -292,10 +292,10 @@ const HidracorFormatter = () => {
         if (data.length < 2) throw new Error("Arquivo vazio ou inválido.");
 
         // Coluna A (0): Cidade, Coluna C (2): Rota
-        const startRow = (data[0][0]?.toString().toLowerCase().includes('cidade')) ? 1 : 0;
-        const rows = data.slice(startRow).filter(r => r[0] && r[2]);
+        const startRow = (data[0][0]?.toString().toLowerCase().includes('rota')) ? 1 : 0;
+        const rows = data.slice(startRow).filter(r => r[0] && r[1]);
 
-        const uniqueRouteNames = Array.from(new Set(rows.map(r => r[2].toString().toUpperCase().trim())));
+        const uniqueRouteNames = Array.from(new Set(rows.map(r => r[0].toString().toUpperCase().trim())));
         const currentRoutes = [...routes];
         const routeMap = new Map<string, string>();
 
@@ -315,8 +315,8 @@ const HidracorFormatter = () => {
         }
 
         const citiesToInsert = rows.map(r => ({
-          route_id: routeMap.get(r[2].toString().toUpperCase().trim()),
-          city_name: r[0].toString().toUpperCase().trim(),
+          route_id: routeMap.get(r[0].toString().toUpperCase().trim()),
+          city_name: r[1].toString().toUpperCase().trim(),
           user_id: user?.id
         }));
 
@@ -548,21 +548,25 @@ const HidracorFormatter = () => {
                 </TabsList>
 
                 <TabsContent value="routes" className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold uppercase text-slate-500">Rotas e Cidades</h3>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => routeInputRef.current?.click()} disabled={importingRoutes} className="h-8 border-amber-200 text-amber-700">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase text-slate-500">Rotas e Cidades</h3>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <Button size="sm" variant="outline" onClick={() => routeInputRef.current?.click()} disabled={importingRoutes} className="h-8 border-amber-200 text-amber-700 text-[10px] px-2">
                         {importingRoutes ? <Loader2 className="animate-spin" size={14} /> : <FileUp size={14} />}
-                        <span className="ml-2">Importar Excel</span>
+                        <span className="ml-1">Importar Excel</span>
                       </Button>
-                      <Button size="sm" variant="destructive" onClick={deleteAllRoutes} className="h-8 gap-2">
+                      <Button size="sm" variant="destructive" onClick={deleteAllRoutes} className="h-8 gap-1 text-[10px] px-2">
                         <Eraser size={14} /> Limpar Tudo
                       </Button>
-                      <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700"><Plus size={14} /> Nova Rota</Button>
+                      <Button size="sm" onClick={addRoute} className="h-8 bg-amber-600 hover:bg-amber-700 text-[10px] px-2 col-span-2 sm:col-span-1">
+                        <Plus size={14} /> Nova Rota
+                      </Button>
                     </div>
                     <input type="file" ref={routeInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleRouteImport} />
                   </div>
-                  <div className="space-y-4">
+                  <div className="space-y-4 mt-4">
                     {routes.map(route => (
                       <div key={route.id} className="border rounded-lg p-3 bg-slate-50">
                         <div className="flex justify-between items-center mb-2">
