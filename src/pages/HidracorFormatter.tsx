@@ -447,7 +447,7 @@ const HidracorFormatter = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to="/admin/hidracor-loads"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
+          <Link to="/admin/hidracor-loads" target="_blank"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
           
           <Sheet>
             <SheetTrigger asChild>

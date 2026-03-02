@@ -23,7 +23,8 @@ import {
   X,
   Users,
   MapPin,
-  MoreVertical
+  MoreVertical,
+  Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -163,6 +164,27 @@ const CerbrasFormatter = () => {
     else {
       setProducts(products.map(p => p.id === product.id ? { ...p, product_name: name.toUpperCase(), unit_m2: m2, unit_peso: peso } : p));
       showSuccess("Produto atualizado!");
+    }
+  };
+
+  const copyProduct = async (product: CerbrasProduct) => {
+    const name = prompt("Nome da Cópia do Produto:", `COPIA - ${product.product_name}`);
+    if (!name) return;
+
+    const { data, error } = await supabase
+      .from('cerbras_products')
+      .insert([{ 
+        product_name: name.toUpperCase(), 
+        unit_m2: product.unit_m2, 
+        unit_peso: product.unit_peso, 
+        user_id: user?.id 
+      }])
+      .select();
+
+    if (error) showError(error.message);
+    else { 
+      setProducts([...products, data[0]]); 
+      showSuccess("Cópia criada com sucesso!"); 
     }
   };
 
@@ -457,7 +479,7 @@ const CerbrasFormatter = () => {
                           <TableHead className="text-[10px] uppercase">Produto</TableHead>
                           <TableHead className="text-[10px] uppercase">M²</TableHead>
                           <TableHead className="text-[10px] uppercase">Peso</TableHead>
-                          <TableHead className="w-[80px] text-right">Ações</TableHead>
+                          <TableHead className="w-[100px] text-right">Ações</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -468,6 +490,9 @@ const CerbrasFormatter = () => {
                             <TableCell className="text-[10px]">{p.unit_peso}</TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-600" onClick={() => copyProduct(p)} title="Criar Cópia">
+                                  <Copy size={12} />
+                                </Button>
                                 <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600" onClick={() => editProduct(p)}>
                                   <Edit2 size={12} />
                                 </Button>
