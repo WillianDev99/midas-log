@@ -613,7 +613,7 @@ const HidracorFormatter = () => {
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-9 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
               <p className="text-slate-500 text-xs">Lógica de prioridade ROTA e persistência de dados.</p>
@@ -760,7 +760,7 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-0 gap-4 overflow-hidden min-h-0 h-[calc(100vh-5rem)]">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-4 gap-4 overflow-hidden min-h-0">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full shrink-0">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
@@ -809,36 +809,27 @@ const HidracorFormatter = () => {
             </CardHeader>
 
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0">
+              <style>{`
+                .scrollbar-custom::-webkit-scrollbar {
+                  height: 16px;
+                  width: 16px;
+                }
+                .scrollbar-custom::-webkit-scrollbar-track {
+                  background: #f1f5f9;
+                }
+                .scrollbar-custom::-webkit-scrollbar-thumb {
+                  background-color: #f59e0b;
+                  border-radius: 8px;
+                  border: 3px solid #f1f5f9;
+                }
+                .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+                  background-color: #d97706;
+                }
+              `}</style>
               <div 
                 ref={tableScrollRef} 
                 className="flex-1 overflow-auto scrollbar-custom min-h-0"
-                style={{
-                  scrollbarWidth: 'auto',
-                  scrollbarColor: '#f59e0b #f1f5f9'
-                }}
               >
-                <style>{`
-                  .scrollbar-custom::-webkit-scrollbar {
-                    height: 20px;
-                    width: 20px;
-                  }
-                  .scrollbar-custom::-webkit-scrollbar-track {
-                    background: #f1f5f9;
-                    border-radius: 0px;
-                  }
-                  .scrollbar-custom::-webkit-scrollbar-thumb {
-                    background-color: #f59e0b;
-                    border-radius: 10px;
-                    border: 3px solid #f1f5f9;
-                  }
-                  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
-                    background-color: #d97706;
-                  }
-                  /* Garante que a barra de rolagem horizontal esteja sempre visível */
-                  .scrollbar-custom {
-                    overflow-x: scroll !important;
-                  }
-                `}</style>
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
                   <TableHeader className="bg-white sticky top-0 z-50 shadow-sm">
                     <TableRow>
