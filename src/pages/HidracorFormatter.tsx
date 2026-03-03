@@ -102,6 +102,10 @@ const HidracorFormatter = () => {
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const routeInputRef = useRef<HTMLInputElement>(null);
+  
+  // Refs para evitar loop infinito de scroll
+  const isSyncingTopScroll = useRef(false);
+  const isSyncingTableScroll = useRef(false);
 
   useEffect(() => {
     const savedData = localStorage.getItem('hidracor_last_wallet');
@@ -151,14 +155,24 @@ const HidracorFormatter = () => {
   };
 
   const handleTopScroll = () => {
-    if (topScrollRef.current && tableScrollRef.current) {
+    if (!isSyncingTableScroll.current && topScrollRef.current && tableScrollRef.current) {
+      isSyncingTopScroll.current = true;
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      // Resetar flag após o evento processar
+      requestAnimationFrame(() => {
+        isSyncingTopScroll.current = false;
+      });
     }
   };
 
   const handleTableScroll = () => {
-    if (topScrollRef.current && tableScrollRef.current) {
+    if (!isSyncingTopScroll.current && topScrollRef.current && tableScrollRef.current) {
+      isSyncingTableScroll.current = true;
       topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+      // Resetar flag após o evento processar
+      requestAnimationFrame(() => {
+        isSyncingTableScroll.current = false;
+      });
     }
   };
 
@@ -821,77 +835,84 @@ const HidracorFormatter = () => {
               </div>
             </CardHeader>
 
-            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto bg-slate-100 border-b h-4 min-h-[16px]">
+            {/* Barra de Rolagem Superior Sincronizada */}
+            <div 
+              ref={topScrollRef} 
+              onScroll={handleTopScroll} 
+              className="overflow-x-auto bg-slate-100 border-b h-3 min-h-[12px] scrollbar-thin scrollbar-thumb-slate-300"
+            >
               <div style={{ width: '2800px', height: '1px' }} />
             </div>
 
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
-                <Table className="border-separate border-spacing-0 min-w-[2800px]">
-                  <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
-                    <TableRow>
-                      <TableHead className="w-[50px] bg-white sticky left-0 z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
-                      {Object.keys(formattedData[0]).map(col => (
-                        <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
-                              <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
-                              <ArrowUpDown size={12} className="text-slate-300" />
-                            </div>
-                            {col === 'peso possível' ? (
-                              <div className="flex items-center gap-1 bg-slate-50 border rounded px-1">
-                                <Truck size={12} className="text-amber-600" />
-                                <Input 
-                                  placeholder="Mínimo..." 
-                                  className="h-7 text-[10px] border-none bg-transparent focus-visible:ring-0 p-0" 
-                                  value={minWeightFilter}
-                                  onChange={(e) => setMinWeightFilter(e.target.value)} 
-                                />
+                <div className="min-w-[2800px]">
+                  <Table className="border-separate border-spacing-0">
+                    <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
+                      <TableRow>
+                        <TableHead className="w-[50px] bg-white sticky left-0 z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
+                        {Object.keys(formattedData[0]).map(col => (
+                          <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
+                                <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
+                                <ArrowUpDown size={12} className="text-slate-300" />
                               </div>
-                            ) : (
-                              <Input 
-                                placeholder={`Filtrar...`} 
-                                className="h-7 text-[10px]" 
-                                value={columnFilters[col] || ""}
-                                onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
-                              />
-                            )}
-                          </div>
-                        </TableHead>
-                      ))}
-                      <TableHead className="w-[200px] bg-white text-[10px] font-bold uppercase text-slate-500">Cargas</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredData.map((row, idx) => {
-                      const pedidoId = row.Pedido?.toString();
-                      const loadName = usedOrderIds.get(pedidoId);
-                      return (
-                        <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                          <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-                            <Checkbox 
-                              checked={selectedItems.includes(pedidoId)}
-                              onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
-                              disabled={!!loadName}
-                            />
-                          </TableCell>
-                          {Object.keys(row).map(col => (
-                            <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
-                              {col === 'ROTA' ? (
-                                <div className={`px-2 py-1 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
+                              {col === 'peso possível' ? (
+                                <div className="flex items-center gap-1 bg-slate-50 border rounded px-1">
+                                  <Truck size={12} className="text-amber-600" />
+                                  <Input 
+                                    placeholder="Mínimo..." 
+                                    className="h-7 text-[10px] border-none bg-transparent focus-visible:ring-0 p-0" 
+                                    value={minWeightFilter}
+                                    onChange={(e) => setMinWeightFilter(e.target.value)} 
+                                  />
+                                </div>
                               ) : (
-                                <span className="block truncate max-w-[180px]">
-                                  {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
-                                </span>
+                                <Input 
+                                  placeholder={`Filtrar...`} 
+                                  className="h-7 text-[10px]" 
+                                  value={columnFilters[col] || ""}
+                                  onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
+                                />
                               )}
+                            </div>
+                          </TableHead>
+                        ))}
+                        <TableHead className="w-[200px] bg-white text-[10px] font-bold uppercase text-slate-500">Cargas</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredData.map((row, idx) => {
+                        const pedidoId = row.Pedido?.toString();
+                        const loadName = usedOrderIds.get(pedidoId);
+                        return (
+                          <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
+                            <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                              <Checkbox 
+                                checked={selectedItems.includes(pedidoId)}
+                                onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
+                                disabled={!!loadName}
+                              />
                             </TableCell>
-                          ))}
-                          <TableCell className="text-[11px] font-bold text-amber-600">{loadName || '-'}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                            {Object.keys(row).map(col => (
+                              <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
+                                {col === 'ROTA' ? (
+                                  <div className={`px-2 py-1 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
+                                ) : (
+                                  <span className="block truncate max-w-[180px]">
+                                    {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
+                                  </span>
+                                )}
+                              </TableCell>
+                            ))}
+                            <TableCell className="text-[11px] font-bold text-amber-600">{loadName || '-'}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </CardContent>
           </Card>
