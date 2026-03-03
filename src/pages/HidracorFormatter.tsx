@@ -158,7 +158,6 @@ const HidracorFormatter = () => {
     if (!isSyncingTableScroll.current && topScrollRef.current && tableScrollRef.current) {
       isSyncingTopScroll.current = true;
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      // Resetar flag após o evento processar
       requestAnimationFrame(() => {
         isSyncingTopScroll.current = false;
       });
@@ -169,7 +168,6 @@ const HidracorFormatter = () => {
     if (!isSyncingTopScroll.current && topScrollRef.current && tableScrollRef.current) {
       isSyncingTableScroll.current = true;
       topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      // Resetar flag após o evento processar
       requestAnimationFrame(() => {
         isSyncingTableScroll.current = false;
       });
@@ -850,7 +848,7 @@ const HidracorFormatter = () => {
                   <Table className="border-separate border-spacing-0">
                     <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                       <TableRow>
-                        <TableHead className="w-[50px] bg-white sticky left-0 z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
+                        <TableHead className="w-[50px] bg-white sticky left-0 z-50 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
                         {Object.keys(formattedData[0]).map(col => (
                           <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                             <div className="space-y-2">
@@ -888,7 +886,7 @@ const HidracorFormatter = () => {
                         const loadName = usedOrderIds.get(pedidoId);
                         return (
                           <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                            <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                            <TableCell className="p-2 text-center sticky left-0 bg-white z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                               <Checkbox 
                                 checked={selectedItems.includes(pedidoId)}
                                 onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
