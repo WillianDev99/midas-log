@@ -760,7 +760,7 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 gap-4 overflow-hidden">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-2 gap-4 overflow-hidden">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
@@ -819,17 +819,17 @@ const HidracorFormatter = () => {
               >
                 <style>{`
                   .scrollbar-custom::-webkit-scrollbar {
-                    height: 16px;
-                    width: 16px;
+                    height: 18px;
+                    width: 18px;
                   }
                   .scrollbar-custom::-webkit-scrollbar-track {
                     background: #f1f5f9;
-                    border-radius: 8px;
+                    border-radius: 0px;
                   }
                   .scrollbar-custom::-webkit-scrollbar-thumb {
                     background-color: #f59e0b;
-                    border-radius: 8px;
-                    border: 3px solid #f1f5f9;
+                    border-radius: 0px;
+                    border: 2px solid #f1f5f9;
                   }
                   .scrollbar-custom::-webkit-scrollbar-thumb:hover {
                     background-color: #d97706;
