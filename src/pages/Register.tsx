@@ -6,7 +6,7 @@ import { User, Mail, Lock, ArrowLeft, ShieldCheck, Users, Loader2, Camera } from
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, CardDescription as CardDesc } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { showSuccess, showError } from '@/utils/toast';
@@ -67,7 +67,7 @@ const Register = () => {
       <Card className="w-full max-w-md shadow-xl border-none">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
           </div>
           <CardTitle className="text-2xl font-bold">Criar Conta</CardTitle>
           <CardDescription>Escolha seu perfil e preencha os dados.</CardDescription>

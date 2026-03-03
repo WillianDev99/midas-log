@@ -64,7 +64,7 @@ const Login = () => {
       <Card className="w-full max-w-md shadow-xl border-none">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="Midas Log" className="h-16 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-8 w-auto" />
           </div>
           <CardTitle className="text-2xl font-bold">Acesso ao Sistema</CardTitle>
           <CardDescription>

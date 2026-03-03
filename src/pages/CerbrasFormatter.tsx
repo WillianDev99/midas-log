@@ -12,8 +12,6 @@ import {
   Loader2,
   RefreshCw,
   ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Settings2,
   Calculator,
   Filter,
@@ -516,7 +514,7 @@ const CerbrasFormatter = () => {
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-5 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Cerbras</h1>
               <p className="text-slate-500 text-xs">Processamento com busca em base técnica de produtos e rotas.</p>
@@ -694,7 +692,7 @@ const CerbrasFormatter = () => {
         )}
 
         {formattedData.length > 0 && (
-          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
+          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -719,7 +717,7 @@ const CerbrasFormatter = () => {
               <div style={{ width: '3200px', height: '1px' }} />
             </div>
 
-            <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
+            <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
                 <div className="min-w-[3200px]">
                   <Table>
