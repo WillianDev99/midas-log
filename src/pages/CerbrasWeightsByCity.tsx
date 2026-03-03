@@ -29,7 +29,8 @@ import {
   Coins,
   Globe,
   Database,
-  Filter
+  Filter,
+  BarChart3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -429,7 +430,20 @@ const CerbrasWeightsByCity = () => {
     const totalWeight = deliveries.reduce((acc, d) => acc + d.peso, 0);
     const totalCities = Object.keys(citySummary).length;
     const citiesWithCoords = Object.keys(citySummary).filter(k => !!cityCoords[k]).length;
-    return { totalWeight, totalCities, citiesWithCoords };
+    
+    // Novas estatísticas solicitadas
+    const citiesWithWeight = Object.values(citySummary).filter(c => c.totalWeight > 0).length;
+    const citiesWithCredit = Object.values(citySummary).filter(c => Object.keys(c.creditClients).length > 0).length;
+    const totalClientsWithWeight = new Set(deliveries.map(d => d.cliente)).size;
+
+    return { 
+      totalWeight, 
+      totalCities, 
+      citiesWithCoords,
+      citiesWithWeight,
+      citiesWithCredit,
+      totalClientsWithWeight
+    };
   }, [deliveries, citySummary, cityCoords]);
 
   const activeMarkersCoords = useMemo(() => {
@@ -657,6 +671,7 @@ const CerbrasWeightsByCity = () => {
             <h3 className="font-bold text-slate-900 flex items-center gap-2"><Layers size={18} className="text-amber-600" /> Rotas Salvas</h3>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}><PanelLeftClose size={18} /></Button>
           </div>
+          
           <div className="flex-1 divide-y overflow-x-hidden">
             {savedRoutes.map(route => (
               <div key={route.id} className={`p-4 hover:bg-slate-50 group transition-colors cursor-pointer ${selectedRouteId === route.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''}`} onClick={() => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)}>
@@ -675,6 +690,33 @@ const CerbrasWeightsByCity = () => {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Painel de Resumo da Carteira */}
+          <div className="mt-auto border-t bg-slate-900 text-white p-4 space-y-3">
+            <div className="flex items-center gap-2 border-b border-slate-700 pb-2 mb-2">
+              <BarChart3 size={16} className="text-amber-500" />
+              <h4 className="text-[10px] font-bold uppercase tracking-wider">Resumo da Carteira</h4>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 uppercase font-bold">Cidades c/ Peso</p>
+                <p className="text-sm font-bold text-amber-500">{stats.citiesWithWeight}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 uppercase font-bold">Cidades c/ Crédito</p>
+                <p className="text-sm font-bold text-red-400">{stats.citiesWithCredit}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 uppercase font-bold">Peso Total</p>
+                <p className="text-sm font-bold text-blue-400">{stats.totalWeight.toLocaleString('pt-BR')} kg</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] text-slate-400 uppercase font-bold">Clientes p/ Carregar</p>
+                <p className="text-sm font-bold text-green-400">{stats.totalClientsWithWeight}</p>
+              </div>
+            </div>
           </div>
         </aside>
 
