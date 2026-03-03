@@ -26,7 +26,9 @@ import {
   Settings,
   MoveHorizontal,
   FileUp,
-  Eraser
+  Eraser,
+  Printer,
+  XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -98,6 +100,7 @@ const HidracorFormatter = () => {
   
   const [formattedData, setFormattedData] = useState<any[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [minWeightFilter, setMinWeightFilter] = useState<string>("");
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -170,6 +173,84 @@ const HidracorFormatter = () => {
     if (!serial || isNaN(serial)) return serial;
     const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
     return date.toLocaleDateString('pt-BR');
+  };
+
+  const clearAllFilters = () => {
+    setColumnFilters({});
+    setMinWeightFilter("");
+    showSuccess("Filtros limpos!");
+  };
+
+  const handlePrintSelection = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const logoUrl = window.location.origin + "/logo.png";
+    const totalPeso = filteredData.reduce((acc, row) => acc + parseFloat(row['peso possível'] || '0'), 0);
+    const totalValor = filteredData.reduce((acc, row) => acc + parseFloat(row['valor possível'] || '0'), 0);
+
+    const content = `
+      <html>
+        <head>
+          <title>Relatório de Seleção - Midas Log</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #333; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
+            .logo { height: 50px; }
+            .title { font-size: 20px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #f8fafc; text-align: left; padding: 8px; border: 1px solid #e2e8f0; font-size: 10px; text-transform: uppercase; }
+            td { padding: 8px; border: 1px solid #e2e8f0; font-size: 10px; }
+            .total-row { background: #f1f5f9; font-weight: bold; }
+            .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #64748b; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${logoUrl}" class="logo" />
+            <div class="title">Relatório de Carteira Filtrada</div>
+            <div style="text-align: right; font-size: 10px;">${new Date().toLocaleDateString()}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Rota</th>
+                <th>Município</th>
+                <th>Estado</th>
+                <th>Pedido</th>
+                <th>Cód. Cliente</th>
+                <th>Nome Cliente</th>
+                <th style="text-align: right;">Peso Possível</th>
+                <th style="text-align: right;">Valor Possível</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredData.map(row => `
+                <tr>
+                  <td>${row['ROTA']}</td>
+                  <td>${row['Município']}</td>
+                  <td>${row['Estado']}</td>
+                  <td>${row['Pedido']}</td>
+                  <td>${row['Cód.Cliente']}</td>
+                  <td style="text-transform: uppercase;">${row['Nome Cliente']}</td>
+                  <td style="text-align: right;">${formatWeight(parseFloat(row['peso possível']))}</td>
+                  <td style="text-align: right;">${formatCurrency(parseFloat(row['valor possível']))}</td>
+                </tr>
+              `).join('')}
+              <tr class="total-row">
+                <td colspan="6" style="text-align: right;">SOMA TOTAL:</td>
+                <td style="text-align: right;">${formatWeight(totalPeso)}</td>
+                <td style="text-align: right;">${formatCurrency(totalValor)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="footer">Midas Logística - Eficiência em Movimento</div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(content);
+    printWindow.document.close();
   };
 
   const addRoute = async () => {
@@ -291,7 +372,6 @@ const HidracorFormatter = () => {
 
         if (data.length < 2) throw new Error("Arquivo vazio ou inválido.");
 
-        // Coluna A (0): Cidade, Coluna C (2): Rota
         const startRow = (data[0][0]?.toString().toLowerCase().includes('rota')) ? 1 : 0;
         const rows = data.slice(startRow).filter(r => r[0] && r[1]);
 
@@ -435,6 +515,40 @@ const HidracorFormatter = () => {
 
   const filteredData = useMemo(() => {
     let data = [...formattedData];
+    
+    // 1. Aplicar Filtros de Coluna
+    data = data.filter(row => 
+      Object.entries(columnFilters).every(([col, val]) => 
+        !val || row[col]?.toString().toLowerCase().includes(val.toLowerCase())
+      )
+    );
+
+    // 2. Aplicar Filtro de Peso Mínimo Inteligente
+    const minWeight = parseFloat(minWeightFilter);
+    if (!isNaN(minWeight) && minWeight > 0) {
+      // Agrupar por cliente
+      const clientGroups: Record<string, any[]> = {};
+      data.forEach(row => {
+        const clientId = row['Cód.Cliente'] || row['Nome Cliente'];
+        if (!clientGroups[clientId]) clientGroups[clientId] = [];
+        clientGroups[clientId].push(row);
+      });
+
+      // Filtrar grupos
+      const validClientIds = new Set<string>();
+      Object.entries(clientGroups).forEach(([clientId, items]) => {
+        const hasSingleOrderAboveMin = items.some(item => parseFloat(item['peso possível']) >= minWeight);
+        const totalWeight = items.reduce((acc, item) => acc + parseFloat(item['peso possível']), 0);
+        
+        if (hasSingleOrderAboveMin || totalWeight >= minWeight) {
+          validClientIds.add(clientId);
+        }
+      });
+
+      data = data.filter(row => validClientIds.has(row['Cód.Cliente'] || row['Nome Cliente']));
+    }
+
+    // 3. Aplicar Ordenação
     if (sortConfig.direction !== null) {
       data.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -442,12 +556,9 @@ const HidracorFormatter = () => {
         return 0;
       });
     }
-    return data.filter(row => 
-      Object.entries(columnFilters).every(([col, val]) => 
-        !val || row[col]?.toString().toLowerCase().includes(val.toLowerCase())
-      )
-    );
-  }, [formattedData, columnFilters, sortConfig]);
+    
+    return data;
+  }, [formattedData, columnFilters, minWeightFilter, sortConfig]);
 
   const totals = useMemo(() => {
     const result: Record<string, number> = {};
@@ -493,7 +604,6 @@ const HidracorFormatter = () => {
     const wb = XLSX.utils.book_new();
     
     const range = dataWithLoads.length + 1;
-    // Colunas: I (peso poss), J (valor poss), K (peso tot), L (valor tot)
     const colsToSum = ['I', 'J', 'K', 'L']; 
     colsToSum.forEach(col => {
       const cellRef = `${col}${range + 1}`;
@@ -501,7 +611,6 @@ const HidracorFormatter = () => {
     });
     ws[`H${range + 1}`] = { v: "TOTAL:" };
 
-    // Atualiza o range da planilha para incluir a linha de totais
     const range_ref = XLSX.utils.decode_range(ws['!ref']!);
     range_ref.e.r = range;
     ws['!ref'] = XLSX.utils.encode_range(range_ref);
@@ -528,6 +637,10 @@ const HidracorFormatter = () => {
         <div className="flex items-center gap-2">
           <Link to="/admin/hidracor-loads" target="_blank"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
           
+          <Button variant="outline" size="sm" onClick={handlePrintSelection} className="gap-2 border-slate-200 hover:bg-slate-50">
+            <Printer size={16} /> Imprimir Seleção
+          </Button>
+
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
@@ -683,24 +796,45 @@ const HidracorFormatter = () => {
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
                 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">{filteredData.length} registros</span>
+                
+                <div className="flex items-center gap-2 bg-white p-1 rounded-lg border shadow-sm ml-4">
+                  <div className="flex items-center gap-2 px-2 border-r">
+                    <Truck size={14} className="text-amber-600" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Peso Mínimo:</span>
+                  </div>
+                  <Input 
+                    type="number" 
+                    className="h-7 w-24 border-none bg-transparent text-xs font-bold focus-visible:ring-0" 
+                    placeholder="0"
+                    value={minWeightFilter}
+                    onChange={(e) => setMinWeightFilter(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
-                <Calculator size={16} className="text-slate-400" />
-                <div className="text-[10px] border-r pr-2">
-                  <span className="text-slate-500 font-medium uppercase">Peso Possível:</span>
-                  <span className="ml-1 font-bold text-blue-600">{formatWeight(totals['peso possível'])}</span>
-                </div>
-                <div className="text-[10px] border-r pr-2">
-                  <span className="text-slate-500 font-medium uppercase">Valor Possível:</span>
-                  <span className="ml-1 font-bold text-blue-600">{formatCurrency(totals['valor possível'])}</span>
-                </div>
-                <div className="text-[10px] border-r pr-2">
-                  <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
-                  <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
-                </div>
-                <div className="text-[10px]">
-                  <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
-                  <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-2 h-8">
+                  <XCircle size={16} /> Limpar Filtros
+                </Button>
+
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
+                  <Calculator size={16} className="text-slate-400" />
+                  <div className="text-[10px] border-r pr-2">
+                    <span className="text-slate-500 font-medium uppercase">Peso Possível:</span>
+                    <span className="ml-1 font-bold text-blue-600">{formatWeight(totals['peso possível'])}</span>
+                  </div>
+                  <div className="text-[10px] border-r pr-2">
+                    <span className="text-slate-500 font-medium uppercase">Valor Possível:</span>
+                    <span className="ml-1 font-bold text-blue-600">{formatCurrency(totals['valor possível'])}</span>
+                  </div>
+                  <div className="text-[10px] border-r pr-2">
+                    <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
+                    <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
+                  </div>
+                  <div className="text-[10px]">
+                    <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
+                    <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -715,7 +849,7 @@ const HidracorFormatter = () => {
                   <Table>
                     <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                       <TableRow>
-                        <TableHead className="w-[50px] bg-white"></TableHead>
+                        <TableHead className="w-[50px] bg-white sticky left-0 z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
                         {Object.keys(formattedData[0]).map(col => (
                           <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                             <div className="space-y-2">
@@ -723,7 +857,12 @@ const HidracorFormatter = () => {
                                 <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
                                 <ArrowUpDown size={12} className="text-slate-300" />
                               </div>
-                              <Input placeholder={`Filtrar...`} className="h-7 text-[10px]" onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} />
+                              <Input 
+                                placeholder={`Filtrar...`} 
+                                className="h-7 text-[10px]" 
+                                value={columnFilters[col] || ""}
+                                onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
+                              />
                             </div>
                           </TableHead>
                         ))}
@@ -736,7 +875,7 @@ const HidracorFormatter = () => {
                         const loadName = usedOrderIds.get(pedidoId);
                         return (
                           <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                            <TableCell className="p-2 text-center">
+                            <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                               <Checkbox 
                                 checked={selectedItems.includes(pedidoId)}
                                 onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
