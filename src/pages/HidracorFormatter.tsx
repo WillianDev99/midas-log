@@ -10,20 +10,13 @@ import {
   Edit2, 
   ArrowLeft,
   Loader2,
-  MoreVertical,
   Filter,
   Calculator,
   Settings2,
-  ChevronUp,
   RefreshCw,
   ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Truck,
-  CheckSquare,
-  Square,
   ListFilter,
-  Settings,
   MoveHorizontal,
   FileUp,
   Eraser,
@@ -526,7 +519,6 @@ const HidracorFormatter = () => {
     // 2. Aplicar Filtro de Peso Mínimo Inteligente
     const minWeight = parseFloat(minWeightFilter);
     if (!isNaN(minWeight) && minWeight > 0) {
-      // Agrupar por cliente
       const clientGroups: Record<string, any[]> = {};
       data.forEach(row => {
         const clientId = row['Cód.Cliente'] || row['Nome Cliente'];
@@ -534,11 +526,10 @@ const HidracorFormatter = () => {
         clientGroups[clientId].push(row);
       });
 
-      // Filtrar grupos
       const validClientIds = new Set<string>();
       Object.entries(clientGroups).forEach(([clientId, items]) => {
-        const hasSingleOrderAboveMin = items.some(item => parseFloat(item['peso possível']) >= minWeight);
-        const totalWeight = items.reduce((acc, item) => acc + parseFloat(item['peso possível']), 0);
+        const hasSingleOrderAboveMin = items.some(item => parseFloat(item['peso possível'] || '0') >= minWeight);
+        const totalWeight = items.reduce((acc, item) => acc + parseFloat(item['peso possível'] || '0'), 0);
         
         if (hasSingleOrderAboveMin || totalWeight >= minWeight) {
           validClientIds.add(clientId);
@@ -551,8 +542,10 @@ const HidracorFormatter = () => {
     // 3. Aplicar Ordenação
     if (sortConfig.direction !== null) {
       data.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
@@ -792,49 +785,32 @@ const HidracorFormatter = () => {
 
         {formattedData.length > 0 && (
           <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
-            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
+            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-2">
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
                 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">{filteredData.length} registros</span>
-                
-                <div className="flex items-center gap-2 bg-white p-1 rounded-lg border shadow-sm ml-4">
-                  <div className="flex items-center gap-2 px-2 border-r">
-                    <Truck size={14} className="text-amber-600" />
-                    <span className="text-[10px] font-bold text-slate-500 uppercase">Peso Mínimo:</span>
-                  </div>
-                  <Input 
-                    type="number" 
-                    className="h-7 w-24 border-none bg-transparent text-xs font-bold focus-visible:ring-0" 
-                    placeholder="0"
-                    value={minWeightFilter}
-                    onChange={(e) => setMinWeightFilter(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
                 <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-2 h-8">
                   <XCircle size={16} /> Limpar Filtros
                 </Button>
+              </div>
 
-                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
-                  <Calculator size={16} className="text-slate-400" />
-                  <div className="text-[10px] border-r pr-2">
-                    <span className="text-slate-500 font-medium uppercase">Peso Possível:</span>
-                    <span className="ml-1 font-bold text-blue-600">{formatWeight(totals['peso possível'])}</span>
-                  </div>
-                  <div className="text-[10px] border-r pr-2">
-                    <span className="text-slate-500 font-medium uppercase">Valor Possível:</span>
-                    <span className="ml-1 font-bold text-blue-600">{formatCurrency(totals['valor possível'])}</span>
-                  </div>
-                  <div className="text-[10px] border-r pr-2">
-                    <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
-                    <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
-                  </div>
-                  <div className="text-[10px]">
-                    <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
-                    <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
-                  </div>
+              <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
+                <Calculator size={16} className="text-slate-400" />
+                <div className="text-[10px] border-r pr-2">
+                  <span className="text-slate-500 font-medium uppercase">Peso Possível:</span>
+                  <span className="ml-1 font-bold text-blue-600">{formatWeight(totals['peso possível'])}</span>
+                </div>
+                <div className="text-[10px] border-r pr-2">
+                  <span className="text-slate-500 font-medium uppercase">Valor Possível:</span>
+                  <span className="ml-1 font-bold text-blue-600">{formatCurrency(totals['valor possível'])}</span>
+                </div>
+                <div className="text-[10px] border-r pr-2">
+                  <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
+                  <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
+                </div>
+                <div className="text-[10px]">
+                  <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
+                  <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
                 </div>
               </div>
             </CardHeader>
@@ -846,7 +822,7 @@ const HidracorFormatter = () => {
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
                 <div className="min-w-[2800px]">
-                  <Table>
+                  <Table className="border-separate border-spacing-0">
                     <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                       <TableRow>
                         <TableHead className="w-[50px] bg-white sticky left-0 z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
@@ -857,12 +833,24 @@ const HidracorFormatter = () => {
                                 <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
                                 <ArrowUpDown size={12} className="text-slate-300" />
                               </div>
-                              <Input 
-                                placeholder={`Filtrar...`} 
-                                className="h-7 text-[10px]" 
-                                value={columnFilters[col] || ""}
-                                onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
-                              />
+                              {col === 'peso possível' ? (
+                                <div className="flex items-center gap-1 bg-slate-50 border rounded px-1">
+                                  <Truck size={12} className="text-amber-600" />
+                                  <Input 
+                                    placeholder="Mínimo..." 
+                                    className="h-7 text-[10px] border-none bg-transparent focus-visible:ring-0 p-0" 
+                                    value={minWeightFilter}
+                                    onChange={(e) => setMinWeightFilter(e.target.value)} 
+                                  />
+                                </div>
+                              ) : (
+                                <Input 
+                                  placeholder={`Filtrar...`} 
+                                  className="h-7 text-[10px]" 
+                                  value={columnFilters[col] || ""}
+                                  onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
+                                />
+                              )}
                             </div>
                           </TableHead>
                         ))}
