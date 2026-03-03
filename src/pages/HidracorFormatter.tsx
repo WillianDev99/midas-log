@@ -521,22 +521,28 @@ const HidracorFormatter = () => {
     if (!isNaN(minWeight) && minWeight > 0) {
       const clientGroups: Record<string, any[]> = {};
       data.forEach(row => {
-        const clientId = row['Cód.Cliente'] || row['Nome Cliente'];
+        const clientId = row['Cód.Cliente'] || row['Nome Cliente'] || 'unknown';
         if (!clientGroups[clientId]) clientGroups[clientId] = [];
         clientGroups[clientId].push(row);
       });
 
       const validClientIds = new Set<string>();
       Object.entries(clientGroups).forEach(([clientId, items]) => {
-        const hasSingleOrderAboveMin = items.some(item => parseFloat(item['peso possível'] || '0') >= minWeight);
-        const totalWeight = items.reduce((acc, item) => acc + parseFloat(item['peso possível'] || '0'), 0);
+        const hasSingleOrderAboveMin = items.some(item => {
+          const val = parseFloat(String(item['peso possível'] || '0').replace(',', '.'));
+          return val >= minWeight;
+        });
+        const totalWeight = items.reduce((acc, item) => {
+          const val = parseFloat(String(item['peso possível'] || '0').replace(',', '.'));
+          return acc + val;
+        }, 0);
         
         if (hasSingleOrderAboveMin || totalWeight >= minWeight) {
           validClientIds.add(clientId);
         }
       });
 
-      data = data.filter(row => validClientIds.has(row['Cód.Cliente'] || row['Nome Cliente']));
+      data = data.filter(row => validClientIds.has(row['Cód.Cliente'] || row['Nome Cliente'] || 'unknown'));
     }
 
     // 3. Aplicar Ordenação
