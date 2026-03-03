@@ -103,8 +103,22 @@ const HidracorFormatter = () => {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const routeInputRef = useRef<HTMLInputElement>(null);
   
-  const isSyncingTopScroll = useRef(false);
-  const isSyncingTableScroll = useRef(false);
+  // Sincronização de Scroll
+  const handleTopScroll = () => {
+    if (topScrollRef.current && tableScrollRef.current) {
+      if (tableScrollRef.current.scrollLeft !== topScrollRef.current.scrollLeft) {
+        tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      }
+    }
+  };
+
+  const handleTableScroll = () => {
+    if (topScrollRef.current && tableScrollRef.current) {
+      if (topScrollRef.current.scrollLeft !== tableScrollRef.current.scrollLeft) {
+        topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+      }
+    }
+  };
 
   useEffect(() => {
     const savedData = localStorage.getItem('hidracor_last_wallet');
@@ -151,26 +165,6 @@ const HidracorFormatter = () => {
 
   const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  };
-
-  const handleTopScroll = () => {
-    if (!isSyncingTableScroll.current && topScrollRef.current && tableScrollRef.current) {
-      isSyncingTopScroll.current = true;
-      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingTopScroll.current = false;
-      });
-    }
-  };
-
-  const handleTableScroll = () => {
-    if (!isSyncingTopScroll.current && topScrollRef.current && tableScrollRef.current) {
-      isSyncingTableScroll.current = true;
-      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingTableScroll.current = false;
-      });
-    }
   };
 
   const excelDateToJSDate = (serial: any) => {
@@ -836,7 +830,7 @@ const HidracorFormatter = () => {
             <div 
               ref={topScrollRef} 
               onScroll={handleTopScroll} 
-              className="overflow-x-auto bg-slate-100 border-b h-3 min-h-[12px] scrollbar-thin scrollbar-thumb-slate-300"
+              className="overflow-x-auto bg-slate-100 border-b h-5 min-h-[20px] scrollbar-thin scrollbar-thumb-slate-300"
             >
               <div style={{ width: '2800px', height: '1px' }} />
             </div>
