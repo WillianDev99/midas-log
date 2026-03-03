@@ -613,7 +613,7 @@ const HidracorFormatter = () => {
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-9 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-7 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
               <p className="text-slate-500 text-xs">Lógica de prioridade ROTA e persistência de dados.</p>
@@ -760,7 +760,7 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-4 gap-4 overflow-hidden min-h-0">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-4 gap-4 overflow-hidden min-h-0 max-h-[calc(100vh-5rem)]">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full shrink-0">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
@@ -777,7 +777,7 @@ const HidracorFormatter = () => {
         </Collapsible>
 
         {formattedData.length > 0 && (
-          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+          <Card className="border-none shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
             <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-2 shrink-0">
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
@@ -808,7 +808,7 @@ const HidracorFormatter = () => {
               </div>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0">
+            <CardContent className="p-0 flex-1 flex flex-col min-h-0 overflow-hidden">
               <style>{`
                 .scrollbar-custom::-webkit-scrollbar {
                   height: 16px;
@@ -828,7 +828,7 @@ const HidracorFormatter = () => {
               `}</style>
               <div 
                 ref={tableScrollRef} 
-                className="flex-1 overflow-auto scrollbar-custom min-h-0"
+                className="flex-1 overflow-auto scrollbar-custom"
               >
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
                   <TableHeader className="bg-white sticky top-0 z-50 shadow-sm">
