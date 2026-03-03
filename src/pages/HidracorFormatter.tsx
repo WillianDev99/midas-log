@@ -826,7 +826,7 @@ const HidracorFormatter = () => {
             <div 
               ref={topScrollRef} 
               onScroll={handleTopScroll} 
-              className="overflow-x-auto bg-slate-200 border-b h-5 min-h-[20px] scrollbar-thin scrollbar-thumb-slate-400"
+              className="overflow-x-auto bg-slate-200 border-b h-6 min-h-[24px] scrollbar-thin scrollbar-thumb-slate-400 relative z-[100]"
             >
               <div style={{ width: '2800px', height: '1px' }} />
             </div>
@@ -834,9 +834,9 @@ const HidracorFormatter = () => {
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
               <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
-                  <TableHeader className="bg-white sticky top-0 z-50 shadow-sm">
+                  <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
                     <TableRow>
-                      <TableHead className="w-[50px] bg-white sticky left-0 z-[70] border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
+                      <TableHead className="w-[50px] bg-white sticky left-0 z-50 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
                       {Object.keys(formattedData[0]).map(col => (
                         <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                           <div className="space-y-2">
@@ -874,7 +874,7 @@ const HidracorFormatter = () => {
                       const loadName = usedOrderIds.get(pedidoId);
                       return (
                         <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                          <TableCell className="p-2 text-center sticky left-0 bg-white z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                          <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                             <Checkbox 
                               checked={selectedItems.includes(pedidoId)}
                               onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
