@@ -609,7 +609,7 @@ const HidracorFormatter = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
+      <header className="h-20 shrink-0 max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
@@ -760,7 +760,7 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-0 gap-4 overflow-hidden min-h-0">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-0 gap-4 overflow-hidden min-h-0 h-[calc(100vh-5rem)]">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full shrink-0">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
