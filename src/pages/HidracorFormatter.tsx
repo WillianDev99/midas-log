@@ -99,22 +99,8 @@ const HidracorFormatter = () => {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [usedOrderIds, setUsedOrderIds] = useState<Map<string, string>>(new Map());
 
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const routeInputRef = useRef<HTMLInputElement>(null);
-  
-  // Sincronização de Scroll Horizontal
-  const handleTopScroll = () => {
-    if (topScrollRef.current && tableScrollRef.current) {
-      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-    }
-  };
-
-  const handleTableScroll = () => {
-    if (topScrollRef.current && tableScrollRef.current) {
-      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-    }
-  };
 
   useEffect(() => {
     const savedData = localStorage.getItem('hidracor_last_wallet');
@@ -627,7 +613,7 @@ const HidracorFormatter = () => {
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
               <p className="text-slate-500 text-xs">Lógica de prioridade ROTA e persistência de dados.</p>
@@ -822,21 +808,37 @@ const HidracorFormatter = () => {
               </div>
             </CardHeader>
 
-            {/* Barra de Rolagem Superior Sincronizada */}
-            <div 
-              ref={topScrollRef} 
-              onScroll={handleTopScroll} 
-              className="overflow-x-auto bg-slate-200 border-b h-6 min-h-[24px] scrollbar-thin scrollbar-thumb-slate-400 relative z-[100]"
-            >
-              <div style={{ width: '2800px', height: '1px' }} />
-            </div>
-
             <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
-              <div ref={tableScrollRef} onScroll={handleTableScroll} className="flex-1 overflow-auto">
+              <div 
+                ref={tableScrollRef} 
+                className="flex-1 overflow-auto scrollbar-custom"
+                style={{
+                  scrollbarWidth: 'auto',
+                  scrollbarColor: '#f59e0b #f1f5f9'
+                }}
+              >
+                <style>{`
+                  .scrollbar-custom::-webkit-scrollbar {
+                    height: 16px;
+                    width: 16px;
+                  }
+                  .scrollbar-custom::-webkit-scrollbar-track {
+                    background: #f1f5f9;
+                    border-radius: 8px;
+                  }
+                  .scrollbar-custom::-webkit-scrollbar-thumb {
+                    background-color: #f59e0b;
+                    border-radius: 8px;
+                    border: 3px solid #f1f5f9;
+                  }
+                  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+                    background-color: #d97706;
+                  }
+                `}</style>
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
-                  <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
+                  <TableHeader className="bg-white sticky top-0 z-50 shadow-sm">
                     <TableRow>
-                      <TableHead className="w-[50px] bg-white sticky left-0 z-50 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
+                      <TableHead className="w-[50px] bg-white sticky left-0 z-[60] border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
                       {Object.keys(formattedData[0]).map(col => (
                         <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
                           <div className="space-y-2">
@@ -874,7 +876,7 @@ const HidracorFormatter = () => {
                       const loadName = usedOrderIds.get(pedidoId);
                       return (
                         <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                          <TableCell className="p-2 text-center sticky left-0 bg-white z-20 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                          <TableCell className="p-2 text-center sticky left-0 bg-white z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                             <Checkbox 
                               checked={selectedItems.includes(pedidoId)}
                               onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
