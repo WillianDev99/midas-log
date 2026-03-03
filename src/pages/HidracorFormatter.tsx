@@ -317,7 +317,7 @@ const HidracorFormatter = () => {
   const editClient = async (client: ClientBase, table: 'hidracor_awaiting_clients' | 'hidracor_pickup_clients') => {
     const name = prompt("Novo nome do cliente:", client.client_name);
     if (!name || name === client.client_name) return;
-    const { error } = await supabase.from(table).update({ client_name: name.toUpperCase() }).eq('id', client.id);
+    const { error = null } = await supabase.from(table).update({ client_name: name.toUpperCase() }).eq('id', client.id);
     if (error) showError(error.message);
     else {
       if (table === 'hidracor_awaiting_clients') setAwaitingClients(awaitingClients.map(c => c.id === client.id ? { ...c, client_name: name.toUpperCase() } : c));
@@ -760,8 +760,8 @@ const HidracorFormatter = () => {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-2 gap-4 overflow-hidden">
-        <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full">
+      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-0 gap-4 overflow-hidden min-h-0">
+        <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full shrink-0">
           <CollapsibleContent className="space-y-4">
             <Card className="border-none shadow-sm">
               <CardHeader className="py-4"><CardTitle className="text-lg">Upload da Carteira</CardTitle></CardHeader>
@@ -777,8 +777,8 @@ const HidracorFormatter = () => {
         </Collapsible>
 
         {formattedData.length > 0 && (
-          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
-            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-2">
+          <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-2 shrink-0">
               <div className="flex items-center gap-4">
                 <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
                 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">{filteredData.length} registros</span>
@@ -808,10 +808,10 @@ const HidracorFormatter = () => {
               </div>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
+            <CardContent className="p-0 flex-1 overflow-hidden flex flex-col min-h-0">
               <div 
                 ref={tableScrollRef} 
-                className="flex-1 overflow-auto scrollbar-custom"
+                className="flex-1 overflow-auto scrollbar-custom min-h-0"
                 style={{
                   scrollbarWidth: 'auto',
                   scrollbarColor: '#f59e0b #f1f5f9'
@@ -819,8 +819,8 @@ const HidracorFormatter = () => {
               >
                 <style>{`
                   .scrollbar-custom::-webkit-scrollbar {
-                    height: 18px;
-                    width: 18px;
+                    height: 20px;
+                    width: 20px;
                   }
                   .scrollbar-custom::-webkit-scrollbar-track {
                     background: #f1f5f9;
@@ -828,11 +828,15 @@ const HidracorFormatter = () => {
                   }
                   .scrollbar-custom::-webkit-scrollbar-thumb {
                     background-color: #f59e0b;
-                    border-radius: 0px;
-                    border: 2px solid #f1f5f9;
+                    border-radius: 10px;
+                    border: 3px solid #f1f5f9;
                   }
                   .scrollbar-custom::-webkit-scrollbar-thumb:hover {
                     background-color: #d97706;
+                  }
+                  /* Garante que a barra de rolagem horizontal esteja sempre visível */
+                  .scrollbar-custom {
+                    overflow-x: scroll !important;
                   }
                 `}</style>
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
