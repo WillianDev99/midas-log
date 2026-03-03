@@ -516,25 +516,29 @@ const HidracorFormatter = () => {
       )
     );
 
-    // 2. Aplicar Filtro de Peso Mínimo Inteligente
-    const minWeight = parseFloat(minWeightFilter);
+    // 2. Aplicar Filtro de Peso Mínimo Inteligente (Correção para evitar tela branca)
+    const minWeight = parseFloat(minWeightFilter.replace(',', '.'));
     if (!isNaN(minWeight) && minWeight > 0) {
-      const clientGroups: Record<string, any[]> = {};
+      // Agrupar por cliente usando Map para maior segurança
+      const clientGroups = new Map<string, any[]>();
       data.forEach(row => {
-        const clientId = row['Cód.Cliente'] || row['Nome Cliente'] || 'unknown';
-        if (!clientGroups[clientId]) clientGroups[clientId] = [];
-        clientGroups[clientId].push(row);
+        const clientId = String(row['Cód.Cliente'] || row['Nome Cliente'] || 'SEM_ID');
+        if (!clientGroups.has(clientId)) clientGroups.set(clientId, []);
+        clientGroups.get(clientId)!.push(row);
       });
 
       const validClientIds = new Set<string>();
-      Object.entries(clientGroups).forEach(([clientId, items]) => {
+      clientGroups.forEach((items, clientId) => {
+        // Verifica se algum pedido individual atinge o mínimo
         const hasSingleOrderAboveMin = items.some(item => {
           const val = parseFloat(String(item['peso possível'] || '0').replace(',', '.'));
-          return val >= minWeight;
+          return !isNaN(val) && val >= minWeight;
         });
+
+        // Verifica se a soma de todos os pedidos do cliente atinge o mínimo
         const totalWeight = items.reduce((acc, item) => {
           const val = parseFloat(String(item['peso possível'] || '0').replace(',', '.'));
-          return acc + val;
+          return acc + (isNaN(val) ? 0 : val);
         }, 0);
         
         if (hasSingleOrderAboveMin || totalWeight >= minWeight) {
@@ -542,7 +546,7 @@ const HidracorFormatter = () => {
         }
       });
 
-      data = data.filter(row => validClientIds.has(row['Cód.Cliente'] || row['Nome Cliente'] || 'unknown'));
+      data = data.filter(row => validClientIds.has(String(row['Cód.Cliente'] || row['Nome Cliente'] || 'SEM_ID')));
     }
 
     // 3. Aplicar Ordenação
