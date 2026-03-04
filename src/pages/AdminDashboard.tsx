@@ -10,7 +10,10 @@ import {
   ChevronRight,
   Database,
   Settings,
-  Home
+  Home,
+  AlertTriangle,
+  FileText,
+  CalendarClock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,8 +30,13 @@ const AdminDashboard = () => {
     showSuccess("Sessão encerrada.");
   };
 
-  const ToolCard = ({ title, description, icon: Icon, href }: { title: string, description: string, icon: any, href?: string }) => (
-    <Card className="hover:shadow-md transition-all cursor-pointer group border-slate-200">
+  const ToolCard = ({ title, description, icon: Icon, href, badge }: { title: string, description: string, icon: any, href?: string, badge?: string }) => (
+    <Card className="hover:shadow-md transition-all cursor-pointer group border-slate-200 relative overflow-hidden">
+      {badge && (
+        <div className="absolute top-0 right-0 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded-bl-lg uppercase">
+          {badge}
+        </div>
+      )}
       <CardHeader className="flex flex-row items-center gap-4 pb-2">
         <div className="bg-amber-50 p-2 rounded-lg group-hover:bg-amber-500 transition-colors">
           <Icon className="text-amber-600 group-hover:text-white transition-colors" size={24} />
@@ -38,7 +46,7 @@ const AdminDashboard = () => {
         </div>
       </CardHeader>
       <CardContent>
-        <CardDescription className="mb-4">{description}</CardDescription>
+        <CardDescription className="mb-4 line-clamp-2">{description}</CardDescription>
         {href ? (
           <Link to={href}>
             <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
@@ -47,8 +55,8 @@ const AdminDashboard = () => {
             </Button>
           </Link>
         ) : (
-          <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
-            Acessar Ferramenta
+          <Button variant="outline" disabled className="w-full justify-between opacity-50">
+            Em Breve
             <ChevronRight size={16} />
           </Button>
         )}
@@ -126,26 +134,40 @@ const AdminDashboard = () => {
           </TabsList>
 
           <TabsContent value="hidracor" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ToolCard 
-                title="Formatar Carteira Hidracor" 
+                title="Formatar Carteira" 
                 description="Upload de planilha base para formatação automática de acordo com os parâmetros da Hidracor."
                 icon={FileSpreadsheet}
                 href="/admin/hidracor-formatter"
               />
               <ToolCard 
-                title="Cargas Externas Hidracor" 
+                title="Cargas Externas" 
                 description="Análise e processamento de dados de cargas externas para integração logística."
                 icon={Truck}
                 href="/admin/external-loads"
+              />
+              <ToolCard 
+                title="Cálculo de Avarias" 
+                description="Ferramenta para cálculo e registro de avarias em produtos Hidracor."
+                icon={AlertTriangle}
+                href="/admin/hidracor-avarias"
+                badge="Novo"
+              />
+              <ToolCard 
+                title="Romaneio Carga Externa" 
+                description="Geração de romaneios detalhados para cargas contratadas externamente."
+                icon={FileText}
+                href="/admin/hidracor-romaneio-externo"
+                badge="Novo"
               />
             </div>
           </TabsContent>
 
           <TabsContent value="cerbras" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ToolCard 
-                title="Formatar Carteira Cerbras" 
+                title="Formatar Carteira" 
                 description="Processamento de dados da carteira Cerbras com saída em planilha formatada."
                 icon={FileSpreadsheet}
                 href="/admin/cerbras-formatter"
@@ -155,6 +177,20 @@ const AdminDashboard = () => {
                 description="Cálculo e análise de distribuição de pesos por região e cidade para a Cerbras."
                 icon={MapPin}
                 href="/admin/cerbras-weights"
+              />
+              <ToolCard 
+                title="Cálculo de Avarias" 
+                description="Ferramenta para cálculo e registro de avarias em produtos Cerbras."
+                icon={AlertTriangle}
+                href="/admin/cerbras-avarias"
+                badge="Novo"
+              />
+              <ToolCard 
+                title="Previsão de Coleta" 
+                description="Gestão e agendamento de previsões de coleta na fábrica Cerbras."
+                icon={CalendarClock}
+                href="/admin/cerbras-previsao-coleta"
+                badge="Novo"
               />
             </div>
           </TabsContent>
