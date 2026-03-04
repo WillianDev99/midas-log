@@ -175,7 +175,7 @@ const HidracorFormatter = () => {
           <title>Relatório de Seleção - Midas Log</title>
           <style>
             body { font-family: sans-serif; padding: 20px; color: #333; }
-            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #f59e0b; padding-bottom: 10px; margin-bottom: 20px; }
             .logo { height: 50px; }
             .title { font-size: 20px; font-weight: bold; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -613,10 +613,10 @@ const HidracorFormatter = () => {
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-7 w-auto" />
             <div className="hidden sm:block">
-              <h1 className="text-lg font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-              <p className="text-slate-500 text-[10px]">Lógica de prioridade ROTA e persistência de dados.</p>
+              <h1 className="text-lg font-bold text-slate-900 leading-none">Formatar Carteira Hidracor</h1>
+              <p className="text-slate-500 text-[10px] mt-1">Lógica de prioridade ROTA e persistência de dados.</p>
             </div>
           </div>
         </div>
@@ -832,6 +832,7 @@ const HidracorFormatter = () => {
                   z-index: 40;
                   background-color: white;
                   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                  border-bottom: 1px solid #e2e8f0;
                 }
                 /* Fixar coluna de seleção e cabeçalho dela */
                 .sticky-col {
@@ -855,8 +856,8 @@ const HidracorFormatter = () => {
                     <TableRow>
                       <TableHead className="w-[50px] sticky-col"></TableHead>
                       {Object.keys(formattedData[0]).map(col => (
-                        <TableHead key={col} className="w-[200px] py-2 px-4">
-                          <div className="space-y-1.5">
+                        <TableHead key={col} className="w-[200px] py-1.5 px-4">
+                          <div className="space-y-1">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
                               <span className="text-[9px] font-bold uppercase text-slate-500">{col}</span>
                               <ArrowUpDown size={10} className="text-slate-300" />
@@ -899,7 +900,7 @@ const HidracorFormatter = () => {
                             />
                           </TableCell>
                           {Object.keys(row).map(col => (
-                            <TableCell key={col} className="text-[10px] py-1.5 px-4 border-r last:border-0">
+                            <TableCell key={col} className="text-[10px] py-1 px-4 border-r last:border-0">
                               {col === 'ROTA' ? (
                                 <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                               ) : (

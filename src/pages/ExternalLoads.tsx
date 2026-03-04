@@ -592,7 +592,7 @@ const ExternalLoads = () => {
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-7 w-auto" />
             <div className="hidden sm:block">
               <h1 className="text-lg font-bold text-slate-900">Cargas Externas Hidracor</h1>
               <p className="text-slate-500 text-[10px]">Monitoramento de cargas disponíveis no Google Sheets.</p>
