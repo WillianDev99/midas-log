@@ -34,8 +34,7 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  FileUp,
-  MapPinned
+  FileUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -47,13 +46,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -105,12 +97,11 @@ interface RoutePoint {
   distanceFromPrev?: number; // em km
 }
 
-const MapController = ({ points, focusPoint }: { points: [number, number][], focusPoint?: [number, number] | null }) => {
+// Componente para ajustar o zoom do mapa automaticamente
+const MapController = ({ points }: { points: [number, number][] }) => {
   const map = useMap();
   useEffect(() => {
-    if (focusPoint) {
-      map.setView(focusPoint, 12, { animate: true });
-    } else if (Array.isArray(points) && points.length > 0) {
+    if (Array.isArray(points) && points.length > 0) {
       try {
         const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
@@ -118,7 +109,7 @@ const MapController = ({ points, focusPoint }: { points: [number, number][], foc
         console.error("Erro ao ajustar limites do mapa:", e);
       }
     }
-  }, [points, focusPoint, map]);
+  }, [points, map]);
   return null;
 };
 
@@ -138,11 +129,6 @@ const CerbrasWeightsByCity = () => {
   const [creditLimits, setCreditLimits] = useState<CreditLimitItem[]>([]);
   const [minCreditFilter, setMinCreditFilter] = useState<number>(0);
   
-  // Busca Manual
-  const [searchCityName, setSearchCityName] = useState("");
-  const [searchUF, setSearchUF] = useState("CE");
-  const [highlightedCity, setHighlightedCity] = useState<{ name: string, uf: string, coords: [number, number] } | null>(null);
-
   // Estados de visibilidade no mapa
   const [showWeightsOnMap, setShowWeightsOnMap] = useState(true);
   const [showCreditsOnMap, setShowCreditsOnMap] = useState(true);
@@ -285,28 +271,6 @@ const CerbrasWeightsByCity = () => {
     }
     setCurrentSearching("");
     setGeocoding(false);
-  };
-
-  const handleManualSearch = async () => {
-    if (!searchCityName) return;
-    const chave = `${normalizarParaMatch(searchCityName)}|${normalizarParaMatch(searchUF)}`;
-    
-    if (cityCoords[chave]) {
-      setHighlightedCity({ name: searchCityName.toUpperCase(), uf: searchUF, coords: cityCoords[chave] });
-      showSuccess("Cidade localizada!");
-    } else {
-      setGeocoding(true);
-      const coords = await fetchCoordsFromAPI(searchCityName, searchUF);
-      if (coords) {
-        await saveCoordToSupabase(chave, coords[0], coords[1]);
-        setCityCoords(prev => ({ ...prev, [chave]: coords }));
-        setHighlightedCity({ name: searchCityName.toUpperCase(), uf: searchUF, coords });
-        showSuccess("Cidade localizada e salva!");
-      } else {
-        showError("Cidade não encontrada.");
-      }
-      setGeocoding(false);
-    }
   };
 
   const updateRoadRoute = async (points: RoutePoint[], setGeometry: (g: [number, number][]) => void) => {
@@ -689,7 +653,7 @@ const CerbrasWeightsByCity = () => {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs" onClick={() => loadLocalBase()} disabled={processing}>
               <Database size={14} /> Sincronizar
-            </Database>
+            </Button>
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -771,49 +735,11 @@ const CerbrasWeightsByCity = () => {
       <main className="flex-1 flex overflow-hidden relative">
         <aside className={`bg-white border-r overflow-y-auto transition-all duration-300 flex flex-col relative ${isSidebarOpen ? 'w-80' : 'w-0'}`}>
           <div className="p-4 border-b bg-slate-50 flex justify-between items-center whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-            <h3 className="font-bold text-slate-900 flex items-center gap-2"><Layers size={18} className="text-amber-600" /> Painel de Controle</h3>
+            <h3 className="font-bold text-slate-900 flex items-center gap-2"><Layers size={18} className="text-amber-600" /> Rotas Salvas</h3>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}><PanelLeftClose size={18} /></Button>
           </div>
           
-          <div className="p-4 border-b space-y-4 bg-slate-50/50">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-2">
-                <MapPinned size={14} className="text-amber-600" /> Localizar Cidade
-              </label>
-              <div className="flex flex-col gap-2">
-                <Input 
-                  placeholder="Nome da cidade..." 
-                  className="h-8 text-xs uppercase" 
-                  value={searchCityName}
-                  onChange={(e) => setSearchCityName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                />
-                <div className="flex gap-2">
-                  <Select value={searchUF} onValueChange={setSearchUF}>
-                    <SelectTrigger className="h-8 text-xs w-24">
-                      <SelectValue placeholder="UF" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CE">CE</SelectItem>
-                      <SelectItem value="PI">PI</SelectItem>
-                      <SelectItem value="MA">MA</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" className="h-8 flex-1 bg-amber-600 hover:bg-amber-700 text-[10px] uppercase font-bold" onClick={handleManualSearch}>
-                    Localizar
-                  </Button>
-                </div>
-              </div>
-              {highlightedCity && (
-                <Button variant="ghost" size="sm" className="w-full h-6 text-[9px] text-red-500 hover:text-red-600" onClick={() => setHighlightedCity(null)}>
-                  Limpar Destaque
-                </Button>
-              )}
-            </div>
-          </div>
-
           <div className="flex-1 divide-y overflow-x-hidden">
-            <div className="px-4 py-2 bg-slate-100/50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rotas Salvas</div>
             {savedRoutes.map(route => (
               <div key={route.id} className={`p-4 hover:bg-slate-50 group transition-colors cursor-pointer ${selectedRouteId === route.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''}`} onClick={() => setSelectedRouteId(selectedRouteId === route.id ? null : route.id)}>
                 <div className="flex justify-between items-start mb-2">
@@ -865,29 +791,13 @@ const CerbrasWeightsByCity = () => {
         <div className="flex-1 relative z-10">
           <MapContainer center={MARACANAU_COORDS} zoom={7} style={{ height: '100%', width: '100%' }}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapController points={activeMarkersCoords} focusPoint={highlightedCity?.coords} />
+            <MapController points={activeMarkersCoords} />
             
             <Marker position={MARACANAU_COORDS} icon={L.divIcon({
               className: 'custom-div-icon',
               html: `<div style="background-color: #1e293b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
               iconSize: [12, 12], iconAnchor: [6, 6]
             })}><Popup><strong>PONTO INICIAL: MARACANAÚ-CE</strong></Popup></Marker>
-
-            {highlightedCity && (
-              <Marker position={highlightedCity.coords} icon={L.divIcon({
-                className: 'custom-div-icon',
-                html: `<div style="background-color: #16a34a; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 15px rgba(22,163,74,0.6); display: flex; align-items: center; justify-content: center;"><div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div></div>`,
-                iconSize: [24, 24], iconAnchor: [12, 12]
-              })}>
-                <Popup>
-                  <div className="text-center">
-                    <p className="font-bold uppercase text-green-700">{highlightedCity.name}</p>
-                    <p className="text-[10px] font-bold text-slate-500">{highlightedCity.uf}</p>
-                    <Button variant="ghost" size="sm" className="h-6 text-[9px] mt-2" onClick={() => setHighlightedCity(null)}>Remover Destaque</Button>
-                  </div>
-                </Popup>
-              </Marker>
-            )}
 
             {Object.entries(citySummary).map(([chave, data]) => {
               const coords = cityCoords[chave];

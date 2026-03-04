@@ -22,8 +22,7 @@ import {
   Eraser,
   Printer,
   XCircle,
-  ChevronDown,
-  SearchX
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -145,11 +144,11 @@ const HidracorFormatter = () => {
   };
 
   const formatWeight = (val: number) => {
-    return (val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
   };
 
   const formatCurrency = (val: number) => {
-    return (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   const excelDateToJSDate = (serial: any) => {
@@ -550,14 +549,7 @@ const HidracorFormatter = () => {
   }, [formattedData, columnFilters, minWeightFilter, sortConfig]);
 
   const totals = useMemo(() => {
-    const result: Record<string, number> = {
-      'peso possível': 0,
-      'valor possível': 0,
-      'peso total': 0,
-      'valor total': 0
-    };
-    if (filteredData.length === 0) return result;
-    
+    const result: Record<string, number> = {};
     const numericCols = ['peso possível', 'valor possível', 'peso total', 'valor total'];
     filteredData.forEach(row => {
       numericCols.forEach(col => {
@@ -616,8 +608,6 @@ const HidracorFormatter = () => {
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
-
-  const tableHeaders = formattedData.length > 0 ? Object.keys(formattedData[0]) : [];
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
@@ -838,6 +828,7 @@ const HidracorFormatter = () => {
                   background-color: #d97706;
                 }
                 
+                /* SOLUÇÃO DEFINITIVA PARA CABEÇALHO FIXO */
                 .table-container {
                   overflow: auto;
                   height: 100%;
@@ -861,6 +852,7 @@ const HidracorFormatter = () => {
                   background-color: white;
                   border-right: 1px solid #e2e8f0;
                 }
+                /* Intersecção: Canto superior esquerdo (Checkbox + Header) */
                 .sticky-table thead th.sticky-col {
                   z-index: 50;
                 }
@@ -880,7 +872,7 @@ const HidracorFormatter = () => {
                   <thead>
                     <tr>
                       <th className="w-[50px] p-2 sticky-col"></th>
-                      {tableHeaders.map(col => (
+                      {Object.keys(formattedData[0]).map(col => (
                         <th key={col} className="w-[200px] py-2 px-4">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
@@ -912,45 +904,33 @@ const HidracorFormatter = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredData.length > 0 ? (
-                      filteredData.map((row, idx) => {
-                        const pedidoId = row.Pedido?.toString();
-                        const loadName = usedOrderIds.get(pedidoId);
-                        return (
-                          <tr key={idx} className={loadName ? 'bg-slate-50' : ''}>
-                            <td className="p-2 text-center sticky-col">
-                              <Checkbox 
-                                checked={selectedItems.includes(pedidoId)}
-                                onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
-                                disabled={!!loadName}
-                              />
+                    {filteredData.map((row, idx) => {
+                      const pedidoId = row.Pedido?.toString();
+                      const loadName = usedOrderIds.get(pedidoId);
+                      return (
+                        <tr key={idx} className={loadName ? 'bg-slate-50' : ''}>
+                          <td className="p-2 text-center sticky-col">
+                            <Checkbox 
+                              checked={selectedItems.includes(pedidoId)}
+                              onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
+                              disabled={!!loadName}
+                            />
+                          </td>
+                          {Object.keys(row).map(col => (
+                            <td key={col} className="text-[10px] py-1.5 px-4 border-r border-b last:border-r-0">
+                              {col === 'ROTA' ? (
+                                <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
+                              ) : (
+                                <span className="block truncate max-w-[180px]">
+                                  {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
+                                </span>
+                              )}
                             </td>
-                            {tableHeaders.map(col => (
-                              <td key={col} className="text-[10px] py-1.5 px-4 border-r border-b last:border-r-0">
-                                {col === 'ROTA' ? (
-                                  <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
-                                ) : (
-                                  <span className="block truncate max-w-[180px]">
-                                    {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
-                                  </span>
-                                )}
-                              </td>
-                            ))}
-                            <td className="text-[10px] font-bold text-amber-600 py-1.5 px-4 border-b">{loadName || '-'}</td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={tableHeaders.length + 2} className="py-20 text-center">
-                          <div className="flex flex-col items-center gap-4 text-slate-400">
-                            <SearchX size={48} />
-                            <p className="text-sm font-medium">Nenhum resultado encontrado para os filtros aplicados.</p>
-                            <Button variant="link" onClick={clearAllFilters} className="text-amber-600">Limpar todos os filtros</Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+                          ))}
+                          <td className="text-[10px] font-bold text-amber-600 py-1.5 px-4 border-b">{loadName || '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
