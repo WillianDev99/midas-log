@@ -54,17 +54,6 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Correção definitiva para ícones do Leaflet no Vite/React
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-});
-
 const MARACANAU_COORDS: [number, number] = [-3.8767, -38.6256];
 
 interface DeliveryItem {
@@ -110,7 +99,7 @@ interface RoutePoint {
 const MapController = ({ points }: { points: [number, number][] }) => {
   const map = useMap();
   useEffect(() => {
-    if (points.length > 0) {
+    if (Array.isArray(points) && points.length > 0) {
       const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
     }

@@ -21,12 +21,12 @@ import {
   FileUp,
   Eraser,
   Printer,
-  XCircle
+  XCircle,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Sheet,
@@ -136,7 +136,9 @@ const HidracorFormatter = () => {
     const { data } = await supabase.from('hidracor_saved_loads').select('name, items');
     const orderMap = new Map<string, string>();
     data?.forEach(load => {
-      load.items.forEach((item: any) => orderMap.set(item.Pedido?.toString(), load.name));
+      if (Array.isArray(load.items)) {
+        load.items.forEach((item: any) => orderMap.set(item.Pedido?.toString(), load.name));
+      }
     });
     setUsedOrderIds(orderMap);
   };
@@ -825,38 +827,53 @@ const HidracorFormatter = () => {
                 .scrollbar-custom::-webkit-scrollbar-thumb:hover {
                   background-color: #d97706;
                 }
-                /* Fixar cabeçalho */
-                .sticky-header th {
+                
+                /* SOLUÇÃO DEFINITIVA PARA CABEÇALHO FIXO */
+                .table-container {
+                  overflow: auto;
+                  height: 100%;
+                }
+                .sticky-table {
+                  border-collapse: separate;
+                  border-spacing: 0;
+                }
+                .sticky-table thead th {
                   position: sticky;
                   top: 0;
                   z-index: 40;
                   background-color: white;
-                  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-                  border-bottom: 1px solid #e2e8f0;
+                  border-bottom: 2px solid #e2e8f0;
+                  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
                 }
-                /* Fixar coluna de seleção e cabeçalho dela */
-                .sticky-col {
+                .sticky-table .sticky-col {
                   position: sticky;
                   left: 0;
-                  z-index: 45;
+                  z-index: 30;
                   background-color: white;
                   border-right: 1px solid #e2e8f0;
-                  box-shadow: 2px 0 5px rgba(0,0,0,0.05);
                 }
-                .sticky-header th.sticky-col {
+                /* Intersecção: Canto superior esquerdo (Checkbox + Header) */
+                .sticky-table thead th.sticky-col {
                   z-index: 50;
                 }
+                .sticky-table tbody tr:hover td {
+                  background-color: #f8fafc;
+                }
+                .sticky-table tbody tr:hover td.sticky-col {
+                  background-color: #f1f5f9;
+                }
               `}</style>
+              
               <div 
                 ref={tableScrollRef} 
-                className="flex-1 overflow-auto scrollbar-custom"
+                className="table-container scrollbar-custom"
               >
-                <Table className="border-separate border-spacing-0 min-w-[2800px]">
-                  <TableHeader className="sticky-header">
-                    <TableRow>
-                      <TableHead className="w-[50px] sticky-col"></TableHead>
+                <table className="sticky-table min-w-[2800px] w-full text-left">
+                  <thead>
+                    <tr>
+                      <th className="w-[50px] p-2 sticky-col"></th>
                       {Object.keys(formattedData[0]).map(col => (
-                        <TableHead key={col} className="w-[200px] py-1.5 px-4">
+                        <th key={col} className="w-[200px] py-2 px-4">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
                               <span className="text-[9px] font-bold uppercase text-slate-500">{col}</span>
@@ -881,26 +898,26 @@ const HidracorFormatter = () => {
                                 />
                             )}
                           </div>
-                        </TableHead>
+                        </th>
                       ))}
-                      <TableHead className="w-[200px] text-[9px] font-bold uppercase text-slate-500">Cargas</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                      <th className="w-[200px] text-[9px] font-bold uppercase text-slate-500 py-2 px-4">Cargas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {filteredData.map((row, idx) => {
                       const pedidoId = row.Pedido?.toString();
                       const loadName = usedOrderIds.get(pedidoId);
                       return (
-                        <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                          <TableCell className="p-2 text-center sticky-col">
+                        <tr key={idx} className={loadName ? 'bg-slate-50' : ''}>
+                          <td className="p-2 text-center sticky-col">
                             <Checkbox 
                               checked={selectedItems.includes(pedidoId)}
                               onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
                               disabled={!!loadName}
                             />
-                          </TableCell>
+                          </td>
                           {Object.keys(row).map(col => (
-                            <TableCell key={col} className="text-[10px] py-1 px-4 border-r last:border-0">
+                            <td key={col} className="text-[10px] py-1.5 px-4 border-r border-b last:border-r-0">
                               {col === 'ROTA' ? (
                                 <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                               ) : (
@@ -908,14 +925,14 @@ const HidracorFormatter = () => {
                                   {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
                                 </span>
                               )}
-                            </TableCell>
+                            </td>
                           ))}
-                          <TableCell className="text-[10px] font-bold text-amber-600">{loadName || '-'}</TableCell>
-                        </TableRow>
+                          <td className="text-[10px] font-bold text-amber-600 py-1.5 px-4 border-b">{loadName || '-'}</td>
+                        </tr>
                       );
                     })}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
