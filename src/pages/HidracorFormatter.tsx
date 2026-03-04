@@ -609,28 +609,28 @@ const HidracorFormatter = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="h-20 shrink-0 max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
+      <header className="h-16 shrink-0 max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-7 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
             <div className="hidden sm:block">
-              <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Hidracor</h1>
-              <p className="text-slate-500 text-xs">Lógica de prioridade ROTA e persistência de dados.</p>
+              <h1 className="text-lg font-bold text-slate-900">Formatar Carteira Hidracor</h1>
+              <p className="text-slate-500 text-[10px]">Lógica de prioridade ROTA e persistência de dados.</p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to="/admin/hidracor-loads" target="_blank"><Button variant="outline" size="sm" className="gap-2"><ListFilter size={16} /> Minhas Cargas</Button></Link>
+          <Link to="/admin/hidracor-loads" target="_blank"><Button variant="outline" size="sm" className="gap-2 h-8 text-xs"><ListFilter size={14} /> Minhas Cargas</Button></Link>
           
-          <Button variant="outline" size="sm" onClick={handlePrintSelection} className="gap-2 border-slate-200 hover:bg-slate-50">
-            <Printer size={16} /> Imprimir Seleção
+          <Button variant="outline" size="sm" onClick={handlePrintSelection} className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
+            <Printer size={14} /> Imprimir Seleção
           </Button>
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
-                <Settings2 size={16} /> <span className="hidden sm:inline">Base Técnica Hidracor</span>
+              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50 h-8 text-xs">
+                <Settings2 size={14} /> <span className="hidden sm:inline">Base Técnica</span>
               </Button>
             </SheetTrigger>
             <SheetContent className="w-[400px] sm:w-[600px] overflow-y-auto">
@@ -754,21 +754,21 @@ const HidracorFormatter = () => {
             </SheetContent>
           </Sheet>
 
-          {selectedItems.length > 0 && <Button onClick={handleCreateLoad} size="sm" className="bg-amber-600 text-white gap-2 animate-pulse"><Truck size={16} /> Criar Carga ({selectedItems.length})</Button>}
-          {formattedData.length > 0 && <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(!isUploadOpen)} className="gap-2 border-amber-200 text-amber-700"><RefreshCw size={14} /> {isUploadOpen ? "Fechar" : "Novo Upload"}</Button>}
-          <Button onClick={downloadExcel} size="sm" className="bg-green-600 text-white gap-2"><Download size={16} /> Baixar Excel</Button>
+          {selectedItems.length > 0 && <Button onClick={handleCreateLoad} size="sm" className="bg-amber-600 text-white gap-2 animate-pulse h-8 text-xs"><Truck size={14} /> Criar Carga ({selectedItems.length})</Button>}
+          {formattedData.length > 0 && <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(!isUploadOpen)} className="gap-2 border-amber-200 text-amber-700 h-8 text-xs"><RefreshCw size={14} /> {isUploadOpen ? "Fechar" : "Novo Upload"}</Button>}
+          <Button onClick={downloadExcel} size="sm" className="bg-green-600 text-white gap-2 h-8 text-xs"><Download size={14} /> Baixar Excel</Button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 lg:pb-4 gap-4 overflow-hidden min-h-0 max-h-[calc(100vh-5rem)]">
+      <main className="flex-1 flex flex-col p-2 lg:p-4 gap-2 overflow-hidden min-h-0">
         <Collapsible open={isUploadOpen} onOpenChange={setIsUploadOpen} className="w-full shrink-0">
-          <CollapsibleContent className="space-y-4">
+          <CollapsibleContent className="space-y-2">
             <Card className="border-none shadow-sm">
-              <CardHeader className="py-4"><CardTitle className="text-lg">Upload da Carteira</CardTitle></CardHeader>
-              <CardContent className="pb-6">
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">
-                  <Upload className="w-8 h-8 mb-3 text-slate-400" />
-                  <p className="text-sm text-slate-500 font-semibold">Clique para upload</p>
+              <CardHeader className="py-2"><CardTitle className="text-md">Upload da Carteira</CardTitle></CardHeader>
+              <CardContent className="pb-4">
+                <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">
+                  <Upload className="w-6 h-6 mb-2 text-slate-400" />
+                  <p className="text-xs text-slate-500 font-semibold">Clique para upload</p>
                   <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
                 </label>
               </CardContent>
@@ -778,52 +778,72 @@ const HidracorFormatter = () => {
 
         {formattedData.length > 0 && (
           <Card className="border-none shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
-            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-2 shrink-0">
-              <div className="flex items-center gap-4">
-                <CardTitle className="text-lg flex items-center gap-2"><Filter size={18} className="text-amber-600" /> Preview</CardTitle>
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">{filteredData.length} registros</span>
-                <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-2 h-8">
-                  <XCircle size={16} /> Limpar Filtros
+            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-2 py-1.5 px-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-md flex items-center gap-2"><Filter size={16} className="text-amber-600" /> Preview</CardTitle>
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{filteredData.length} registros</span>
+                <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-1.5 h-7 text-[10px]">
+                  <XCircle size={14} /> Limpar Filtros
                 </Button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
-                <Calculator size={16} className="text-slate-400" />
-                <div className="text-[10px] border-r pr-2">
+              <div className="flex flex-wrap items-center gap-2 bg-white p-1.5 rounded-lg border shadow-sm">
+                <Calculator size={14} className="text-slate-400" />
+                <div className="text-[9px] border-r pr-2">
                   <span className="text-slate-500 font-medium uppercase">Peso Possível:</span>
                   <span className="ml-1 font-bold text-blue-600">{formatWeight(totals['peso possível'])}</span>
                 </div>
-                <div className="text-[10px] border-r pr-2">
+                <div className="text-[9px] border-r pr-2">
                   <span className="text-slate-500 font-medium uppercase">Valor Possível:</span>
                   <span className="ml-1 font-bold text-blue-600">{formatCurrency(totals['valor possível'])}</span>
                 </div>
-                <div className="text-[10px] border-r pr-2">
+                <div className="text-[9px] border-r pr-2">
                   <span className="text-slate-500 font-medium uppercase">Peso Total:</span>
                   <span className="ml-1 font-bold text-amber-700">{formatWeight(totals['peso total'])}</span>
                 </div>
-                <div className="text-[10px]">
+                <div className="text-[9px]">
                   <span className="text-slate-500 font-medium uppercase">Valor Total:</span>
                   <span className="ml-1 font-bold text-amber-700">{formatCurrency(totals['valor total'])}</span>
                 </div>
               </div>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 flex flex-col min-h-0 overflow-hidden">
+            <CardContent className="p-0 flex-1 flex flex-col min-h-0 overflow-hidden relative">
               <style>{`
                 .scrollbar-custom::-webkit-scrollbar {
-                  height: 16px;
-                  width: 16px;
+                  height: 12px;
+                  width: 12px;
                 }
                 .scrollbar-custom::-webkit-scrollbar-track {
                   background: #f1f5f9;
                 }
                 .scrollbar-custom::-webkit-scrollbar-thumb {
                   background-color: #f59e0b;
-                  border-radius: 8px;
-                  border: 3px solid #f1f5f9;
+                  border-radius: 6px;
+                  border: 2px solid #f1f5f9;
                 }
                 .scrollbar-custom::-webkit-scrollbar-thumb:hover {
                   background-color: #d97706;
+                }
+                /* Fixar cabeçalho */
+                .sticky-header th {
+                  position: sticky;
+                  top: 0;
+                  z-index: 40;
+                  background-color: white;
+                  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                }
+                /* Fixar coluna de seleção e cabeçalho dela */
+                .sticky-col {
+                  position: sticky;
+                  left: 0;
+                  z-index: 45;
+                  background-color: white;
+                  border-right: 1px solid #e2e8f0;
+                  box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+                }
+                .sticky-header th.sticky-col {
+                  z-index: 50;
                 }
               `}</style>
               <div 
@@ -831,22 +851,22 @@ const HidracorFormatter = () => {
                 className="flex-1 overflow-auto scrollbar-custom"
               >
                 <Table className="border-separate border-spacing-0 min-w-[2800px]">
-                  <TableHeader className="bg-white sticky top-0 z-50 shadow-sm">
+                  <TableHeader className="sticky-header">
                     <TableRow>
-                      <TableHead className="w-[50px] bg-white sticky left-0 z-[60] border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]"></TableHead>
+                      <TableHead className="w-[50px] sticky-col"></TableHead>
                       {Object.keys(formattedData[0]).map(col => (
-                        <TableHead key={col} className="w-[200px] py-4 px-4 bg-white">
-                          <div className="space-y-2">
+                        <TableHead key={col} className="w-[200px] py-2 px-4">
+                          <div className="space-y-1.5">
                             <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort(col)}>
-                              <span className="text-[10px] font-bold uppercase text-slate-500">{col}</span>
-                              <ArrowUpDown size={12} className="text-slate-300" />
+                              <span className="text-[9px] font-bold uppercase text-slate-500">{col}</span>
+                              <ArrowUpDown size={10} className="text-slate-300" />
                             </div>
                             {col === 'peso possível' ? (
                               <div className="flex items-center gap-1 bg-slate-50 border rounded px-1">
-                                <Truck size={12} className="text-amber-600" />
+                                <Truck size={10} className="text-amber-600" />
                                 <Input 
                                   placeholder="Mínimo..." 
-                                  className="h-7 text-[10px] border-none bg-transparent focus-visible:ring-0 p-0" 
+                                  className="h-6 text-[9px] border-none bg-transparent focus-visible:ring-0 p-0" 
                                   value={minWeightFilter}
                                   onChange={(e) => setMinWeightFilter(e.target.value)} 
                                 />
@@ -854,7 +874,7 @@ const HidracorFormatter = () => {
                             ) : (
                               <Input 
                                 placeholder={`Filtrar...`} 
-                                className="h-7 text-[10px]" 
+                                className="h-6 text-[9px]" 
                                 value={columnFilters[col] || ""}
                                 onChange={(e) => setColumnFilters({...columnFilters, [col]: e.target.value})} 
                                 />
@@ -862,7 +882,7 @@ const HidracorFormatter = () => {
                           </div>
                         </TableHead>
                       ))}
-                      <TableHead className="w-[200px] bg-white text-[10px] font-bold uppercase text-slate-500">Cargas</TableHead>
+                      <TableHead className="w-[200px] text-[9px] font-bold uppercase text-slate-500">Cargas</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -871,7 +891,7 @@ const HidracorFormatter = () => {
                       const loadName = usedOrderIds.get(pedidoId);
                       return (
                         <TableRow key={idx} className={`hover:bg-slate-50/50 ${loadName ? 'bg-slate-50' : ''}`}>
-                          <TableCell className="p-2 text-center sticky left-0 bg-white z-40 border-r shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                          <TableCell className="p-2 text-center sticky-col">
                             <Checkbox 
                               checked={selectedItems.includes(pedidoId)}
                               onCheckedChange={() => setSelectedItems(prev => prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId])}
@@ -879,9 +899,9 @@ const HidracorFormatter = () => {
                             />
                           </TableCell>
                           {Object.keys(row).map(col => (
-                            <TableCell key={col} className="text-[11px] py-2 px-4 border-r last:border-0">
+                            <TableCell key={col} className="text-[10px] py-1.5 px-4 border-r last:border-0">
                               {col === 'ROTA' ? (
-                                <div className={`px-2 py-1 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
+                                <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                               ) : (
                                 <span className="block truncate max-w-[180px]">
                                   {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
@@ -889,7 +909,7 @@ const HidracorFormatter = () => {
                               )}
                             </TableCell>
                           ))}
-                          <TableCell className="text-[11px] font-bold text-amber-600">{loadName || '-'}</TableCell>
+                          <TableCell className="text-[10px] font-bold text-amber-600">{loadName || '-'}</TableCell>
                         </TableRow>
                       );
                     })}

@@ -586,53 +586,53 @@ const ExternalLoads = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
+      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50 h-16">
         <div className="flex items-center gap-4">
           <Link to="/admin">
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
             <div className="hidden sm:block">
-              <h1 className="text-xl font-bold text-slate-900">Cargas Externas Hidracor</h1>
-              <p className="text-slate-500 text-xs">Monitoramento de cargas disponíveis no Google Sheets.</p>
+              <h1 className="text-lg font-bold text-slate-900">Cargas Externas Hidracor</h1>
+              <p className="text-slate-500 text-[10px]">Monitoramento de cargas disponíveis no Google Sheets.</p>
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
           <Link to="/admin/external-loads/saved" target="_blank">
-            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
-              <Bookmark size={16} /> <span className="hidden sm:inline">Cargas Salvas</span>
+            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
+              <Bookmark size={14} /> <span className="hidden sm:inline">Cargas Salvas</span>
             </Button>
           </Link>
 
           <a href={VIEW_SHEET_URL} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50">
-              <FileText size={16} /> <span className="hidden sm:inline">Ver Planilha Original</span>
+            <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
+              <FileText size={14} /> <span className="hidden sm:inline">Ver Planilha</span>
             </Button>
           </a>
 
-          <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
-            <Printer size={16} /> <span className="hidden sm:inline">Imprimir para Motorista</span>
+          <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2 h-8 text-xs">
+            <Printer size={14} /> <span className="hidden sm:inline">Imprimir</span>
           </Button>
 
-          <Button variant="outline" size="sm" onClick={updateFromGoogleSheets} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
-            {updating ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            <span className="hidden sm:inline">Atualizar Planilha</span>
+          <Button variant="outline" size="sm" onClick={updateFromGoogleSheets} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs">
+            {updating ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
+            <span className="hidden sm:inline">Atualizar</span>
           </Button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col p-4 lg:p-6 gap-4 overflow-hidden">
+      <main className="flex-1 flex flex-col p-2 lg:p-4 gap-2 overflow-hidden">
         <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
-          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-4 py-3">
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-2 py-1.5 px-4">
             <div className="flex items-center gap-4">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Filter size={18} className="text-amber-600" /> 
+              <CardTitle className="text-md flex items-center gap-2">
+                <Filter size={16} className="text-amber-600" /> 
                 {viewMode === 'current' ? 'Cargas Atuais' : 'Versão Anterior'}
               </CardTitle>
-              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-bold">
+              <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">
                 {filteredData.length} cargas
               </span>
             </div>
@@ -748,7 +748,7 @@ const ExternalLoads = () => {
                             <DialogHeader className="flex flex-row items-center justify-between pr-8">
                               <div className="flex flex-col gap-1">
                                 <DialogTitle className="flex items-center gap-3">
-                                  <img src="/logo.png" className="h-8 w-auto" />
+                                  <img src="/logo.png" className="h-6 w-auto" />
                                   Detalhamento da Carga
                                 </DialogTitle>
                                 <DialogDescription className="font-bold text-slate-900">

@@ -299,7 +299,7 @@ const CerbrasWeightsByCity = () => {
       let closestIdx = 0;
       let minDistance = calculateDistance(currentPos, remaining[0].coords);
       for (let i = 1; i < remaining.length; i++) {
-        const dist = calculateDistance(currentPos, remaining[i].coords);
+        const dist = calculateDistance(currentPos, remaining[i].length);
         if (dist < minDistance) { minDistance = dist; closestIdx = i; }
       }
       const nextPoint = remaining.splice(closestIdx, 1)[0];
@@ -588,14 +588,14 @@ const CerbrasWeightsByCity = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center z-50 shadow-sm">
+      <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center z-50 shadow-sm h-16">
         <div className="flex items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft /></Button></Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-10 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
             <div>
-              <h1 className="text-xl font-bold text-slate-900">Pesos por Cidade (Cerbras)</h1>
-              <p className="text-slate-500 text-xs">Visualização geográfica e montagem de rotas.</p>
+              <h1 className="text-lg font-bold text-slate-900">Pesos por Cidade (Cerbras)</h1>
+              <p className="text-slate-500 text-[10px]">Visualização geográfica e montagem de rotas.</p>
             </div>
           </div>
         </div>
@@ -603,19 +603,19 @@ const CerbrasWeightsByCity = () => {
         <div className="flex items-center gap-3">
           {geocoding && (
             <div className="flex items-center gap-2 text-amber-600 animate-pulse mr-4 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-              <Globe size={16} className="animate-spin" />
-              <span className="text-[10px] font-bold uppercase">Localizando: {stats.citiesWithCoords} / {stats.totalCities}</span>
+              <Globe size={14} className="animate-spin" />
+              <span className="text-[9px] font-bold uppercase">Localizando: {stats.citiesWithCoords} / {stats.totalCities}</span>
             </div>
           )}
 
           <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border mr-4">
             <div className="flex items-center gap-2 px-2 border-r">
-              <Coins size={14} className="text-red-500" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Crédito Mínimo:</span>
+              <Coins size={12} className="text-red-500" />
+              <span className="text-[9px] font-bold text-slate-500 uppercase">Crédito Mínimo:</span>
             </div>
             <Input 
               type="number" 
-              className="h-8 w-24 border-none bg-transparent text-xs font-bold focus-visible:ring-0" 
+              className="h-7 w-20 border-none bg-transparent text-[10px] font-bold focus-visible:ring-0" 
               placeholder="0,00"
               value={minCreditFilter || ''}
               onChange={(e) => setMinCreditFilter(Number(e.target.value))}
@@ -623,15 +623,15 @@ const CerbrasWeightsByCity = () => {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => loadLocalBase()} disabled={processing}>
-              <Database size={16} /> Sincronizar Excel
+            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs" onClick={() => loadLocalBase()} disabled={processing}>
+              <Database size={14} /> Sincronizar
             </Button>
-            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700" onClick={() => fileInputRef.current?.click()} disabled={processing}>
-              {processing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={processing}>
+              {processing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
               Upload Pesos
             </Button>
-            <Button variant="outline" size="sm" className="gap-2 border-red-200 text-red-700" onClick={() => creditInputRef.current?.click()} disabled={processing}>
-              {processing ? <Loader2 className="animate-spin" size={16} /> : <CreditCard size={16} />}
+            <Button variant="outline" size="sm" className="gap-2 border-red-200 text-red-700 h-8 text-xs" onClick={() => creditInputRef.current?.click()} disabled={processing}>
+              {processing ? <Loader2 className="animate-spin" size={14} /> : <CreditCard size={14} />}
               Upload Crédito
             </Button>
           </div>
@@ -651,15 +651,15 @@ const CerbrasWeightsByCity = () => {
                 setEditingRouteId(null); 
               }
             }} 
-            className={`gap-2 ${isRouteMode ? 'animate-pulse' : ''}`}
+            className={`gap-2 h-8 text-xs ${isRouteMode ? 'animate-pulse' : ''}`}
           >
-            {isRouteMode ? <X size={16} /> : <RouteIcon size={16} />}
-            {isRouteMode ? "Cancelar Rota" : "Montar Rota"}
+            {isRouteMode ? <X size={14} /> : <RouteIcon size={14} />}
+            {isRouteMode ? "Cancelar" : "Montar Rota"}
           </Button>
 
           {isRouteMode && currentRoute.length > 0 && (
-            <Button size="sm" onClick={saveRoute} className="bg-green-600 hover:bg-green-700 gap-2">
-              <Save size={16} /> {editingRouteId ? "Atualizar" : "Salvar"}
+            <Button size="sm" onClick={saveRoute} className="bg-green-600 hover:bg-green-700 gap-2 h-8 text-xs">
+              <Save size={14} /> {editingRouteId ? "Atualizar" : "Salvar"}
             </Button>
           )}
         </div>

@@ -508,30 +508,30 @@ const CerbrasFormatter = () => {
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50">
+      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50 h-16">
         <div className="flex items-center gap-4">
           <Link to="/admin">
             <Button variant="ghost" size="icon"><ArrowLeft /></Button>
           </Link>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-5 w-auto" />
+            <img src="/logo.png" alt="Midas Log" className="h-6 w-auto" />
             <div className="hidden sm:block">
-              <h1 className="text-xl font-bold text-slate-900">Formatar Carteira Cerbras</h1>
-              <p className="text-slate-500 text-xs">Processamento com busca em base técnica de produtos e rotas.</p>
+              <h1 className="text-lg font-bold text-slate-900">Formatar Carteira Cerbras</h1>
+              <p className="text-slate-500 text-[10px]">Processamento com busca em base técnica de produtos e rotas.</p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {formattedData.length > 0 && !isUploadOpen && (
-            <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(true)} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+            <Button variant="outline" size="sm" onClick={() => setIsUploadOpen(true)} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs">
               <RefreshCw size={14} /> Novo Upload
             </Button>
           )}
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50">
-                <Settings2 size={16} /> <span className="hidden sm:inline">Base Técnica Cerbras</span>
+              <Button variant="outline" size="sm" className="gap-2 border-amber-200 hover:bg-amber-50 h-8 text-xs">
+                <Settings2 size={14} /> <span className="hidden sm:inline">Base Técnica</span>
               </Button>
             </SheetTrigger>
             <SheetContent className="w-[400px] sm:w-[600px] overflow-y-auto">
@@ -658,8 +658,8 @@ const CerbrasFormatter = () => {
           </Sheet>
 
           {formattedData.length > 0 && (
-            <Button onClick={downloadExcel} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
-              <Download size={16} /> <span className="hidden sm:inline">Baixar Excel</span>
+            <Button onClick={downloadExcel} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2 h-8 text-xs">
+              <Download size={14} /> <span className="hidden sm:inline">Baixar Excel</span>
             </Button>
           )}
         </div>
