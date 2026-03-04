@@ -33,7 +33,8 @@ import {
   BarChart3,
   ChevronDown,
   Eye,
-  EyeOff
+  EyeOff,
+  FileUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -96,12 +97,17 @@ interface RoutePoint {
   distanceFromPrev?: number; // em km
 }
 
+// Componente para ajustar o zoom do mapa automaticamente
 const MapController = ({ points }: { points: [number, number][] }) => {
   const map = useMap();
   useEffect(() => {
     if (Array.isArray(points) && points.length > 0) {
-      const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      try {
+        const bounds = L.latLngBounds([MARACANAU_COORDS, ...points]);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      } catch (e) {
+        console.error("Erro ao ajustar limites do mapa:", e);
+      }
     }
   }, [points, map]);
   return null;
