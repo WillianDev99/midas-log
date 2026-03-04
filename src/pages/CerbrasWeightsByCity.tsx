@@ -30,11 +30,21 @@ import {
   Globe,
   Database,
   Filter,
-  BarChart3
+  BarChart3,
+  ChevronDown,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -125,6 +135,10 @@ const CerbrasWeightsByCity = () => {
   const [creditLimits, setCreditLimits] = useState<CreditLimitItem[]>([]);
   const [minCreditFilter, setMinCreditFilter] = useState<number>(0);
   
+  // Estados de visibilidade no mapa
+  const [showWeightsOnMap, setShowWeightsOnMap] = useState(true);
+  const [showCreditsOnMap, setShowCreditsOnMap] = useState(true);
+
   const [isRouteMode, setIsRouteMode] = useState(false);
   const [currentRoute, setCurrentRoute] = useState<RoutePoint[]>([]);
   const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
@@ -352,6 +366,7 @@ const CerbrasWeightsByCity = () => {
           });
         setDeliveries(items);
         localStorage.setItem('cerbras_map_data', JSON.stringify(items));
+        setShowWeightsOnMap(true);
         showSuccess(`${items.length} registros carregados!`);
       } catch (error: any) { showError(error.message); } finally { setProcessing(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
     };
@@ -385,10 +400,27 @@ const CerbrasWeightsByCity = () => {
           .filter(item => item.limite > 0 && item.cidade !== "");
         setCreditLimits(items);
         localStorage.setItem('cerbras_credit_data', JSON.stringify(items));
+        setShowCreditsOnMap(true);
         showSuccess(`${items.length} registros de crédito carregados!`);
       } catch (error: any) { showError(error.message); } finally { setProcessing(false); if (creditInputRef.current) creditInputRef.current.value = ''; }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const clearWeights = () => {
+    if (confirm("Deseja limpar todos os dados de pesos carregados?")) {
+      setDeliveries([]);
+      localStorage.removeItem('cerbras_map_data');
+      showSuccess("Dados de pesos removidos.");
+    }
+  };
+
+  const clearCredits = () => {
+    if (confirm("Deseja limpar todos os dados de crédito carregados?")) {
+      setCreditLimits([]);
+      localStorage.removeItem('cerbras_credit_data');
+      showSuccess("Dados de crédito removidos.");
+    }
   };
 
   const citySummary = useMemo(() => {
@@ -400,21 +432,23 @@ const CerbrasWeightsByCity = () => {
       uf: string 
     }> = {};
 
-    deliveries.forEach(d => {
-      if (!summary[d.chave]) summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
-      summary[d.chave].totalWeight += d.peso;
-      if (!summary[d.chave].weightClients[d.cliente]) summary[d.chave].weightClients[d.cliente] = [];
-      summary[d.chave].weightClients[d.cliente].push(d);
-    });
+    if (showWeightsOnMap) {
+      deliveries.forEach(d => {
+        if (!summary[d.chave]) summary[d.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: d.cidade, uf: d.uf };
+        summary[d.chave].totalWeight += d.peso;
+        if (!summary[d.chave].weightClients[d.cliente]) summary[d.chave].weightClients[d.cliente] = [];
+        summary[d.chave].weightClients[d.cliente].push(d);
+      });
+    }
 
-    creditLimits.forEach(c => {
-      // Filtro de Crédito Mínimo aplicado aqui
-      if (c.limite < minCreditFilter) return;
-
-      if (!summary[c.chave]) summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
-      if (!summary[c.chave].creditClients[c.cliente]) summary[c.chave].creditClients[c.cliente] = [];
-      summary[c.chave].creditClients[c.cliente].push(c);
-    });
+    if (showCreditsOnMap) {
+      creditLimits.forEach(c => {
+        if (c.limite < minCreditFilter) return;
+        if (!summary[c.chave]) summary[c.chave] = { totalWeight: 0, weightClients: {}, creditClients: {}, originalName: c.cidade, uf: c.uf };
+        if (!summary[c.chave].creditClients[c.cliente]) summary[c.chave].creditClients[c.cliente] = [];
+        summary[c.chave].creditClients[c.cliente].push(c);
+      });
+    }
 
     // Limpeza: remover cidades que ficaram vazias após o filtro de crédito e não possuem peso
     Object.keys(summary).forEach(chave => {
@@ -424,14 +458,13 @@ const CerbrasWeightsByCity = () => {
     });
 
     return summary;
-  }, [deliveries, creditLimits, minCreditFilter]);
+  }, [deliveries, creditLimits, minCreditFilter, showWeightsOnMap, showCreditsOnMap]);
 
   const stats = useMemo(() => {
     const totalWeight = deliveries.reduce((acc, d) => acc + d.peso, 0);
     const totalCities = Object.keys(citySummary).length;
     const citiesWithCoords = Object.keys(citySummary).filter(k => !!cityCoords[k]).length;
     
-    // Novas estatísticas solicitadas
     const citiesWithWeight = Object.values(citySummary).filter(c => c.totalWeight > 0).length;
     const citiesWithCredit = Object.values(citySummary).filter(c => Object.keys(c.creditClients).length > 0).length;
     const totalClientsWithWeight = new Set(deliveries.map(d => d.cliente)).size;
@@ -626,15 +659,56 @@ const CerbrasWeightsByCity = () => {
             <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs" onClick={() => loadLocalBase()} disabled={processing}>
               <Database size={14} /> Sincronizar
             </Button>
-            <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs" onClick={() => fileInputRef.current?.click()} disabled={processing}>
-              {processing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
-              Upload Pesos
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2 border-red-200 text-red-700 h-8 text-xs" onClick={() => creditInputRef.current?.click()} disabled={processing}>
-              {processing ? <Loader2 className="animate-spin" size={14} /> : <CreditCard size={14} />}
-              Upload Crédito
-            </Button>
+            
+            {/* Dropdown Pesos */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2 border-amber-200 text-amber-700 h-8 text-xs">
+                  {processing ? <Loader2 className="animate-spin" size={14} /> : <Upload size={14} />}
+                  Upload Pesos
+                  <ChevronDown size={12} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="gap-2">
+                  <FileUp size={16} /> Fazer Upload Excel
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowWeightsOnMap(!showWeightsOnMap)} className="gap-2">
+                  {showWeightsOnMap ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showWeightsOnMap ? "Ocultar no Mapa" : "Mostrar no Mapa"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={clearWeights} className="gap-2 text-red-600">
+                  <Trash2 size={16} /> Limpar Dados
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Dropdown Crédito */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2 border-red-200 text-red-700 h-8 text-xs">
+                  {processing ? <Loader2 className="animate-spin" size={14} /> : <CreditCard size={14} />}
+                  Upload Crédito
+                  <ChevronDown size={12} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => creditInputRef.current?.click()} className="gap-2">
+                  <FileUp size={16} /> Fazer Upload Excel
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowCreditsOnMap(!showCreditsOnMap)} className="gap-2">
+                  {showCreditsOnMap ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showCreditsOnMap ? "Ocultar no Mapa" : "Mostrar no Mapa"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={clearCredits} className="gap-2 text-red-600">
+                  <Trash2 size={16} /> Limpar Dados
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+          
           <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
           <input type="file" ref={creditInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleCreditUpload} />
 
