@@ -69,6 +69,9 @@ const CerbrasCollectionForecast = () => {
     setDebugText(cleanText);
     const orders: CollectionItem[] = [];
     
+    // Lógica Global de Transportadora: Verifica se 8402 existe no documento inteiro
+    const hasMidasCodeGlobal = cleanText.includes('8402');
+    
     // Busca por blocos de pedido
     const pedidoPattern = /(?:Pedido|N[º°.]?\s*Pedido|PEDIDO)\s*[:\-]?\s*(\d{5,10})/gi;
     let match;
@@ -98,13 +101,15 @@ const CerbrasCollectionForecast = () => {
 
       // Extração de campos
       const clienteMatch = segment.match(/(?:Cliente|CLIENTE)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|Endereço|Bairro|PEDIDO|Pedido|$))/i);
-      const produtosMatch = segment.match(/(?:Produto|Descrição|PRODUTO)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Qtd|Peso|Paletes|M2|Metragem|Valor|$))/i);
-      const m2Match = segment.match(/(?:M2|Metragem|M²)\s*[:\-]?\s*([\d.,]+)/i);
+      const produtosMatch = segment.match(/(?:Produto|Descrição|PRODUTO)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Qtd|Peso|Paletes|M2|Metragem|Valor|Quantidade|$))/i);
+      
+      // M² agora vem do campo "Quantidade" conforme solicitado
+      const m2Match = segment.match(/(?:Quantidade|M2|Metragem|M²)\s*[:\-]?\s*([\d.,]+)/i);
       const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes|PALETES|PLT)\s*[:\-]?\s*(\d+)/i);
       
-      // Lógica de Transportadora Reforçada (Busca pelo código 8402 em qualquer lugar do segmento)
-      const hasMidasCode = segment.includes('8402');
-      const transportadoraDefault = hasMidasCode ? 'Midas Log' : 'Cliente retira';
+      // Se o código global for 8402, define como Midas Log. Caso contrário, verifica no segmento.
+      const hasMidasCodeInSegment = segment.includes('8402');
+      const transportadoraDefault = (hasMidasCodeGlobal || hasMidasCodeInSegment) ? 'Midas Log' : 'Cliente retira';
 
       orders.push({
         id: Math.random().toString(36).substr(2, 9),
@@ -284,8 +289,8 @@ const CerbrasCollectionForecast = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-amber-500 scrollbar-track-slate-100">
+                <Table className="min-w-[1400px]">
                   <TableHeader className="bg-slate-50">
                     <TableRow>
                       <TableHead className="w-[100px] text-[10px] uppercase font-bold">Data</TableHead>
