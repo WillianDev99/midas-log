@@ -10,7 +10,8 @@ import {
   FileText, 
   Table as TableIcon,
   Plus,
-  X
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,53 +55,47 @@ const CerbrasCollectionForecast = () => {
   };
 
   const parseAllOrders = (text: string): CollectionItem[] => {
+    console.log("[CerbrasCollectionForecast] Iniciando extração de texto. Tamanho:", text.length);
     const orders: CollectionItem[] = [];
     
-    // Dividimos o texto por "Pedido:", ignorando o primeiro pedaço (cabeçalho geral)
-    const segments = text.split(/Pedido\s*:/i);
-    
-    const cleanNumber = (val: string | null) => {
-      if (!val) return 0;
-      // Remove pontos de milhar e troca vírgula por ponto decimal
-      return parseFloat(val.replace(/\./g, '').replace(',', '.')) || 0;
-    };
+    // Localizamos todas as ocorrências de "Pedido:" para segmentar o texto
+    const pedidoRegex = /Pedido\s*:/gi;
+    let match;
+    const indices: number[] = [];
+    while ((match = pedidoRegex.exec(text)) !== null) {
+      indices.push(match.index);
+    }
 
-    for (let i = 1; i < segments.length; i++) {
-      const segment = segments[i];
-      
-      // 1. Número do Pedido (está logo no início do segmento após o split)
-      const pedidoMatch = segment.match(/^\s*(\d+)/);
-      
-      // 2. Cliente (entre "Cliente:" e "Produto:" ou "UF:")
-      // Tentamos pegar o bloco de texto do cliente que pode ter quebras de linha
-      const clienteBlockMatch = segment.match(/Cliente\s*:\s*(.*?)\s*(?:Produto|Código do Produto|UF:)/i);
-      let cliente = "NÃO IDENTIFICADO";
-      if (clienteBlockMatch) {
-        // Limpamos informações de UF e CNPJ que podem estar na mesma linha no stream de texto
-        cliente = clienteBlockMatch[1]
-          .replace(/UF\s*:\s*[A-Z]{2}/i, '')
-          .replace(/CNPJ\s*:\s*[\d./-]+/i, '')
-          .trim()
-          .toUpperCase();
+    console.log("[CerbrasCollectionForecast] Blocos de pedidos encontrados:", indices.length);
+
+    if (indices.length === 0) {
+      // Tentativa secundária caso o PDF use "Nº Pedido" ou similar
+      const altRegex = /N[º°]\s*Pedido\s*:/gi;
+      while ((match = altRegex.exec(text)) !== null) {
+        indices.push(match.index);
       }
+    }
 
-      // 3. Peso
-      const pesoMatch = segment.match(/Peso\s*:\s*([\d.,]+)/i);
-      
-      // 4. Paletes
-      const paletesMatch = segment.match(/Paletes\s*:\s*(\d+)/i);
+    for (let i = 0; i < indices.length; i++) {
+      const start = indices[i];
+      const end = indices[i + 1] || text.length;
+      const segment = text.substring(start, end);
 
-      // 5. Cidade (Geralmente vem após o nome do cliente ou em um campo específico)
-      const cidadeMatch = segment.match(/Cidade\s*:\s*([^-\n]+)/i);
+      // Regex mais flexíveis para capturar os dados em cada segmento
+      const pedidoMatch = segment.match(/(?:Pedido|N[º°]\s*Pedido)\s*:\s*(\d+)/i);
+      const clienteMatch = segment.match(/Cliente\s*:\s*(.*?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|$))/i);
+      const pesoMatch = segment.match(/Peso\s*(?:Bruto)?\s*:\s*([\d.,]+)/i);
+      const paletesMatch = segment.match(/(?:Paletes|Qtd\s*Paletes)\s*:\s*(\d+)/i);
+      const cidadeMatch = segment.match(/Cidade\s*:\s*(.*?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|$))/i);
 
       if (pedidoMatch) {
         orders.push({
           id: Math.random().toString(36).substr(2, 9),
           data: new Date().toLocaleDateString('pt-BR'),
           pedido: pedidoMatch[1],
-          cliente: cliente,
+          cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
           cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
-          peso: pesoMatch ? cleanNumber(pesoMatch[1]) : 0,
+          peso: pesoMatch ? parseFloat(pesoMatch[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
           paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
           status: "AGUARDANDO"
         });
@@ -123,7 +118,7 @@ const CerbrasCollectionForecast = () => {
         const extractedFromThisFile = parseAllOrders(text);
         allExtractedItems = [...allExtractedItems, ...extractedFromThisFile];
       } catch (error) {
-        console.error("Erro ao processar PDF:", error);
+        console.error("[CerbrasCollectionForecast] Erro ao processar PDF:", error);
         showError(`Erro no arquivo: ${files[i].name}`);
       }
     }
@@ -132,11 +127,25 @@ const CerbrasCollectionForecast = () => {
       setItems(prev => [...prev, ...allExtractedItems]);
       showSuccess(`${allExtractedItems.length} pedidos extraídos com sucesso!`);
     } else {
-      showError("Nenhum pedido identificado nos arquivos.");
+      showError("Não foi possível identificar pedidos nos arquivos. Verifique se o PDF é de texto (não imagem).");
     }
     
     setProcessing(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const addNewRow = () => {
+    const newItem: CollectionItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      data: new Date().toLocaleDateString('pt-BR'),
+      cliente: "",
+      pedido: "",
+      cidade: "",
+      peso: 0,
+      paletes: 0,
+      status: "AGUARDANDO"
+    };
+    setItems(prev => [...prev, newItem]);
   };
 
   const updateItem = (id: string, field: keyof CollectionItem, value: any) => {
@@ -226,12 +235,25 @@ const CerbrasCollectionForecast = () => {
             <p className="text-slate-500 max-w-xs text-center mt-2">
               Selecione os arquivos PDF. O sistema irá identificar cada bloco de "Pedido" e criar uma linha na tabela.
             </p>
-            <Button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="mt-6 bg-amber-600 hover:bg-amber-700"
-            >
-              Selecionar Arquivos
-            </Button>
+            <div className="flex gap-4 mt-6">
+              <Button 
+                onClick={() => fileInputRef.current?.click()} 
+                className="bg-amber-600 hover:bg-amber-700"
+              >
+                Selecionar Arquivos
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={addNewRow}
+                className="border-slate-300"
+              >
+                Adicionar Manualmente
+              </Button>
+            </div>
+            <div className="mt-8 flex items-center gap-2 text-slate-400 text-xs">
+              <AlertCircle size={14} />
+              <span>Certifique-se que o PDF contém texto selecionável.</span>
+            </div>
           </div>
         ) : (
           <Card className="border-none shadow-md overflow-hidden">
@@ -246,14 +268,24 @@ const CerbrasCollectionForecast = () => {
                     Revise os dados extraídos. Cada bloco "Pedido" do PDF virou uma linha abaixo.
                   </CardDescription>
                 </div>
-                <Button 
-                  variant="destructive" 
-                  size="sm" 
-                  onClick={() => setItems([])}
-                  className="gap-2"
-                >
-                  <X size={16} /> Limpar Tudo
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={addNewRow}
+                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  >
+                    <Plus size={16} className="mr-1" /> Nova Linha
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => setItems([])}
+                    className="gap-2"
+                  >
+                    <X size={16} /> Limpar Tudo
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
