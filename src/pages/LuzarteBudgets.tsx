@@ -92,6 +92,8 @@ const LuzarteBudgets = () => {
 
   // Client Registration State
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
+  const [citiesList, setCitiesList] = useState<string[]>([]);
+  const [loadingCities, setLoadingCities] = useState(false);
   const [newClient, setNewClient] = useState({
     razao_social: "",
     cnpj: "",
@@ -104,6 +106,26 @@ const LuzarteBudgets = () => {
     fetchData();
     loadPriceBase();
   }, []);
+
+  // Busca cidades do IBGE quando o estado muda
+  useEffect(() => {
+    const fetchCities = async () => {
+      if (!newClient.estado) return;
+      setLoadingCities(true);
+      try {
+        const response = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${newClient.estado}/municipios`);
+        const data = await response.json();
+        setCitiesList(data.map((c: any) => c.nome).sort());
+        // Reseta a cidade se ela não pertencer ao novo estado
+        setNewClient(prev => ({ ...prev, cidade: "" }));
+      } catch (error) {
+        console.error("Erro ao buscar cidades:", error);
+      } finally {
+        setLoadingCities(false);
+      }
+    };
+    fetchCities();
+  }, [newClient.estado]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -382,7 +404,7 @@ const LuzarteBudgets = () => {
                         <DialogTrigger asChild>
                           <Button variant="outline" size="icon" className="shrink-0"><UserPlus size={18} /></Button>
                         </DialogTrigger>
-                        <DialogContent>
+                        <DialogContent className="max-w-md">
                           <DialogHeader>
                             <DialogTitle>Cadastrar Novo Cliente</DialogTitle>
                           </DialogHeader>
@@ -407,11 +429,20 @@ const LuzarteBudgets = () => {
                               </div>
                               <div className="space-y-2">
                                 <label className="text-xs font-bold">Cidade</label>
-                                <Input 
-                                  placeholder="Digite a cidade"
+                                <Select 
                                   value={newClient.cidade} 
-                                  onChange={(e) => setNewClient({...newClient, cidade: e.target.value.toUpperCase()})} 
-                                />
+                                  onValueChange={(v) => setNewClient({...newClient, cidade: v})}
+                                  disabled={loadingCities || citiesList.length === 0}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={loadingCities ? "Carregando..." : "Selecione a cidade"} />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-60">
+                                    {citiesList.map(city => (
+                                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
                             </div>
                             <div className="space-y-2">
@@ -428,7 +459,7 @@ const LuzarteBudgets = () => {
                             </div>
                           </div>
                           <DialogFooter>
-                            <Button onClick={handleRegisterClient} className="bg-amber-600 text-white">Cadastrar Cliente</Button>
+                            <Button onClick={handleRegisterClient} className="bg-amber-600 text-white w-full">Cadastrar Cliente</Button>
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
@@ -568,7 +599,7 @@ const LuzarteBudgets = () => {
           <div className="animate-in fade-in duration-500">
             <style>{`
               @media print {
-                @page { size: landscape; margin: 1cm; }
+                @page { size: portrait; margin: 1cm; }
                 body { background: white; }
                 .print-hidden { display: none !important; }
                 .print-container { width: 100% !important; max-width: none !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; }
