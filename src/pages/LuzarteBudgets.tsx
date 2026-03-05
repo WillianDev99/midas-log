@@ -15,7 +15,9 @@ import {
   UserPlus,
   ChevronRight,
   History,
-  Calculator
+  Calculator,
+  X,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -69,22 +71,27 @@ interface BudgetItem {
   quantidade: number;
 }
 
+const ESTADOS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
+
 const LuzarteBudgets = () => {
   const { user } = useAuth();
   const [budgets, setBudgets] = useState<any[]>([]);
   const [clients, setClients] = useState<LuzarteClient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
   const [priceBase, setPriceBase] = useState<Record<string, any[]>>({});
   
   // Form State
+  const [budgetName, setBudgetName] = useState("");
   const [selectedClient, setSelectedClient] = useState<LuzarteClient | null>(null);
   const [sellerName, setSellerName] = useState("");
   const [paymentTerm, setPaymentTerm] = useState("30/45/60");
   const [items, setItems] = useState<BudgetItem[]>([]);
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
+  const [viewingBudget, setViewingBudget] = useState<any>(null);
 
   // Client Registration State
+  const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
   const [newClient, setNewClient] = useState({
     razao_social: "",
     cnpj: "",
@@ -132,7 +139,7 @@ const LuzarteBudgets = () => {
   };
 
   const handleRegisterClient = async () => {
-    if (!newClient.razao_social || !newClient.cnpj) {
+    if (!newClient.razao_social || !newClient.cnpj || !newClient.cidade) {
       showError("Preencha os campos obrigatórios.");
       return;
     }
@@ -145,6 +152,8 @@ const LuzarteBudgets = () => {
       if (error) throw error;
       setClients([...clients, data]);
       setSelectedClient(data);
+      setIsClientDialogOpen(false);
+      setNewClient({ razao_social: "", cnpj: "", cidade: "", estado: "CE", tabela_precos: "ATACADO" });
       showSuccess("Cliente cadastrado com sucesso!");
     } catch (error: any) {
       showError(error.message);
@@ -171,8 +180,16 @@ const LuzarteBudgets = () => {
       
       const updated = { ...item, [field]: value };
       
+      // Se mudar o produto, limpa os campos dependentes
+      if (field === 'produto') {
+        updated.forma = "";
+        updated.cor = "";
+        updated.litros = "";
+        updated.valor = 0;
+      }
+
       // Lógica de preenchimento automático de valor
-      if (selectedClient && (field === 'produto' || field === 'cor' || field === 'litros' || field === 'forma')) {
+      if (selectedClient && updated.produto && updated.cor) {
         const table = selectedClient.tabela_precos.toUpperCase();
         const data = priceBase[table] || [];
         
@@ -201,6 +218,7 @@ const LuzarteBudgets = () => {
     const total = items.reduce((acc, item) => acc + (item.valor * item.quantidade), 0);
     const budgetData = {
       user_id: user?.id,
+      name: budgetName || `Orçamento ${selectedClient.razao_social}`,
       client_id: selectedClient.id,
       seller_name: sellerName,
       payment_term: paymentTerm,
@@ -216,7 +234,7 @@ const LuzarteBudgets = () => {
         await supabase.from('luzarte_budgets').insert([budgetData]);
         showSuccess("Orçamento salvo!");
       }
-      setIsCreating(false);
+      setViewMode('list');
       setEditingBudgetId(null);
       setItems([]);
       fetchData();
@@ -226,22 +244,24 @@ const LuzarteBudgets = () => {
   };
 
   const copyBudget = (budget: any) => {
+    setBudgetName(`CÓPIA - ${budget.name}`);
     setSelectedClient(budget.luzarte_clients);
     setSellerName(budget.seller_name);
     setPaymentTerm(budget.payment_term);
     setItems(budget.items.map((item: any) => ({ ...item, id: Math.random().toString(36).substr(2, 9) })));
     setEditingBudgetId(null);
-    setIsCreating(true);
-    showSuccess("Cópia criada! Ajuste o que for necessário e salve.");
+    setViewMode('form');
+    showSuccess("Cópia criada! Você pode renomear e ajustar os itens.");
   };
 
   const editBudget = (budget: any) => {
+    setBudgetName(budget.name);
     setSelectedClient(budget.luzarte_clients);
     setSellerName(budget.seller_name);
     setPaymentTerm(budget.payment_term);
     setItems(budget.items);
     setEditingBudgetId(budget.id);
-    setIsCreating(true);
+    setViewMode('form');
   };
 
   const deleteBudget = async (id: string) => {
@@ -262,12 +282,24 @@ const LuzarteBudgets = () => {
     return Array.from(new Set(data.map(row => String(row.NOME || '').toUpperCase()))).sort();
   }, [selectedClient, priceBase]);
 
-  const getOptionsForProduct = (productName: string, field: 'COR' | 'LITROS' | 'FORMA') => {
-    if (!selectedClient || !productName) return [];
+  const getOptionsForProduct = (item: BudgetItem, field: 'COR' | 'LITROS' | 'FORMA') => {
+    if (!selectedClient || !item.produto) return [];
     const table = selectedClient.tabela_precos.toUpperCase();
     const data = priceBase[table] || [];
-    return Array.from(new Set(data
-      .filter(row => String(row.NOME || '').toUpperCase() === productName.toUpperCase())
+    
+    let filtered = data.filter(row => String(row.NOME || '').toUpperCase() === item.produto.toUpperCase());
+    
+    // Se estivermos buscando Litros, filtramos também pela Cor já selecionada
+    if (field === 'LITROS' && item.cor) {
+      filtered = filtered.filter(row => String(row.COR || '').toUpperCase() === item.cor.toUpperCase());
+    }
+    
+    // Se estivermos buscando Cor, filtramos pela Forma se já selecionada
+    if (field === 'COR' && item.forma) {
+      filtered = filtered.filter(row => String(row.FORMA || '').toUpperCase() === item.forma.toUpperCase());
+    }
+
+    return Array.from(new Set(filtered
       .map(row => String(row[field] || '').toUpperCase())
       .filter(val => val !== "" && val !== "UNDEFINED")
     )).sort();
@@ -276,31 +308,47 @@ const LuzarteBudgets = () => {
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+    <div className="min-h-screen bg-slate-50 flex flex-col print:bg-white">
+      <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center sticky top-0 z-50 shadow-sm print:hidden">
         <div className="flex items-center gap-4">
-          <Link to="/admin">
-            <Button variant="ghost" size="icon"><ArrowLeft /></Button>
-          </Link>
+          <Button variant="ghost" size="icon" onClick={() => setViewMode('list')}><ArrowLeft /></Button>
           <div>
             <h1 className="text-xl font-bold text-slate-900">Orçamentos Luzarte</h1>
             <p className="text-slate-500 text-xs">Gestão de orçamentos e tabelas de preços.</p>
           </div>
         </div>
-        {!isCreating && (
-          <Button onClick={() => { setIsCreating(true); setEditingBudgetId(null); setItems([]); setSelectedClient(null); }} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+        {viewMode === 'list' && (
+          <Button onClick={() => { setViewMode('form'); setEditingBudgetId(null); setItems([]); setSelectedClient(null); setBudgetName(""); }} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
             <Plus size={18} /> Novo Orçamento
+          </Button>
+        )}
+        {viewMode === 'view' && (
+          <Button onClick={() => window.print()} className="bg-slate-900 text-white gap-2">
+            <Printer size={18} /> Imprimir (Ctrl+P)
           </Button>
         )}
       </header>
 
       <main className="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full">
-        {isCreating ? (
+        {viewMode === 'form' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Card className="border-none shadow-lg">
               <CardHeader className="bg-slate-900 text-white rounded-t-xl">
-                <CardTitle>{editingBudgetId ? "Editar Orçamento" : "Novo Orçamento"}</CardTitle>
-                <CardDescription className="text-slate-400">Preencha os dados do vendedor e cliente para começar.</CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>{editingBudgetId ? "Editar Orçamento" : "Novo Orçamento"}</CardTitle>
+                    <CardDescription className="text-slate-400">Configure os detalhes da proposta comercial.</CardDescription>
+                  </div>
+                  <div className="w-72">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block">Nome do Orçamento</label>
+                    <Input 
+                      placeholder="Ex: Orçamento Obra X" 
+                      className="bg-white/10 border-white/20 text-white h-9"
+                      value={budgetName}
+                      onChange={(e) => setBudgetName(e.target.value)}
+                    />
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
                 <div className="grid md:grid-cols-3 gap-6">
@@ -330,7 +378,7 @@ const LuzarteBudgets = () => {
                         </SelectContent>
                       </Select>
                       
-                      <Dialog>
+                      <Dialog open={isClientDialogOpen} onOpenChange={setIsClientDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="icon" className="shrink-0"><UserPlus size={18} /></Button>
                         </DialogTrigger>
@@ -349,20 +397,27 @@ const LuzarteBudgets = () => {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <label className="text-xs font-bold">Cidade</label>
-                                <Input value={newClient.cidade} onChange={(e) => setNewClient({...newClient, cidade: e.target.value.toUpperCase()})} />
+                                <label className="text-xs font-bold">Estado</label>
+                                <Select value={newClient.estado} onValueChange={(v) => setNewClient({...newClient, estado: v})}>
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {ESTADOS.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
                               </div>
                               <div className="space-y-2">
-                                <label className="text-xs font-bold">Estado</label>
-                                <Input value={newClient.estado} onChange={(e) => setNewClient({...newClient, estado: e.target.value.toUpperCase()})} maxLength={2} />
+                                <label className="text-xs font-bold">Cidade</label>
+                                <Input 
+                                  placeholder="Digite a cidade"
+                                  value={newClient.cidade} 
+                                  onChange={(e) => setNewClient({...newClient, cidade: e.target.value.toUpperCase()})} 
+                                />
                               </div>
                             </div>
                             <div className="space-y-2">
                               <label className="text-xs font-bold">Tabela de Preços</label>
                               <Select value={newClient.tabela_precos} onValueChange={(v) => setNewClient({...newClient, tabela_precos: v})}>
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="ATACADO">ATACADO</SelectItem>
                                   <SelectItem value="VAREJO 15.000">VAREJO 15.000</SelectItem>
@@ -383,9 +438,7 @@ const LuzarteBudgets = () => {
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase text-slate-500">Prazo de Pagamento</label>
                     <Select value={paymentTerm} onValueChange={setPaymentTerm}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="30/45/60">30/45/60 DIAS</SelectItem>
                         <SelectItem value="ANTECIPADO">ANTECIPADO</SelectItem>
@@ -422,22 +475,18 @@ const LuzarteBudgets = () => {
                         </TableHeader>
                         <TableBody>
                           {items.map((item, idx) => {
-                            const formas = getOptionsForProduct(item.produto, 'FORMA');
-                            const cores = getOptionsForProduct(item.produto, 'COR');
-                            const litros = getOptionsForProduct(item.produto, 'LITROS');
+                            const formas = getOptionsForProduct(item, 'FORMA');
+                            const cores = getOptionsForProduct(item, 'COR');
+                            const litros = getOptionsForProduct(item, 'LITROS');
 
                             return (
                               <TableRow key={item.id}>
                                 <TableCell className="font-bold text-slate-400">{idx + 1}</TableCell>
                                 <TableCell>
                                   <Select value={item.produto} onValueChange={(v) => updateItem(item.id, 'produto', v)}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue placeholder="Produto" />
-                                    </SelectTrigger>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Produto" /></SelectTrigger>
                                     <SelectContent>
-                                      {availableProducts.map(p => (
-                                        <SelectItem key={p} value={p}>{p}</SelectItem>
-                                      ))}
+                                      {availableProducts.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
@@ -447,25 +496,17 @@ const LuzarteBudgets = () => {
                                     onValueChange={(v) => updateItem(item.id, 'forma', v)}
                                     disabled={formas.length === 0}
                                   >
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue placeholder="-" />
-                                    </SelectTrigger>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
                                     <SelectContent>
-                                      {formas.map(f => (
-                                        <SelectItem key={f} value={f}>{f}</SelectItem>
-                                      ))}
+                                      {formas.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
                                 <TableCell>
                                   <Select value={item.cor} onValueChange={(v) => updateItem(item.id, 'cor', v)}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue placeholder="Cor" />
-                                    </SelectTrigger>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Cor" /></SelectTrigger>
                                     <SelectContent>
-                                      {cores.map(c => (
-                                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                                      ))}
+                                      {cores.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
@@ -475,31 +516,17 @@ const LuzarteBudgets = () => {
                                     onValueChange={(v) => updateItem(item.id, 'litros', v)}
                                     disabled={litros.length === 0}
                                   >
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue placeholder="-" />
-                                    </SelectTrigger>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
                                     <SelectContent>
-                                      {litros.map(l => (
-                                        <SelectItem key={l} value={l}>{l}</SelectItem>
-                                      ))}
+                                      {litros.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
                                 <TableCell>
-                                  <Input 
-                                    type="number" 
-                                    className="h-8 text-xs" 
-                                    value={item.quantidade} 
-                                    onChange={(e) => updateItem(item.id, 'quantidade', parseInt(e.target.value) || 0)} 
-                                  />
+                                  <Input type="number" className="h-8 text-xs" value={item.quantidade} onChange={(e) => updateItem(item.id, 'quantidade', parseInt(e.target.value) || 0)} />
                                 </TableCell>
                                 <TableCell>
-                                  <Input 
-                                    type="number" 
-                                    className="h-8 text-xs font-bold text-blue-600" 
-                                    value={item.valor} 
-                                    onChange={(e) => updateItem(item.id, 'valor', parseFloat(e.target.value) || 0)} 
-                                  />
+                                  <Input type="number" className="h-8 text-xs font-bold text-blue-600" value={item.valor} onChange={(e) => updateItem(item.id, 'valor', parseFloat(e.target.value) || 0)} />
                                 </TableCell>
                                 <TableCell className="font-bold text-slate-900">
                                   {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -528,14 +555,120 @@ const LuzarteBudgets = () => {
                 )}
               </CardContent>
               <CardFooter className="bg-slate-50 p-6 flex justify-between border-t">
-                <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancelar</Button>
+                <Button variant="ghost" onClick={() => setViewMode('list')}>Cancelar</Button>
                 <Button onClick={saveBudget} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
                   <Save size={18} /> {editingBudgetId ? "Atualizar Orçamento" : "Salvar Orçamento"}
                 </Button>
               </CardFooter>
             </Card>
           </div>
-        ) : (
+        )}
+
+        {viewMode === 'view' && viewingBudget && (
+          <div className="animate-in fade-in duration-500">
+            <style>{`
+              @media print {
+                @page { size: landscape; margin: 1cm; }
+                body { background: white; }
+                .print-hidden { display: none !important; }
+                .print-container { width: 100% !important; max-width: none !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; }
+                .print-table th { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; }
+                .print-header { border-bottom: 2px solid #f59e0b !important; -webkit-print-color-adjust: exact; }
+              }
+            `}</style>
+            
+            <Card className="border-none shadow-xl print-container">
+              <CardHeader className="border-b-2 border-amber-500 pb-6 print-header">
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-4">
+                    <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
+                    <div>
+                      <CardTitle className="text-2xl font-bold text-slate-900 uppercase">{viewingBudget.name}</CardTitle>
+                      <CardDescription className="text-slate-500 font-medium">
+                        Emitido em: {new Date(viewingBudget.created_at).toLocaleDateString('pt-BR')}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-slate-900">MIDAS LOGÍSTICA</p>
+                    <p className="text-xs text-slate-500">Vendedor: {viewingBudget.seller_name}</p>
+                  </div>
+                </div>
+              </CardHeader>
+              
+              <CardContent className="p-8 space-y-8">
+                <div className="grid grid-cols-2 gap-8 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Dados do Cliente</h4>
+                    <p className="text-lg font-bold text-slate-900">{viewingBudget.luzarte_clients?.razao_social}</p>
+                    <p className="text-sm text-slate-600">CNPJ: {viewingBudget.luzarte_clients?.cnpj}</p>
+                    <p className="text-sm text-slate-600">{viewingBudget.luzarte_clients?.cidade} - {viewingBudget.luzarte_clients?.estado}</p>
+                  </div>
+                  <div className="space-y-2 text-right">
+                    <h4 className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Condições Comerciais</h4>
+                    <p className="text-sm font-bold text-slate-900">Prazo: {viewingBudget.payment_term}</p>
+                    <p className="text-sm text-slate-600">Tabela: {viewingBudget.luzarte_clients?.tabela_precos}</p>
+                  </div>
+                </div>
+
+                <div className="border rounded-xl overflow-hidden">
+                  <Table className="print-table">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow>
+                        <TableHead className="w-[50px] font-bold text-slate-900">#</TableHead>
+                        <TableHead className="font-bold text-slate-900">Produto</TableHead>
+                        <TableHead className="font-bold text-slate-900">Forma</TableHead>
+                        <TableHead className="font-bold text-slate-900">Cor</TableHead>
+                        <TableHead className="font-bold text-slate-900">Litros</TableHead>
+                        <TableHead className="text-center font-bold text-slate-900">Qtd</TableHead>
+                        <TableHead className="text-right font-bold text-slate-900">V. Unitário</TableHead>
+                        <TableHead className="text-right font-bold text-slate-900">Subtotal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {viewingBudget.items.map((item: any, idx: number) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">{idx + 1}</TableCell>
+                          <TableCell className="font-bold uppercase">{item.produto}</TableCell>
+                          <TableCell className="uppercase">{item.forma || '-'}</TableCell>
+                          <TableCell className="uppercase">{item.cor}</TableCell>
+                          <TableCell className="uppercase">{item.litros || '-'}</TableCell>
+                          <TableCell className="text-center font-bold">{item.quantidade}</TableCell>
+                          <TableCell className="text-right">
+                            {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </TableCell>
+                          <TableCell className="text-right font-bold">
+                            {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex justify-end">
+                  <div className="bg-slate-900 text-white p-6 rounded-2xl min-w-[300px] text-right shadow-lg">
+                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Valor Total da Proposta</p>
+                    <p className="text-4xl font-bold">
+                      {viewingBudget.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+              
+              <CardFooter className="border-t p-8 flex justify-between items-center bg-slate-50/50">
+                <div className="text-[10px] text-slate-400 uppercase font-medium">
+                  Este orçamento tem validade de 7 dias a partir da data de emissão.
+                </div>
+                <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                  <Check size={16} /> Midas Logística - Eficiência em Movimento
+                </div>
+              </CardFooter>
+            </Card>
+          </div>
+        )}
+
+        {viewMode === 'list' && (
           <div className="space-y-8">
             <div className="grid md:grid-cols-4 gap-6">
               <Card className="border-none shadow-sm bg-white">
@@ -574,7 +707,7 @@ const LuzarteBudgets = () => {
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => deleteBudget(budget.id)} title="Excluir"><Trash2 size={16} /></Button>
                         </div>
                       </div>
-                      <CardTitle className="mt-4 text-lg uppercase truncate">{budget.luzarte_clients?.razao_social}</CardTitle>
+                      <CardTitle className="mt-4 text-lg uppercase truncate">{budget.name || budget.luzarte_clients?.razao_social}</CardTitle>
                       <CardDescription className="flex items-center gap-2">
                         {new Date(budget.created_at).toLocaleDateString('pt-BR')} • {budget.seller_name}
                       </CardDescription>
@@ -584,7 +717,11 @@ const LuzarteBudgets = () => {
                         <span className="text-xs font-bold text-slate-500 uppercase">{budget.items.length} itens</span>
                         <span className="font-bold text-slate-900">{budget.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                       </div>
-                      <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600"
+                        onClick={() => { setViewingBudget(budget); setViewMode('view'); }}
+                      >
                         Visualizar Detalhes
                         <ChevronRight size={16} />
                       </Button>
@@ -596,7 +733,7 @@ const LuzarteBudgets = () => {
                   <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
                     <FileText className="mx-auto text-slate-300 mb-4" size={48} />
                     <p className="text-slate-500">Nenhum orçamento encontrado.</p>
-                    <Button variant="link" className="text-amber-600" onClick={() => setIsCreating(true)}>Criar primeiro orçamento</Button>
+                    <Button variant="link" className="text-amber-600" onClick={() => setViewMode('form')}>Criar primeiro orçamento</Button>
                   </div>
                 )}
               </div>
