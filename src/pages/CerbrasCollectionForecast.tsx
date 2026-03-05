@@ -13,9 +13,7 @@ import {
   X,
   AlertCircle,
   ChevronDown,
-  ChevronUp,
-  Truck,
-  Building2
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -36,11 +34,10 @@ interface CollectionItem {
   segmento: 'Varejo' | 'Engenharia';
   cliente: string;
   pedido: string;
-  cidade: string;
-  peso: number;
-  paletes: number;
+  produtos: string;
+  plt: number;
+  m2: number;
   transportadora: 'Midas Log' | 'Cliente retira';
-  status: string;
 }
 
 const CerbrasCollectionForecast = () => {
@@ -64,6 +61,7 @@ const CerbrasCollectionForecast = () => {
 
   const parseAllOrders = (text: string): CollectionItem[] => {
     let cleanText = text;
+    // Normalização de espaços fantasmas
     if (text.match(/P\s*e\s*d\s*i\s*d\s*o/i)) {
       cleanText = text.replace(/([A-Za-z0-9])\s(?=[A-Za-z0-9]\s)/g, '$1');
     }
@@ -71,6 +69,7 @@ const CerbrasCollectionForecast = () => {
     setDebugText(cleanText);
     const orders: CollectionItem[] = [];
     
+    // Busca por blocos de pedido
     const pedidoPattern = /(?:Pedido|N[º°.]?\s*Pedido|PEDIDO)\s*[:\-]?\s*(\d{5,10})/gi;
     let match;
     const foundStarts = [];
@@ -97,15 +96,15 @@ const CerbrasCollectionForecast = () => {
       const end = foundStarts[i + 1] ? foundStarts[i + 1].index : cleanText.length;
       const segment = cleanText.substring(start, end).replace(/\s+/g, ' ');
 
+      // Extração de campos
       const clienteMatch = segment.match(/(?:Cliente|CLIENTE)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|Endereço|Bairro|PEDIDO|Pedido|$))/i);
-      const pesoMatch = segment.match(/(?:Peso|PESO)\s*(?:Bruto|Líquido)?\s*[:\-]?\s*([\d.,]+)/i);
-      const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes|PALETES)\s*[:\-]?\s*(\d+)/i);
-      const cidadeMatch = segment.match(/(?:Cidade|CIDADE)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|CEP|PEDIDO|Pedido|$))/i);
+      const produtosMatch = segment.match(/(?:Produto|Descrição|PRODUTO)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Qtd|Peso|Paletes|M2|Metragem|Valor|$))/i);
+      const m2Match = segment.match(/(?:M2|Metragem|M²)\s*[:\-]?\s*([\d.,]+)/i);
+      const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes|PALETES|PLT)\s*[:\-]?\s*(\d+)/i);
       
-      // Lógica de Transportadora
-      const transpMatch = segment.match(/(?:Transportadora|Transp|Redespacho)\s*[:\-]?\s*(\d{4})/i);
-      const codTransp = transpMatch ? transpMatch[1] : "";
-      const transportadoraDefault = codTransp === '8402' ? 'Midas Log' : 'Cliente retira';
+      // Lógica de Transportadora Reforçada (Busca pelo código 8402 em qualquer lugar do segmento)
+      const hasMidasCode = segment.includes('8402');
+      const transportadoraDefault = hasMidasCode ? 'Midas Log' : 'Cliente retira';
 
       orders.push({
         id: Math.random().toString(36).substr(2, 9),
@@ -114,11 +113,10 @@ const CerbrasCollectionForecast = () => {
         segmento: "Varejo",
         cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
         pedido: foundStarts[i].pedido,
-        cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
-        peso: pesoMatch ? parseFloat(pesoMatch[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
-        paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
-        transportadora: transportadoraDefault,
-        status: "AGUARDANDO"
+        produtos: produtosMatch ? produtosMatch[1].trim().toUpperCase() : "",
+        plt: paletesMatch ? parseInt(paletesMatch[1]) : 0,
+        m2: m2Match ? parseFloat(m2Match[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
+        transportadora: transportadoraDefault
       });
     }
     
@@ -163,11 +161,10 @@ const CerbrasCollectionForecast = () => {
       segmento: "Varejo",
       cliente: "",
       pedido: "",
-      cidade: "",
-      peso: 0,
-      paletes: 0,
-      transportadora: "Cliente retira",
-      status: "AGUARDANDO"
+      produtos: "",
+      plt: 0,
+      m2: 0,
+      transportadora: "Cliente retira"
     };
     setItems(prev => [...prev, newItem]);
   };
@@ -188,12 +185,11 @@ const CerbrasCollectionForecast = () => {
       'REPRESENTAÇÃO': item.representacao,
       'SEGMENTO': item.segmento,
       'CLIENTE': item.cliente,
-      'PEDIDO': item.pedido,
-      'CIDADE': item.cidade,
-      'PESO (KG)': item.peso,
-      'PALETES': item.paletes,
-      'TRANSPORTADORA/RETIRA': item.transportadora,
-      'STATUS': item.status
+      'Nº PEDIDO': item.pedido,
+      'PRODUTOS': item.produtos,
+      'PLT': item.plt,
+      'M²': item.m2,
+      'TRANSPORTADORA/RETIRA': item.transportadora
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -201,7 +197,7 @@ const CerbrasCollectionForecast = () => {
     XLSX.utils.book_append_sheet(wb, ws, "Previsão de Coleta");
     
     const wscols = [
-      {wch: 12}, {wch: 25}, {wch: 15}, {wch: 45}, {wch: 15}, {wch: 25}, {wch: 15}, {wch: 10}, {wch: 20}, {wch: 20}
+      {wch: 12}, {wch: 25}, {wch: 15}, {wch: 45}, {wch: 15}, {wch: 40}, {wch: 8}, {wch: 12}, {wch: 25}
     ];
     ws['!cols'] = wscols;
 
@@ -296,12 +292,11 @@ const CerbrasCollectionForecast = () => {
                       <TableHead className="w-[180px] text-[10px] uppercase font-bold">Representação</TableHead>
                       <TableHead className="w-[130px] text-[10px] uppercase font-bold">Segmento</TableHead>
                       <TableHead className="min-w-[250px] text-[10px] uppercase font-bold">Cliente</TableHead>
-                      <TableHead className="w-[120px] text-[10px] uppercase font-bold">Pedido</TableHead>
-                      <TableHead className="w-[180px] text-[10px] uppercase font-bold">Cidade</TableHead>
-                      <TableHead className="w-[100px] text-[10px] uppercase font-bold">Peso (KG)</TableHead>
-                      <TableHead className="w-[80px] text-[10px] uppercase font-bold">Plts</TableHead>
-                      <TableHead className="w-[160px] text-[10px] uppercase font-bold">Logística</TableHead>
-                      <TableHead className="w-[140px] text-[10px] uppercase font-bold">Status</TableHead>
+                      <TableHead className="w-[120px] text-[10px] uppercase font-bold">Nº Pedido</TableHead>
+                      <TableHead className="min-w-[200px] text-[10px] uppercase font-bold">Produtos</TableHead>
+                      <TableHead className="w-[80px] text-[10px] uppercase font-bold">PLT</TableHead>
+                      <TableHead className="w-[100px] text-[10px] uppercase font-bold">M²</TableHead>
+                      <TableHead className="w-[180px] text-[10px] uppercase font-bold">Transportadora/Retira</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -331,13 +326,13 @@ const CerbrasCollectionForecast = () => {
                           <Input value={item.pedido} onChange={(e) => updateItem(item.id, 'pedido', e.target.value)} className="h-8 text-[10px] border-none bg-transparent" />
                         </TableCell>
                         <TableCell>
-                          <Input value={item.cidade} onChange={(e) => updateItem(item.id, 'cidade', e.target.value.toUpperCase())} className="h-8 text-[10px] border-none bg-transparent" />
+                          <Input value={item.produtos} onChange={(e) => updateItem(item.id, 'produtos', e.target.value.toUpperCase())} className="h-8 text-[10px] border-none bg-transparent" />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" value={item.peso} onChange={(e) => updateItem(item.id, 'peso', parseFloat(e.target.value) || 0)} className="h-8 text-[10px] border-none bg-transparent text-blue-600 font-bold" />
+                          <Input type="number" value={item.plt} onChange={(e) => updateItem(item.id, 'plt', parseInt(e.target.value) || 0)} className="h-8 text-[10px] border-none bg-transparent font-bold" />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" value={item.paletes} onChange={(e) => updateItem(item.id, 'paletes', parseInt(e.target.value) || 0)} className="h-8 text-[10px] border-none bg-transparent" />
+                          <Input type="number" value={item.m2} onChange={(e) => updateItem(item.id, 'm2', parseFloat(e.target.value) || 0)} className="h-8 text-[10px] border-none bg-transparent text-blue-600 font-bold" />
                         </TableCell>
                         <TableCell>
                           <select 
@@ -347,18 +342,6 @@ const CerbrasCollectionForecast = () => {
                           >
                             <option value="Midas Log">Midas Log</option>
                             <option value="Cliente retira">Cliente retira</option>
-                          </select>
-                        </TableCell>
-                        <TableCell>
-                          <select 
-                            value={item.status}
-                            onChange={(e) => updateItem(item.id, 'status', e.target.value)}
-                            className="w-full h-8 text-[10px] font-bold rounded border-none bg-slate-100 px-1"
-                          >
-                            <option value="AGUARDANDO">AGUARDANDO</option>
-                            <option value="COLETADO">COLETADO</option>
-                            <option value="EM ROTA">EM ROTA</option>
-                            <option value="ENTREGUE">ENTREGUE</option>
                           </select>
                         </TableCell>
                         <TableCell>
@@ -372,8 +355,8 @@ const CerbrasCollectionForecast = () => {
               <div className="p-4 bg-slate-50 border-t flex justify-between items-center">
                 <div className="flex gap-6">
                   <div className="text-xs"><span className="text-slate-500 uppercase font-bold">Total Pedidos:</span><span className="ml-2 font-bold text-slate-900">{items.length}</span></div>
-                  <div className="text-xs"><span className="text-slate-500 uppercase font-bold">Peso Total:</span><span className="ml-2 font-bold text-blue-600">{items.reduce((acc, i) => acc + i.peso, 0).toLocaleString('pt-BR')} KG</span></div>
-                  <div className="text-xs"><span className="text-slate-500 uppercase font-bold">Total Paletes:</span><span className="ml-2 font-bold text-amber-700">{items.reduce((acc, i) => acc + i.paletes, 0)}</span></div>
+                  <div className="text-xs"><span className="text-slate-500 uppercase font-bold">Total M²:</span><span className="ml-2 font-bold text-blue-600">{items.reduce((acc, i) => acc + i.m2, 0).toLocaleString('pt-BR')} M²</span></div>
+                  <div className="text-xs"><span className="text-slate-500 uppercase font-bold">Total Paletes:</span><span className="ml-2 font-bold text-amber-700">{items.reduce((acc, i) => acc + i.plt, 0)}</span></div>
                 </div>
               </div>
             </CardContent>
