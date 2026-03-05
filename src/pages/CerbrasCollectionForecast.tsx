@@ -11,7 +11,9 @@ import {
   Table as TableIcon,
   Plus,
   X,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,8 +24,8 @@ import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configuração do Worker do PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configuração do Worker do PDF.js para a versão 5+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface CollectionItem {
   id: string;
@@ -39,6 +41,8 @@ interface CollectionItem {
 const CerbrasCollectionForecast = () => {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [debugText, setDebugText] = useState("");
+  const [showDebug, setShowDebug] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
@@ -48,46 +52,65 @@ const CerbrasCollectionForecast = () => {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      // Unimos os itens com espaço para manter a continuidade das frases
+      // Unimos os itens mantendo a estrutura básica
       fullText += textContent.items.map((item: any) => item.str).join(" ") + "\n";
     }
     return fullText;
   };
 
   const parseAllOrders = (text: string): CollectionItem[] => {
-    console.log("[CerbrasCollectionForecast] Texto extraído (primeiros 500 chars):", text.substring(0, 500));
+    // 1. Limpeza de "Ghost Spaces" (comum em PDFs onde 'Pedido' vira 'P e d i d o')
+    // Se detectarmos muitos espaços entre letras, tentamos normalizar
+    let cleanText = text;
+    if (text.match(/P\s*e\s*d\s*i\s*d\s*o/i)) {
+      // Remove espaços entre letras isoladas, mas mantém espaços entre palavras
+      cleanText = text.replace(/([A-Za-z0-9])\s(?=[A-Za-z0-9]\s)/g, '$1');
+    }
+    
+    setDebugText(cleanText); // Para visualização se necessário
+    
     const orders: CollectionItem[] = [];
     
-    // Regex ultra-permissiva para encontrar o início de um pedido
-    // Procura por "Pedido" ou "Nº Pedido" seguido opcionalmente por pontuação e então números
-    const pedidoPattern = /(?:Pedido|N[º°.]?\s*Pedido)\s*[:\-]?\s*(\d+)/gi;
+    // 2. Regex de busca de Pedido (Ultra flexível)
+    // Busca "Pedido", "Nº Pedido", "PEDIDO" seguido de qualquer coisa e então números
+    const pedidoPattern = /(?:Pedido|N[º°.]?\s*Pedido|PEDIDO)\s*[:\-]?\s*(\d{5,10})/gi;
     let match;
-    const matches = [];
+    const foundStarts = [];
     
-    while ((match = pedidoPattern.exec(text)) !== null) {
-      matches.push({
+    while ((match = pedidoPattern.exec(cleanText)) !== null) {
+      foundStarts.push({
         index: match.index,
         pedido: match[1]
       });
     }
 
-    console.log("[CerbrasCollectionForecast] Pedidos encontrados:", matches.length);
+    // 3. Se não achou nada com a palavra "Pedido", tenta buscar números de 6-7 dígitos (fallback)
+    if (foundStarts.length === 0) {
+      const fallbackPattern = /\b(\d{6,7})\b/g;
+      while ((match = fallbackPattern.exec(cleanText)) !== null) {
+        foundStarts.push({
+          index: match.index,
+          pedido: match[1]
+        });
+      }
+    }
 
-    for (let i = 0; i < matches.length; i++) {
-      const start = matches[i].index;
-      const end = matches[i + 1] ? matches[i + 1].index : text.length;
-      const segment = text.substring(start, end);
+    // 4. Processa cada bloco encontrado
+    for (let i = 0; i < foundStarts.length; i++) {
+      const start = foundStarts[i].index;
+      const end = foundStarts[i + 1] ? foundStarts[i + 1].index : cleanText.length;
+      const segment = cleanText.substring(start, end).replace(/\s+/g, ' ');
 
-      // Dentro do segmento do pedido, buscamos os outros campos com regex flexíveis
-      const clienteMatch = segment.match(/Cliente\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|Endereço|Bairro|$))/i);
-      const pesoMatch = segment.match(/Peso\s*(?:Bruto|Líquido)?\s*[:\-]?\s*([\d.,]+)/i);
-      const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes)\s*[:\-]?\s*(\d+)/i);
-      const cidadeMatch = segment.match(/Cidade\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|CEP|$))/i);
+      // Extração de campos com Regex tolerantes
+      const clienteMatch = segment.match(/(?:Cliente|CLIENTE)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|Endereço|Bairro|PEDIDO|Pedido|$))/i);
+      const pesoMatch = segment.match(/(?:Peso|PESO)\s*(?:Bruto|Líquido)?\s*[:\-]?\s*([\d.,]+)/i);
+      const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes|PALETES)\s*[:\-]?\s*(\d+)/i);
+      const cidadeMatch = segment.match(/(?:Cidade|CIDADE)\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|CEP|PEDIDO|Pedido|$))/i);
 
       orders.push({
         id: Math.random().toString(36).substr(2, 9),
         data: new Date().toLocaleDateString('pt-BR'),
-        pedido: matches[i].pedido,
+        pedido: foundStarts[i].pedido,
         cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
         cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
         peso: pesoMatch ? parseFloat(pesoMatch[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
@@ -121,7 +144,8 @@ const CerbrasCollectionForecast = () => {
       setItems(prev => [...prev, ...allExtractedItems]);
       showSuccess(`${allExtractedItems.length} pedidos extraídos com sucesso!`);
     } else {
-      showError("Não foi possível identificar pedidos nos arquivos. Verifique se o PDF contém texto selecionável.");
+      showError("Não foi possível identificar pedidos. Verifique o painel de depuração abaixo.");
+      setShowDebug(true);
     }
     
     setProcessing(false);
@@ -210,7 +234,7 @@ const CerbrasCollectionForecast = () => {
         </div>
       </header>
 
-      <main className="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full">
+      <main className="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full space-y-6">
         <input 
           type="file" 
           ref={fileInputRef} 
@@ -243,10 +267,6 @@ const CerbrasCollectionForecast = () => {
               >
                 Adicionar Manualmente
               </Button>
-            </div>
-            <div className="mt-8 flex items-center gap-2 text-slate-400 text-xs">
-              <AlertCircle size={14} />
-              <span>Certifique-se que o PDF contém texto selecionável.</span>
             </div>
           </div>
         ) : (
@@ -394,6 +414,27 @@ const CerbrasCollectionForecast = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Painel de Depuração */}
+        <Card className="border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setShowDebug(!showDebug)}
+            className="w-full p-4 flex justify-between items-center hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2 text-slate-600">
+              <AlertCircle size={18} />
+              <span className="text-sm font-bold uppercase">Painel de Depuração (Texto do PDF)</span>
+            </div>
+            {showDebug ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+          {showDebug && (
+            <CardContent className="p-4 bg-slate-900 text-green-400 font-mono text-[10px] overflow-x-auto">
+              <pre className="whitespace-pre-wrap">
+                {debugText || "Nenhum arquivo processado ainda. Faça o upload de um PDF para ver o texto extraído aqui."}
+              </pre>
+            </CardContent>
+          )}
+        </Card>
       </main>
     </div>
   );
