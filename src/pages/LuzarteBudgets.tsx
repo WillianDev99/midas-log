@@ -18,7 +18,14 @@ import {
   Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription,
+  CardFooter 
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { 
   Dialog, 
@@ -125,7 +132,10 @@ const LuzarteBudgets = () => {
   };
 
   const handleRegisterClient = async () => {
-    if (!newClient.razao_social || !newClient.cnpj) return;
+    if (!newClient.razao_social || !newClient.cnpj) {
+      showError("Preencha os campos obrigatórios.");
+      return;
+    }
     try {
       const { data, error } = await supabase.from('luzarte_clients').insert([{
         ...newClient,
@@ -169,7 +179,8 @@ const LuzarteBudgets = () => {
         const match = data.find(row => 
           String(row.NOME || '').toUpperCase() === updated.produto.toUpperCase() &&
           String(row.COR || '').toUpperCase() === updated.cor.toUpperCase() &&
-          String(row.LITROS || '').toUpperCase() === updated.litros.toUpperCase()
+          (updated.litros ? String(row.LITROS || '').toUpperCase() === updated.litros.toUpperCase() : true) &&
+          (updated.forma ? String(row.FORMA || '').toUpperCase() === updated.forma.toUpperCase() : true)
         );
 
         if (match) {
@@ -258,7 +269,7 @@ const LuzarteBudgets = () => {
     return Array.from(new Set(data
       .filter(row => String(row.NOME || '').toUpperCase() === productName.toUpperCase())
       .map(row => String(row[field] || '').toUpperCase())
-      .filter(val => val !== "")
+      .filter(val => val !== "" && val !== "UNDEFINED")
     )).sort();
   };
 
@@ -540,7 +551,6 @@ const LuzarteBudgets = () => {
                   </div>
                 </CardContent>
               </Card>
-              {/* Outros cards de estatísticas podem vir aqui */}
             </div>
 
             <div className="space-y-4">
