@@ -161,7 +161,6 @@ const CerbrasCollectionForecast = () => {
   const addNewRow = () => {
     const newItem: CollectionItem = {
       id: Math.random().toString(36).substr(2, 9),
-      id: Math.random().toString(36).substr(2, 9),
       data: new Date().toLocaleDateString('pt-BR'),
       representacao: "Midas Representações",
       segmento: "Varejo",
@@ -291,17 +290,17 @@ const CerbrasCollectionForecast = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-amber-500 scrollbar-track-slate-100">
-                <Table className="min-w-[1500px]">
+                <Table className="min-w-[1600px]">
                   <TableHeader className="bg-slate-50">
                     <TableRow>
                       <TableHead className="w-[120px] text-[10px] uppercase font-bold">Data</TableHead>
                       <TableHead className="w-[220px] text-[10px] uppercase font-bold">Representação</TableHead>
                       <TableHead className="w-[130px] text-[10px] uppercase font-bold">Segmento</TableHead>
                       <TableHead className="min-w-[250px] text-[10px] uppercase font-bold">Cliente</TableHead>
-                      <TableHead className="w-[120px] text-[10px] uppercase font-bold">Nº Pedido</TableHead>
+                      <TableHead className="w-[150px] text-[10px] uppercase font-bold">Nº Pedido</TableHead>
                       <TableHead className="min-w-[200px] text-[10px] uppercase font-bold">Produtos</TableHead>
                       <TableHead className="w-[80px] text-[10px] uppercase font-bold">PLT</TableHead>
-                      <TableHead className="w-[100px] text-[10px] uppercase font-bold">M²</TableHead>
+                      <TableHead className="w-[130px] text-[10px] uppercase font-bold">M²</TableHead>
                       <TableHead className="w-[180px] text-[10px] uppercase font-bold">Transportadora/Retira</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
