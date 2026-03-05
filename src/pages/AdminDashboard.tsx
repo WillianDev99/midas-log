@@ -10,7 +10,10 @@ import {
   ChevronRight,
   Database,
   Settings,
-  Home
+  Home,
+  AlertTriangle,
+  FileText,
+  CalendarClock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,11 +30,11 @@ const AdminDashboard = () => {
     showSuccess("Sessão encerrada.");
   };
 
-  const ToolCard = ({ title, description, icon: Icon, href }: { title: string, description: string, icon: any, href?: string }) => (
-    <Card className="hover:shadow-md transition-all cursor-pointer group border-slate-200">
+  const ToolCard = ({ title, description, icon: Icon, href, disabled = false }: { title: string, description: string, icon: any, href?: string, disabled?: boolean }) => (
+    <Card className={`hover:shadow-md transition-all group border-slate-200 ${disabled ? 'opacity-60 grayscale cursor-not-allowed' : 'cursor-pointer'}`}>
       <CardHeader className="flex flex-row items-center gap-4 pb-2">
-        <div className="bg-amber-50 p-2 rounded-lg group-hover:bg-amber-500 transition-colors">
-          <Icon className="text-amber-600 group-hover:text-white transition-colors" size={24} />
+        <div className={`p-2 rounded-lg transition-colors ${disabled ? 'bg-slate-100' : 'bg-amber-50 group-hover:bg-amber-500'}`}>
+          <Icon className={`${disabled ? 'text-slate-400' : 'text-amber-600 group-hover:text-white'} transition-colors`} size={24} />
         </div>
         <div>
           <CardTitle className="text-lg">{title}</CardTitle>
@@ -39,7 +42,7 @@ const AdminDashboard = () => {
       </CardHeader>
       <CardContent>
         <CardDescription className="mb-4">{description}</CardDescription>
-        {href ? (
+        {href && !disabled ? (
           <Link to={href}>
             <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
               Acessar Ferramenta
@@ -47,8 +50,8 @@ const AdminDashboard = () => {
             </Button>
           </Link>
         ) : (
-          <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600">
-            Acessar Ferramenta
+          <Button variant="outline" disabled className="w-full justify-between">
+            {disabled ? "Em breve" : "Acessar Ferramenta"}
             <ChevronRight size={16} />
           </Button>
         )}
@@ -126,7 +129,7 @@ const AdminDashboard = () => {
           </TabsList>
 
           <TabsContent value="hidracor" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ToolCard 
                 title="Formatar Carteira Hidracor" 
                 description="Upload de planilha base para formatação automática de acordo com os parâmetros da Hidracor."
@@ -139,11 +142,23 @@ const AdminDashboard = () => {
                 icon={Truck}
                 href="/admin/external-loads"
               />
+              <ToolCard 
+                title="Cálculo de Avarias" 
+                description="Ferramenta para cálculo e registro de avarias em produtos Hidracor."
+                icon={AlertTriangle}
+                disabled
+              />
+              <ToolCard 
+                title="Gerar Romaneio" 
+                description="Geração automática de romaneios para cargas externas contratadas."
+                icon={FileText}
+                disabled
+              />
             </div>
           </TabsContent>
 
           <TabsContent value="cerbras" className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ToolCard 
                 title="Formatar Carteira Cerbras" 
                 description="Processamento de dados da carteira Cerbras com saída em planilha formatada."
@@ -155,6 +170,18 @@ const AdminDashboard = () => {
                 description="Cálculo e análise de distribuição de pesos por região e cidade para a Cerbras."
                 icon={MapPin}
                 href="/admin/cerbras-weights"
+              />
+              <ToolCard 
+                title="Cálculo de Avarias" 
+                description="Ferramenta para cálculo e registro de avarias em produtos Cerbras."
+                icon={AlertTriangle}
+                disabled
+              />
+              <ToolCard 
+                title="Previsão de Coleta" 
+                description="Análise de datas e horários previstos para coleta na fábrica Cerbras."
+                icon={CalendarClock}
+                disabled
               />
             </div>
           </TabsContent>

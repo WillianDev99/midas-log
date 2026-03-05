@@ -143,12 +143,14 @@ const HidracorFormatter = () => {
     setUsedOrderIds(orderMap);
   };
 
-  const formatWeight = (val: number) => {
-    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+  const formatWeight = (val: any) => {
+    const num = parseFloat(val) || 0;
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
   };
 
-  const formatCurrency = (val: number) => {
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrency = (val: any) => {
+    const num = parseFloat(val) || 0;
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   const excelDateToJSDate = (serial: any) => {
@@ -215,8 +217,8 @@ const HidracorFormatter = () => {
                   <td>${row['Pedido']}</td>
                   <td>${row['Cód.Cliente']}</td>
                   <td style="text-transform: uppercase;">${row['Nome Cliente']}</td>
-                  <td style="text-align: right;">${formatWeight(parseFloat(row['peso possível']))}</td>
-                  <td style="text-align: right;">${formatCurrency(parseFloat(row['valor possível']))}</td>
+                  <td style="text-align: right;">${formatWeight(row['peso possível'])}</td>
+                  <td style="text-align: right;">${formatCurrency(row['valor possível'])}</td>
                 </tr>
               `).join('')}
               <tr class="total-row">
@@ -549,12 +551,16 @@ const HidracorFormatter = () => {
   }, [formattedData, columnFilters, minWeightFilter, sortConfig]);
 
   const totals = useMemo(() => {
-    const result: Record<string, number> = {};
-    const numericCols = ['peso possível', 'valor possível', 'peso total', 'valor total'];
+    const result: Record<string, number> = {
+      'peso possível': 0,
+      'valor possível': 0,
+      'peso total': 0,
+      'valor total': 0
+    };
     filteredData.forEach(row => {
-      numericCols.forEach(col => {
+      Object.keys(result).forEach(col => {
         const val = parseFloat(row[col] || '0');
-        result[col] = (result[col] || 0) + val;
+        result[col] += val;
       });
     });
     return result;
@@ -828,7 +834,6 @@ const HidracorFormatter = () => {
                   background-color: #d97706;
                 }
                 
-                /* SOLUÇÃO DEFINITIVA PARA CABEÇALHO FIXO */
                 .table-container {
                   overflow: auto;
                   height: 100%;
@@ -852,7 +857,6 @@ const HidracorFormatter = () => {
                   background-color: white;
                   border-right: 1px solid #e2e8f0;
                 }
-                /* Intersecção: Canto superior esquerdo (Checkbox + Header) */
                 .sticky-table thead th.sticky-col {
                   z-index: 50;
                 }
@@ -922,7 +926,7 @@ const HidracorFormatter = () => {
                                 <div className={`px-2 py-0.5 rounded font-bold text-center border ${row[col] === 'LOG. HIDRACOR' ? 'bg-slate-900 text-white' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{row[col]}</div>
                               ) : (
                                 <span className="block truncate max-w-[180px]">
-                                  {col.includes('peso') ? formatWeight(parseFloat(row[col])) : col.includes('valor') ? formatCurrency(parseFloat(row[col])) : row[col]}
+                                  {col.includes('peso') ? formatWeight(row[col]) : col.includes('valor') ? formatCurrency(row[col]) : row[col]}
                                 </span>
                               )}
                             </td>
