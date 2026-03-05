@@ -4,7 +4,7 @@ import React from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe, Users, Phone } from 'lucide-react';
+import { Truck, Shield, BarChart3, Clock, ArrowRight, MapPin, Instagram, Globe, Users, Phone, Star, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
@@ -111,8 +111,67 @@ const Index = () => {
         </div>
       </section>
 
+      {/* Equipe Section */}
+      <section id="equipe" className="py-24 bg-white overflow-hidden">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col lg:flex-row items-center gap-16">
+            <div className="flex-1 relative">
+              <div className="absolute -top-4 -left-4 w-24 h-24 bg-amber-100 rounded-full -z-10 animate-pulse" />
+              <div className="absolute -bottom-4 -right-4 w-32 h-32 bg-slate-100 rounded-full -z-10" />
+              <img 
+                src="/equipe.jpg" 
+                alt="Equipe Midas Logística" 
+                className="rounded-3xl shadow-2xl border-8 border-white relative z-10 w-full object-cover aspect-[4/5] lg:aspect-auto"
+              />
+              <div className="absolute bottom-8 right-8 bg-amber-600 text-white p-4 rounded-xl shadow-xl z-20 hidden md:block">
+                <div className="flex items-center gap-2">
+                  <Star className="fill-white" size={20} />
+                  <span className="font-bold">Time de Especialistas</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 space-y-8">
+              <div>
+                <span className="text-amber-600 font-bold text-sm uppercase tracking-widest">Nosso Maior Ativo</span>
+                <h2 className="text-4xl font-bold text-slate-900 mt-2 mb-6">Uma Equipe Comprometida com o Seu Sucesso</h2>
+                <div className="w-20 h-1.5 bg-amber-500 rounded-full mb-8" />
+              </div>
+              
+              <p className="text-lg text-slate-600 leading-relaxed">
+                Na <strong>Midas Logística</strong>, acreditamos que grandes resultados são frutos de pessoas excepcionais. Nossa equipe é formada por profissionais altamente qualificados, que unem experiência técnica e uma paixão genuína por resolver desafios logísticos.
+              </p>
+              
+              <div className="grid sm:grid-cols-2 gap-6">
+                <div className="flex gap-4">
+                  <div className="bg-amber-50 p-3 rounded-lg h-fit">
+                    <Award className="text-amber-600" size={24} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">Competência Técnica</h4>
+                    <p className="text-sm text-slate-500">Domínio total das rotas e processos das fábricas Cerbras e Hidracor.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="bg-amber-50 p-3 rounded-lg h-fit">
+                    <Users className="text-amber-600" size={24} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">União e Foco</h4>
+                    <p className="text-sm text-slate-500">Trabalhamos em sinergia para garantir que cada entrega seja impecável.</p>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-slate-600 italic border-l-4 border-amber-500 pl-4">
+                "Mais do que transportar mercadorias, nós transportamos a confiança de nossos parceiros, lojistas e motoristas em cada quilômetro percorrido."
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Serviços Section */}
-      <section id="servicos" className="py-24">
+      <section id="servicos" className="py-24 bg-slate-50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 mb-4">Serviços Especializados</h2>
@@ -137,7 +196,7 @@ const Index = () => {
                 desc: "Seleção rigorosa de motoristas contratados para garantir que sua mercadoria chegue ao destino final com segurança."
               }
             ].map((service, i) => (
-              <div key={i} className="p-8 rounded-2xl border border-slate-100 hover:border-amber-200 hover:shadow-xl transition-all group">
+              <div key={i} className="p-8 rounded-2xl bg-white border border-slate-100 hover:border-amber-200 hover:shadow-xl transition-all group">
                 <div className="mb-6 bg-amber-50 w-16 h-16 rounded-xl flex items-center justify-center group-hover:bg-amber-600 transition-colors">
                   <div className="group-hover:text-white transition-colors">
                     {service.icon}
