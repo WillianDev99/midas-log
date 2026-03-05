@@ -55,51 +55,45 @@ const CerbrasCollectionForecast = () => {
   };
 
   const parseAllOrders = (text: string): CollectionItem[] => {
-    console.log("[CerbrasCollectionForecast] Iniciando extração de texto. Tamanho:", text.length);
+    console.log("[CerbrasCollectionForecast] Texto extraído (primeiros 500 chars):", text.substring(0, 500));
     const orders: CollectionItem[] = [];
     
-    // Localizamos todas as ocorrências de "Pedido:" para segmentar o texto
-    const pedidoRegex = /Pedido\s*:/gi;
+    // Regex ultra-permissiva para encontrar o início de um pedido
+    // Procura por "Pedido" ou "Nº Pedido" seguido opcionalmente por pontuação e então números
+    const pedidoPattern = /(?:Pedido|N[º°.]?\s*Pedido)\s*[:\-]?\s*(\d+)/gi;
     let match;
-    const indices: number[] = [];
-    while ((match = pedidoRegex.exec(text)) !== null) {
-      indices.push(match.index);
+    const matches = [];
+    
+    while ((match = pedidoPattern.exec(text)) !== null) {
+      matches.push({
+        index: match.index,
+        pedido: match[1]
+      });
     }
 
-    console.log("[CerbrasCollectionForecast] Blocos de pedidos encontrados:", indices.length);
+    console.log("[CerbrasCollectionForecast] Pedidos encontrados:", matches.length);
 
-    if (indices.length === 0) {
-      // Tentativa secundária caso o PDF use "Nº Pedido" ou similar
-      const altRegex = /N[º°]\s*Pedido\s*:/gi;
-      while ((match = altRegex.exec(text)) !== null) {
-        indices.push(match.index);
-      }
-    }
-
-    for (let i = 0; i < indices.length; i++) {
-      const start = indices[i];
-      const end = indices[i + 1] || text.length;
+    for (let i = 0; i < matches.length; i++) {
+      const start = matches[i].index;
+      const end = matches[i + 1] ? matches[i + 1].index : text.length;
       const segment = text.substring(start, end);
 
-      // Regex mais flexíveis para capturar os dados em cada segmento
-      const pedidoMatch = segment.match(/(?:Pedido|N[º°]\s*Pedido)\s*:\s*(\d+)/i);
-      const clienteMatch = segment.match(/Cliente\s*:\s*(.*?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|$))/i);
-      const pesoMatch = segment.match(/Peso\s*(?:Bruto)?\s*:\s*([\d.,]+)/i);
-      const paletesMatch = segment.match(/(?:Paletes|Qtd\s*Paletes)\s*:\s*(\d+)/i);
-      const cidadeMatch = segment.match(/Cidade\s*:\s*(.*?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|$))/i);
+      // Dentro do segmento do pedido, buscamos os outros campos com regex flexíveis
+      const clienteMatch = segment.match(/Cliente\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:Produto|Código|UF|Peso|Paletes|Cidade|CNPJ|Endereço|Bairro|$))/i);
+      const pesoMatch = segment.match(/Peso\s*(?:Bruto|Líquido)?\s*[:\-]?\s*([\d.,]+)/i);
+      const paletesMatch = segment.match(/(?:Paletes|Plts|Qtd\.?\s*Paletes)\s*[:\-]?\s*(\d+)/i);
+      const cidadeMatch = segment.match(/Cidade\s*[:\-]?\s*([^:\n]+?)(?=\s*(?:UF|Peso|Paletes|Estado|Bairro|CEP|$))/i);
 
-      if (pedidoMatch) {
-        orders.push({
-          id: Math.random().toString(36).substr(2, 9),
-          data: new Date().toLocaleDateString('pt-BR'),
-          pedido: pedidoMatch[1],
-          cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
-          cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
-          peso: pesoMatch ? parseFloat(pesoMatch[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
-          paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
-          status: "AGUARDANDO"
-        });
-      }
+      orders.push({
+        id: Math.random().toString(36).substr(2, 9),
+        data: new Date().toLocaleDateString('pt-BR'),
+        pedido: matches[i].pedido,
+        cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
+        cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
+        peso: pesoMatch ? parseFloat(pesoMatch[1].replace(/\./g, '').replace(',', '.')) || 0 : 0,
+        paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
+        status: "AGUARDANDO"
+      });
     }
     
     return orders;
@@ -127,7 +121,7 @@ const CerbrasCollectionForecast = () => {
       setItems(prev => [...prev, ...allExtractedItems]);
       showSuccess(`${allExtractedItems.length} pedidos extraídos com sucesso!`);
     } else {
-      showError("Não foi possível identificar pedidos nos arquivos. Verifique se o PDF é de texto (não imagem).");
+      showError("Não foi possível identificar pedidos nos arquivos. Verifique se o PDF contém texto selecionável.");
     }
     
     setProcessing(false);
