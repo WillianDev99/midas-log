@@ -9,8 +9,6 @@ import {
   Loader2, 
   FileText, 
   Table as TableIcon,
-  Save,
-  RefreshCw,
   Plus,
   X
 } from 'lucide-react';
@@ -49,33 +47,67 @@ const CerbrasCollectionForecast = () => {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      fullText += textContent.items.map((item: any) => item.str).join(" ");
+      // Unimos os itens com espaço para manter a continuidade das frases
+      fullText += textContent.items.map((item: any) => item.str).join(" ") + "\n";
     }
     return fullText;
   };
 
-  const parsePDFContent = (text: string): Partial<CollectionItem> => {
-    // Lógica de extração baseada nos padrões dos PDFs da Cerbras/Midas
-    const pedidoMatch = text.match(/Pedido\s*:\s*(\d+)/i) || text.match(/Nº\s*Pedido\s*(\d+)/i) || text.match(/(\d{6,8})/);
-    const pesoMatch = text.match(/Peso\s*Bruto\s*[:\s]*([\d.,]+)/i) || text.match(/Total\s*Peso\s*[:\s]*([\d.,]+)/i);
-    const clienteMatch = text.match(/Cliente\s*[:\s]*([^,.\n]+)/i) || text.match(/Razão\s*Social\s*[:\s]*([^,.\n]+)/i);
-    const cidadeMatch = text.match(/Cidade\s*[:\s]*([^-\n]+)/i);
-    const paletesMatch = text.match(/(\d+)\s*Palet/i) || text.match(/Qtd\s*Paletes\s*[:\s]*(\d+)/i);
-
+  const parseAllOrders = (text: string): CollectionItem[] => {
+    const orders: CollectionItem[] = [];
+    
+    // Dividimos o texto por "Pedido:", ignorando o primeiro pedaço (cabeçalho geral)
+    const segments = text.split(/Pedido\s*:/i);
+    
     const cleanNumber = (val: string | null) => {
       if (!val) return 0;
+      // Remove pontos de milhar e troca vírgula por ponto decimal
       return parseFloat(val.replace(/\./g, '').replace(',', '.')) || 0;
     };
 
-    return {
-      pedido: pedidoMatch ? pedidoMatch[1] : "",
-      peso: pesoMatch ? cleanNumber(pesoMatch[1]) : 0,
-      cliente: clienteMatch ? clienteMatch[1].trim().toUpperCase() : "NÃO IDENTIFICADO",
-      cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
-      paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
-      data: new Date().toLocaleDateString('pt-BR'),
-      status: "AGUARDANDO"
-    };
+    for (let i = 1; i < segments.length; i++) {
+      const segment = segments[i];
+      
+      // 1. Número do Pedido (está logo no início do segmento após o split)
+      const pedidoMatch = segment.match(/^\s*(\d+)/);
+      
+      // 2. Cliente (entre "Cliente:" e "Produto:" ou "UF:")
+      // Tentamos pegar o bloco de texto do cliente que pode ter quebras de linha
+      const clienteBlockMatch = segment.match(/Cliente\s*:\s*(.*?)\s*(?:Produto|Código do Produto|UF:)/i);
+      let cliente = "NÃO IDENTIFICADO";
+      if (clienteBlockMatch) {
+        // Limpamos informações de UF e CNPJ que podem estar na mesma linha no stream de texto
+        cliente = clienteBlockMatch[1]
+          .replace(/UF\s*:\s*[A-Z]{2}/i, '')
+          .replace(/CNPJ\s*:\s*[\d./-]+/i, '')
+          .trim()
+          .toUpperCase();
+      }
+
+      // 3. Peso
+      const pesoMatch = segment.match(/Peso\s*:\s*([\d.,]+)/i);
+      
+      // 4. Paletes
+      const paletesMatch = segment.match(/Paletes\s*:\s*(\d+)/i);
+
+      // 5. Cidade (Geralmente vem após o nome do cliente ou em um campo específico)
+      const cidadeMatch = segment.match(/Cidade\s*:\s*([^-\n]+)/i);
+
+      if (pedidoMatch) {
+        orders.push({
+          id: Math.random().toString(36).substr(2, 9),
+          data: new Date().toLocaleDateString('pt-BR'),
+          pedido: pedidoMatch[1],
+          cliente: cliente,
+          cidade: cidadeMatch ? cidadeMatch[1].trim().toUpperCase() : "",
+          peso: pesoMatch ? cleanNumber(pesoMatch[1]) : 0,
+          paletes: paletesMatch ? parseInt(paletesMatch[1]) : 0,
+          status: "AGUARDANDO"
+        });
+      }
+    }
+    
+    return orders;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,31 +115,27 @@ const CerbrasCollectionForecast = () => {
     if (!files || files.length === 0) return;
 
     setProcessing(true);
-    const newItems: CollectionItem[] = [];
+    let allExtractedItems: CollectionItem[] = [];
 
     for (let i = 0; i < files.length; i++) {
       try {
         const text = await extractTextFromPDF(files[i]);
-        const data = parsePDFContent(text);
-        newItems.push({
-          id: Math.random().toString(36).substr(2, 9),
-          data: data.data || "",
-          cliente: data.cliente || "",
-          pedido: data.pedido || "",
-          cidade: data.cidade || "",
-          peso: data.peso || 0,
-          paletes: data.paletes || 0,
-          status: data.status || "AGUARDANDO"
-        });
+        const extractedFromThisFile = parseAllOrders(text);
+        allExtractedItems = [...allExtractedItems, ...extractedFromThisFile];
       } catch (error) {
         console.error("Erro ao processar PDF:", error);
         showError(`Erro no arquivo: ${files[i].name}`);
       }
     }
 
-    setItems(prev => [...prev, ...newItems]);
+    if (allExtractedItems.length > 0) {
+      setItems(prev => [...prev, ...allExtractedItems]);
+      showSuccess(`${allExtractedItems.length} pedidos extraídos com sucesso!`);
+    } else {
+      showError("Nenhum pedido identificado nos arquivos.");
+    }
+    
     setProcessing(false);
-    showSuccess(`${newItems.length} pedidos extraídos com sucesso!`);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -136,9 +164,8 @@ const CerbrasCollectionForecast = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Previsão de Coleta");
     
-    // Ajustar larguras das colunas
     const wscols = [
-      {wch: 12}, {wch: 40}, {wch: 15}, {wch: 25}, {wch: 15}, {wch: 10}, {wch: 20}
+      {wch: 12}, {wch: 45}, {wch: 15}, {wch: 25}, {wch: 15}, {wch: 10}, {wch: 20}
     ];
     ws['!cols'] = wscols;
 
@@ -155,7 +182,7 @@ const CerbrasCollectionForecast = () => {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-slate-900">Previsão de Coleta Diária</h1>
-            <p className="text-slate-500 text-xs">Extração automática de dados de pedidos (PDF).</p>
+            <p className="text-slate-500 text-xs">Extração automática de múltiplos pedidos por PDF.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -197,7 +224,7 @@ const CerbrasCollectionForecast = () => {
             </div>
             <h3 className="text-lg font-bold text-slate-900">Nenhum pedido carregado</h3>
             <p className="text-slate-500 max-w-xs text-center mt-2">
-              Selecione os arquivos PDF dos pedidos para extrair as informações automaticamente.
+              Selecione os arquivos PDF. O sistema irá identificar cada bloco de "Pedido" e criar uma linha na tabela.
             </p>
             <Button 
               onClick={() => fileInputRef.current?.click()} 
@@ -213,10 +240,10 @@ const CerbrasCollectionForecast = () => {
                 <div>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <TableIcon size={20} className="text-amber-500" /> 
-                    Dados Extraídos para Conferência
+                    Pedidos Identificados ({items.length})
                   </CardTitle>
                   <CardDescription className="text-slate-400">
-                    Você pode editar os valores diretamente na tabela antes de exportar.
+                    Revise os dados extraídos. Cada bloco "Pedido" do PDF virou uma linha abaixo.
                   </CardDescription>
                 </div>
                 <Button 
@@ -337,14 +364,6 @@ const CerbrasCollectionForecast = () => {
                     </span>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="gap-2 border-amber-200 text-amber-700"
-                >
-                  <Plus size={14} /> Adicionar Mais
-                </Button>
               </div>
             </CardContent>
           </Card>
