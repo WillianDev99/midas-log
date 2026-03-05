@@ -181,7 +181,7 @@ const AdminDashboard = () => {
                 title="Previsão de Coleta" 
                 description="Análise de datas e horários previstos para coleta na fábrica Cerbras."
                 icon={CalendarClock}
-                disabled
+                href="/admin/cerbras-collection"
               />
             </div>
           </TabsContent>
