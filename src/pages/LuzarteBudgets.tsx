@@ -173,7 +173,26 @@ const LuzarteBudgets = () => {
       
       workbook.SheetNames.forEach(name => {
         const sheet = workbook.Sheets[name];
-        base[name.toUpperCase()] = XLSX.utils.sheet_to_json(sheet);
+        const rawData = XLSX.utils.sheet_to_json(sheet);
+        
+        // Normalização de chaves para garantir que o sistema encontre as colunas
+        const normalizedData = rawData.map((row: any) => {
+          const newRow: any = {};
+          Object.keys(row).forEach(key => {
+            const upperKey = key.toUpperCase().trim();
+            const value = row[key];
+            
+            if (upperKey === 'NOME' || upperKey === 'PRODUTO') newRow.NOME = value;
+            else if (upperKey === 'COR') newRow.COR = value;
+            else if (upperKey === 'LITROS' || upperKey === 'CAPACIDADE') newRow.LITROS = value;
+            else if (upperKey === 'FORMA' || upperKey === 'MODELO') newRow.FORMA = value;
+            else if (upperKey === 'VALOR' || upperKey === 'PREÇO' || upperKey === 'PRECO') newRow.VALOR = value;
+            else newRow[upperKey] = value;
+          });
+          return newRow;
+        });
+        
+        base[name.toUpperCase().trim()] = normalizedData;
       });
       setPriceBase(base);
     } catch (error) {
@@ -242,14 +261,14 @@ const LuzarteBudgets = () => {
       }
 
       if (selectedClient && updated.produto && updated.cor) {
-        const table = selectedClient.tabela_precos.toUpperCase();
+        const table = selectedClient.tabela_precos.toUpperCase().trim();
         const data = priceBase[table] || [];
         
         const match = data.find(row => 
-          String(row.NOME || '').toUpperCase() === updated.produto.toUpperCase() &&
-          String(row.COR || '').toUpperCase() === updated.cor.toUpperCase() &&
-          (updated.litros ? String(row.LITROS || '').toUpperCase() === updated.litros.toUpperCase() : true) &&
-          (updated.forma ? String(row.FORMA || '').toUpperCase() === updated.forma.toUpperCase() : true)
+          String(row.NOME || '').toUpperCase().trim() === updated.produto.toUpperCase().trim() &&
+          String(row.COR || '').toUpperCase().trim() === updated.cor.toUpperCase().trim() &&
+          (updated.litros ? String(row.LITROS || '').toUpperCase().trim() === updated.litros.toUpperCase().trim() : true) &&
+          (updated.forma ? String(row.FORMA || '').toUpperCase().trim() === updated.forma.toUpperCase().trim() : true)
         );
 
         if (match) {
@@ -329,28 +348,28 @@ const LuzarteBudgets = () => {
 
   const availableProducts = useMemo(() => {
     if (!selectedClient) return [];
-    const table = selectedClient.tabela_precos.toUpperCase();
+    const table = selectedClient.tabela_precos.toUpperCase().trim();
     const data = priceBase[table] || [];
-    return Array.from(new Set(data.map(row => String(row.NOME || '').toUpperCase()))).sort();
+    return Array.from(new Set(data.map(row => String(row.NOME || '').toUpperCase().trim()))).sort();
   }, [selectedClient, priceBase]);
 
   const getOptionsForProduct = (item: BudgetItem, field: 'COR' | 'LITROS' | 'FORMA') => {
     if (!selectedClient || !item.produto) return [];
-    const table = selectedClient.tabela_precos.toUpperCase();
+    const table = selectedClient.tabela_precos.toUpperCase().trim();
     const data = priceBase[table] || [];
     
-    let filtered = data.filter(row => String(row.NOME || '').toUpperCase() === item.produto.toUpperCase());
+    let filtered = data.filter(row => String(row.NOME || '').toUpperCase().trim() === item.produto.toUpperCase().trim());
     
     if (field === 'LITROS' && item.cor) {
-      filtered = filtered.filter(row => String(row.COR || '').toUpperCase() === item.cor.toUpperCase());
+      filtered = filtered.filter(row => String(row.COR || '').toUpperCase().trim() === item.cor.toUpperCase().trim());
     }
     
     if (field === 'COR' && item.forma) {
-      filtered = filtered.filter(row => String(row.FORMA || '').toUpperCase() === item.forma.toUpperCase());
+      filtered = filtered.filter(row => String(row.FORMA || '').toUpperCase().trim() === item.forma.toUpperCase().trim());
     }
 
     return Array.from(new Set(filtered
-      .map(row => String(row[field] || '').toUpperCase())
+      .map(row => String(row[field] || '').toUpperCase().trim())
       .filter(val => val !== "" && val !== "UNDEFINED")
     )).sort();
   };
@@ -713,7 +732,6 @@ const LuzarteBudgets = () => {
               <CardHeader className="border-b-2 border-amber-500 pb-6 print-header">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-4">
-                    {/* Logo removida conforme solicitado */}
                     <div>
                       <CardTitle className="text-2xl font-bold text-slate-900 uppercase">{viewingBudget.name}</CardTitle>
                       <CardDescription className="text-slate-500 font-medium">
