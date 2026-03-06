@@ -17,7 +17,10 @@ import {
   History,
   Calculator,
   X,
-  Check
+  Check,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -29,6 +32,7 @@ import {
   CardFooter 
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { 
   Dialog, 
   DialogContent, 
@@ -44,11 +48,25 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 interface LuzarteClient {
@@ -69,6 +87,7 @@ interface BudgetItem {
   litros: string;
   valor: number;
   quantidade: number;
+  observacao?: string;
 }
 
 const ESTADOS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
@@ -89,11 +108,14 @@ const LuzarteBudgets = () => {
   const [items, setItems] = useState<BudgetItem[]>([]);
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [viewingBudget, setViewingBudget] = useState<any>(null);
+  const [expandedObs, setExpandedObs] = useState<Record<string, boolean>>({});
 
   // Client Registration State
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
   const [citiesList, setCitiesList] = useState<string[]>([]);
   const [loadingCities, setLoadingCities] = useState(false);
+  const [openStatePopover, setOpenStatePopover] = useState(false);
+  const [openCityPopover, setOpenCityPopover] = useState(false);
   const [newClient, setNewClient] = useState({
     razao_social: "",
     cnpj: "",
@@ -116,7 +138,6 @@ const LuzarteBudgets = () => {
         const response = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${newClient.estado}/municipios`);
         const data = await response.json();
         setCitiesList(data.map((c: any) => c.nome).sort());
-        // Reseta a cidade se ela não pertencer ao novo estado
         setNewClient(prev => ({ ...prev, cidade: "" }));
       } catch (error) {
         console.error("Erro ao buscar cidades:", error);
@@ -160,6 +181,16 @@ const LuzarteBudgets = () => {
     }
   };
 
+  const formatCNPJ = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    return digits
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d)/, "$1-$2")
+      .substring(0, 18);
+  };
+
   const handleRegisterClient = async () => {
     if (!newClient.razao_social || !newClient.cnpj || !newClient.cidade) {
       showError("Preencha os campos obrigatórios.");
@@ -191,7 +222,8 @@ const LuzarteBudgets = () => {
       cor: "",
       litros: "",
       valor: 0,
-      quantidade: 1
+      quantidade: 1,
+      observacao: ""
     };
     setItems([...items, newItem]);
   };
@@ -202,7 +234,6 @@ const LuzarteBudgets = () => {
       
       const updated = { ...item, [field]: value };
       
-      // Se mudar o produto, limpa os campos dependentes
       if (field === 'produto') {
         updated.forma = "";
         updated.cor = "";
@@ -210,7 +241,6 @@ const LuzarteBudgets = () => {
         updated.valor = 0;
       }
 
-      // Lógica de preenchimento automático de valor
       if (selectedClient && updated.produto && updated.cor) {
         const table = selectedClient.tabela_precos.toUpperCase();
         const data = priceBase[table] || [];
@@ -311,12 +341,10 @@ const LuzarteBudgets = () => {
     
     let filtered = data.filter(row => String(row.NOME || '').toUpperCase() === item.produto.toUpperCase());
     
-    // Se estivermos buscando Litros, filtramos também pela Cor já selecionada
     if (field === 'LITROS' && item.cor) {
       filtered = filtered.filter(row => String(row.COR || '').toUpperCase() === item.cor.toUpperCase());
     }
     
-    // Se estivermos buscando Cor, filtramos pela Forma se já selecionada
     if (field === 'COR' && item.forma) {
       filtered = filtered.filter(row => String(row.FORMA || '').toUpperCase() === item.forma.toUpperCase());
     }
@@ -415,34 +443,80 @@ const LuzarteBudgets = () => {
                             </div>
                             <div className="space-y-2">
                               <label className="text-xs font-bold">CNPJ</label>
-                              <Input value={newClient.cnpj} onChange={(e) => setNewClient({...newClient, cnpj: e.target.value})} />
+                              <Input 
+                                value={newClient.cnpj} 
+                                onChange={(e) => setNewClient({...newClient, cnpj: formatCNPJ(e.target.value)})} 
+                                placeholder="00.000.000/0000-00"
+                              />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <label className="text-xs font-bold">Estado</label>
-                                <Select value={newClient.estado} onValueChange={(v) => setNewClient({...newClient, estado: v})}>
-                                  <SelectTrigger><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    {ESTADOS.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
+                                <Popover open={openStatePopover} onOpenChange={setOpenStatePopover}>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                                      {newClient.estado || "Selecione..."}
+                                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[200px] p-0">
+                                    <Command>
+                                      <CommandInput placeholder="Buscar estado..." />
+                                      <CommandList>
+                                        <CommandEmpty>Não encontrado.</CommandEmpty>
+                                        <CommandGroup>
+                                          {ESTADOS.map((uf) => (
+                                            <CommandItem
+                                              key={uf}
+                                              value={uf}
+                                              onSelect={(currentValue) => {
+                                                setNewClient({...newClient, estado: currentValue.toUpperCase()});
+                                                setOpenStatePopover(false);
+                                              }}
+                                            >
+                                              <Check className={cn("mr-2 h-4 w-4", newClient.estado === uf ? "opacity-100" : "opacity-0")} />
+                                              {uf}
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                               </div>
                               <div className="space-y-2">
                                 <label className="text-xs font-bold">Cidade</label>
-                                <Select 
-                                  value={newClient.cidade} 
-                                  onValueChange={(v) => setNewClient({...newClient, cidade: v})}
-                                  disabled={loadingCities || citiesList.length === 0}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder={loadingCities ? "Carregando..." : "Selecione a cidade"} />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-60">
-                                    {citiesList.map(city => (
-                                      <SelectItem key={city} value={city}>{city}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <Popover open={openCityPopover} onOpenChange={setOpenCityPopover}>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" role="combobox" className="w-full justify-between" disabled={loadingCities || citiesList.length === 0}>
+                                      {newClient.cidade || (loadingCities ? "Carregando..." : "Selecione...")}
+                                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[200px] p-0">
+                                    <Command>
+                                      <CommandInput placeholder="Buscar cidade..." />
+                                      <CommandList>
+                                        <CommandEmpty>Não encontrada.</CommandEmpty>
+                                        <CommandGroup className="max-h-60 overflow-y-auto">
+                                          {citiesList.map((city) => (
+                                            <CommandItem
+                                              key={city}
+                                              value={city}
+                                              onSelect={(currentValue) => {
+                                                setNewClient({...newClient, cidade: currentValue.toUpperCase()});
+                                                setOpenCityPopover(false);
+                                              }}
+                                            >
+                                              <Check className={cn("mr-2 h-4 w-4", newClient.cidade === city.toUpperCase() ? "opacity-100" : "opacity-0")} />
+                                              {city}
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                               </div>
                             </div>
                             <div className="space-y-2">
@@ -501,7 +575,7 @@ const LuzarteBudgets = () => {
                             <TableHead className="w-[100px]">Qtd</TableHead>
                             <TableHead className="w-[150px]">Valor Unit.</TableHead>
                             <TableHead className="w-[150px]">Subtotal</TableHead>
-                            <TableHead className="w-[50px]"></TableHead>
+                            <TableHead className="w-[100px] text-right">Ações</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -511,63 +585,90 @@ const LuzarteBudgets = () => {
                             const litros = getOptionsForProduct(item, 'LITROS');
 
                             return (
-                              <TableRow key={item.id}>
-                                <TableCell className="font-bold text-slate-400">{idx + 1}</TableCell>
-                                <TableCell>
-                                  <Select value={item.produto} onValueChange={(v) => updateItem(item.id, 'produto', v)}>
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Produto" /></SelectTrigger>
-                                    <SelectContent>
-                                      {availableProducts.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Select 
-                                    value={item.forma} 
-                                    onValueChange={(v) => updateItem(item.id, 'forma', v)}
-                                    disabled={formas.length === 0}
-                                  >
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
-                                    <SelectContent>
-                                      {formas.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Select value={item.cor} onValueChange={(v) => updateItem(item.id, 'cor', v)}>
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Cor" /></SelectTrigger>
-                                    <SelectContent>
-                                      {cores.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Select 
-                                    value={item.litros} 
-                                    onValueChange={(v) => updateItem(item.id, 'litros', v)}
-                                    disabled={litros.length === 0}
-                                  >
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
-                                    <SelectContent>
-                                      {litros.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Input type="number" className="h-8 text-xs" value={item.quantidade} onChange={(e) => updateItem(item.id, 'quantidade', parseInt(e.target.value) || 0)} />
-                                </TableCell>
-                                <TableCell>
-                                  <Input type="number" className="h-8 text-xs font-bold text-blue-600" value={item.valor} onChange={(e) => updateItem(item.id, 'valor', parseFloat(e.target.value) || 0)} />
-                                </TableCell>
-                                <TableCell className="font-bold text-slate-900">
-                                  {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                </TableCell>
-                                <TableCell>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setItems(items.filter(i => i.id !== item.id))}>
-                                    <Trash2 size={14} />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
+                              <React.Fragment key={item.id}>
+                                <TableRow>
+                                  <TableCell className="font-bold text-slate-400">{idx + 1}</TableCell>
+                                  <TableCell>
+                                    <Select value={item.produto} onValueChange={(v) => updateItem(item.id, 'produto', v)}>
+                                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Produto" /></SelectTrigger>
+                                      <SelectContent>
+                                        {availableProducts.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select 
+                                      value={item.forma} 
+                                      onValueChange={(v) => updateItem(item.id, 'forma', v)}
+                                      disabled={formas.length === 0}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
+                                      <SelectContent>
+                                        {formas.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select value={item.cor} onValueChange={(v) => updateItem(item.id, 'cor', v)}>
+                                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Cor" /></SelectTrigger>
+                                      <SelectContent>
+                                        {cores.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select 
+                                      value={item.litros} 
+                                      onValueChange={(v) => updateItem(item.id, 'litros', v)}
+                                      disabled={litros.length === 0}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
+                                      <SelectContent>
+                                        {litros.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input type="number" className="h-8 text-xs" value={item.quantidade} onChange={(e) => updateItem(item.id, 'quantidade', parseInt(e.target.value) || 0)} />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input type="number" className="h-8 text-xs font-bold text-blue-600" value={item.valor} onChange={(e) => updateItem(item.id, 'valor', parseFloat(e.target.value) || 0)} />
+                                  </TableCell>
+                                  <TableCell className="font-bold text-slate-900">
+                                    {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end gap-1">
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className={cn("h-8 w-8", expandedObs[item.id] ? "text-amber-600 bg-amber-50" : "text-slate-400")}
+                                        onClick={() => setExpandedObs({...expandedObs, [item.id]: !expandedObs[item.id]})}
+                                      >
+                                        {expandedObs[item.id] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                      </Button>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => setItems(items.filter(i => i.id !== item.id))}>
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                                {expandedObs[item.id] && (
+                                  <TableRow className="bg-slate-50/50">
+                                    <TableCell colSpan={9} className="p-4">
+                                      <div className="flex items-start gap-3">
+                                        <MessageSquare size={16} className="text-slate-400 mt-2" />
+                                        <Textarea 
+                                          placeholder="Adicione uma observação para este item..." 
+                                          className="min-h-[60px] text-xs bg-white"
+                                          value={item.observacao || ""}
+                                          onChange={(e) => updateItem(item.id, 'observacao', e.target.value)}
+                                        />
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </React.Fragment>
                             );
                           })}
                         </TableBody>
@@ -612,7 +713,7 @@ const LuzarteBudgets = () => {
               <CardHeader className="border-b-2 border-amber-500 pb-6 print-header">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-4">
-                    <img src="/logo.png" alt="Midas Log" className="h-12 w-auto" />
+                    {/* Logo removida conforme solicitado */}
                     <div>
                       <CardTitle className="text-2xl font-bold text-slate-900 uppercase">{viewingBudget.name}</CardTitle>
                       <CardDescription className="text-slate-500 font-medium">
@@ -621,7 +722,7 @@ const LuzarteBudgets = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-slate-900">MIDAS LOGÍSTICA</p>
+                    <p className="text-sm font-bold text-slate-900 uppercase">Proposta Comercial</p>
                     <p className="text-xs text-slate-500">Vendedor: {viewingBudget.seller_name}</p>
                   </div>
                 </div>
@@ -658,20 +759,29 @@ const LuzarteBudgets = () => {
                     </TableHeader>
                     <TableBody>
                       {viewingBudget.items.map((item: any, idx: number) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-medium">{idx + 1}</TableCell>
-                          <TableCell className="font-bold uppercase">{item.produto}</TableCell>
-                          <TableCell className="uppercase">{item.forma || '-'}</TableCell>
-                          <TableCell className="uppercase">{item.cor}</TableCell>
-                          <TableCell className="uppercase">{item.litros || '-'}</TableCell>
-                          <TableCell className="text-center font-bold">{item.quantidade}</TableCell>
-                          <TableCell className="text-right">
-                            {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </TableCell>
-                          <TableCell className="text-right font-bold">
-                            {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </TableCell>
-                        </TableRow>
+                        <React.Fragment key={idx}>
+                          <TableRow>
+                            <TableCell className="font-medium">{idx + 1}</TableCell>
+                            <TableCell className="font-bold uppercase">{item.produto}</TableCell>
+                            <TableCell className="uppercase">{item.forma || '-'}</TableCell>
+                            <TableCell className="uppercase">{item.cor}</TableCell>
+                            <TableCell className="uppercase">{item.litros || '-'}</TableCell>
+                            <TableCell className="text-center font-bold">{item.quantidade}</TableCell>
+                            <TableCell className="text-right">
+                              {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                            <TableCell className="text-right font-bold">
+                              {(item.valor * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                          </TableRow>
+                          {item.observacao && (
+                            <TableRow className="bg-slate-50/30">
+                              <TableCell colSpan={8} className="py-2 px-8 italic text-[10px] text-slate-500">
+                                <strong>Obs:</strong> {item.observacao}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
                       ))}
                     </TableBody>
                   </Table>
@@ -692,7 +802,7 @@ const LuzarteBudgets = () => {
                   Este orçamento tem validade de 7 dias a partir da data de emissão.
                 </div>
                 <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
-                  <Check size={16} /> Midas Logística - Eficiência em Movimento
+                  <Check size={16} /> Proposta Comercial Luzarte
                 </div>
               </CardFooter>
             </Card>
