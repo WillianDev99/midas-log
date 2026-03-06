@@ -13,7 +13,9 @@ import {
   Home,
   AlertTriangle,
   FileText,
-  CalendarClock
+  CalendarClock,
+  UserSquare2,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -126,6 +128,9 @@ const AdminDashboard = () => {
             <TabsTrigger value="cerbras" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
               CERBRAS
             </TabsTrigger>
+            <TabsTrigger value="luzarte" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+              LUZARTE
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="hidracor" className="space-y-6">
@@ -182,6 +187,29 @@ const AdminDashboard = () => {
                 description="Análise de datas e horários previstos para coleta na fábrica Cerbras."
                 icon={CalendarClock}
                 href="/admin/cerbras-collection"
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="luzarte" className="space-y-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <ToolCard 
+                title="Gerenciar Orçamentos" 
+                description="Criação, edição e emissão de orçamentos para clientes Luzarte."
+                icon={Calculator}
+                href="/admin/luzarte-budgets"
+              />
+              <ToolCard 
+                title="Base Técnica Luzarte" 
+                description="Gestão de clientes, vendedores e tabelas de preços Luzarte."
+                icon={UserSquare2}
+                href="/admin/luzarte-base"
+              />
+              <ToolCard 
+                title="Cálculo de Avarias" 
+                description="Ferramenta para registro de avarias em produtos Luzarte."
+                icon={AlertTriangle}
+                disabled
               />
             </div>
           </TabsContent>
