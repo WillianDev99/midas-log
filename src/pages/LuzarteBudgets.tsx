@@ -157,7 +157,7 @@ const LuzarteBudgets = () => {
     loadPriceBase();
   }, []);
 
-  // Busca cidades do IBGE quando o estado muda (para Clientes ou Vendedores)
+  // Busca cidades do IBGE quando o estado muda
   const fetchCities = async (uf: string) => {
     if (!uf) return;
     setLoadingCities(true);
@@ -209,11 +209,10 @@ const LuzarteBudgets = () => {
       
       workbook.SheetNames.forEach(name => {
         const sheet = workbook.Sheets[name];
-        // Lógica de busca de cabeçalho: converte para matriz e procura a linha que contém palavras-chave
         const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         
         let headerRowIdx = -1;
-        for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
+        for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
           const row = rawRows[i];
           if (row && row.some(cell => /NOME|PRODUTO|DESCRI|ITEM/i.test(String(cell)))) {
             headerRowIdx = i;
@@ -221,7 +220,7 @@ const LuzarteBudgets = () => {
           }
         }
 
-        if (headerRowIdx === -1) return; // Não achou cabeçalho nesta aba
+        if (headerRowIdx === -1) return;
 
         const headers = rawRows[headerRowIdx].map(h => String(h || '').toUpperCase().trim());
         const dataRows = rawRows.slice(headerRowIdx + 1);
@@ -431,6 +430,55 @@ const LuzarteBudgets = () => {
     return Array.from(new Set(filtered.map(row => String(row[field] || '').trim()).filter(val => val !== "" && val !== "undefined"))).sort();
   };
 
+  const SearchableSelect = ({ 
+    options, 
+    value, 
+    onSelect, 
+    placeholder, 
+    emptyMessage = "Não encontrado." 
+  }: { 
+    options: string[], 
+    value: string, 
+    onSelect: (v: string) => void, 
+    placeholder: string,
+    emptyMessage?: string
+  }) => {
+    const [open, setOpen] = useState(false);
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between h-8 text-xs font-normal">
+            {value || placeholder}
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-full p-0" align="start">
+          <Command>
+            <CommandInput placeholder={`Buscar ${placeholder.toLowerCase()}...`} className="h-8" />
+            <CommandList>
+              <CommandEmpty>{emptyMessage}</CommandEmpty>
+              <CommandGroup className="max-h-60 overflow-y-auto">
+                {options.map((opt) => (
+                  <CommandItem
+                    key={opt}
+                    value={opt}
+                    onSelect={(v) => {
+                      onSelect(v.toUpperCase());
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", value === opt ? "opacity-100" : "opacity-0")} />
+                    {opt}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
@@ -465,16 +513,21 @@ const LuzarteBudgets = () => {
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Razão Social</label><Input value={newClient.razao_social} onChange={(e) => setNewClient({...newClient, razao_social: e.target.value.toUpperCase()})} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">CNPJ</label><Input value={newClient.cnpj} onChange={(e) => setNewClient({...newClient, cnpj: formatCNPJ(e.target.value)})} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Estado</label>
-                        <Select value={newClient.estado} onValueChange={(v) => setNewClient({...newClient, estado: v})}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>{ESTADOS.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <SearchableSelect 
+                          options={ESTADOS} 
+                          value={newClient.estado} 
+                          onSelect={(v) => setNewClient({...newClient, estado: v})} 
+                          placeholder="Estado" 
+                        />
                       </div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Cidade</label>
-                        <Select value={newClient.cidade} onValueChange={(v) => setNewClient({...newClient, cidade: v})}>
-                          <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                          <SelectContent>{citiesList.map(c => <SelectItem key={c} value={c.toUpperCase()}>{c.toUpperCase()}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <SearchableSelect 
+                          options={citiesList} 
+                          value={newClient.cidade} 
+                          onSelect={(v) => setNewClient({...newClient, cidade: v})} 
+                          placeholder="Cidade" 
+                          emptyMessage={loadingCities ? "Carregando..." : "Selecione o estado primeiro."}
+                        />
                       </div>
                       <div className="col-span-2 space-y-1"><label className="text-[10px] font-bold uppercase">Tabela</label>
                         <Select value={newClient.tabela_precos} onValueChange={(v) => setNewClient({...newClient, tabela_precos: v})}>
@@ -520,16 +573,21 @@ const LuzarteBudgets = () => {
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Nome Completo</label><Input value={newSeller.name} onChange={(e) => setNewSeller({...newSeller, name: e.target.value.toUpperCase()})} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Telefone</label><Input value={newSeller.phone} onChange={(e) => setNewSeller({...newSeller, phone: formatPhone(e.target.value)})} placeholder="(00) 00000-0000" /></div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Estado</label>
-                        <Select value={newSeller.state} onValueChange={(v) => setNewSeller({...newSeller, state: v})}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>{ESTADOS.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <SearchableSelect 
+                          options={ESTADOS} 
+                          value={newSeller.state} 
+                          onSelect={(v) => setNewSeller({...newSeller, state: v})} 
+                          placeholder="Estado" 
+                        />
                       </div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase">Cidade</label>
-                        <Select value={newSeller.city} onValueChange={(v) => setNewSeller({...newSeller, city: v})}>
-                          <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                          <SelectContent>{citiesList.map(c => <SelectItem key={c} value={c.toUpperCase()}>{c.toUpperCase()}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <SearchableSelect 
+                          options={citiesList} 
+                          value={newSeller.city} 
+                          onSelect={(v) => setNewSeller({...newSeller, city: v})} 
+                          placeholder="Cidade" 
+                          emptyMessage={loadingCities ? "Carregando..." : "Selecione o estado primeiro."}
+                        />
                       </div>
                     </CardContent>
                     <CardFooter className="justify-end gap-2 py-3 bg-slate-50">
@@ -615,7 +673,14 @@ const LuzarteBudgets = () => {
                               <React.Fragment key={item.id}>
                                 <TableRow>
                                   <TableCell className="font-bold text-slate-400">{idx + 1}</TableCell>
-                                  <TableCell><Select value={item.produto} onValueChange={(v) => updateItem(item.id, 'produto', v)}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Produto" /></SelectTrigger><SelectContent>{availableProducts.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent></Select></TableCell>
+                                  <TableCell>
+                                    <SearchableSelect 
+                                      options={availableProducts} 
+                                      value={item.produto} 
+                                      onSelect={(v) => updateItem(item.id, 'produto', v)} 
+                                      placeholder="Produto" 
+                                    />
+                                  </TableCell>
                                   <TableCell><Select value={item.forma} onValueChange={(v) => updateItem(item.id, 'forma', v)} disabled={formas.length === 0}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger><SelectContent>{formas.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent></Select></TableCell>
                                   <TableCell><Select value={item.cor} onValueChange={(v) => updateItem(item.id, 'cor', v)}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Cor" /></SelectTrigger><SelectContent>{cores.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></TableCell>
                                   <TableCell><Select value={item.litros} onValueChange={(v) => updateItem(item.id, 'litros', v)} disabled={litros.length === 0}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="-" /></SelectTrigger><SelectContent>{litros.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent></Select></TableCell>
