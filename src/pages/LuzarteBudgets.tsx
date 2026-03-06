@@ -167,6 +167,8 @@ const LuzarteBudgets = () => {
   const loadPriceBase = async () => {
     try {
       const response = await fetch('/BASE.xlsx');
+      if (!response.ok) throw new Error("Arquivo BASE.xlsx não encontrado na pasta public.");
+      
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const base: Record<string, any[]> = {};
@@ -175,19 +177,26 @@ const LuzarteBudgets = () => {
         const sheet = workbook.Sheets[name];
         const rawData = XLSX.utils.sheet_to_json(sheet);
         
-        // Normalização de chaves para garantir que o sistema encontre as colunas
+        // Normalização agressiva de chaves para garantir que o sistema encontre as colunas
         const normalizedData = rawData.map((row: any) => {
           const newRow: any = {};
           Object.keys(row).forEach(key => {
-            const upperKey = key.toUpperCase().trim();
-            const value = row[key];
+            const k = key.toString().toUpperCase().trim();
+            const val = row[key];
             
-            if (upperKey === 'NOME' || upperKey === 'PRODUTO') newRow.NOME = value;
-            else if (upperKey === 'COR') newRow.COR = value;
-            else if (upperKey === 'LITROS' || upperKey === 'CAPACIDADE') newRow.LITROS = value;
-            else if (upperKey === 'FORMA' || upperKey === 'MODELO') newRow.FORMA = value;
-            else if (upperKey === 'VALOR' || upperKey === 'PREÇO' || upperKey === 'PRECO') newRow.VALOR = value;
-            else newRow[upperKey] = value;
+            // Mapeamento por similaridade de nome de coluna
+            if (['NOME', 'PRODUTO', 'DESCRIÇÃO', 'DESCRICAO', 'ITEM'].some(alias => k.includes(alias))) {
+              newRow.NOME = val;
+            } else if (['COR', 'CORES'].some(alias => k.includes(alias))) {
+              newRow.COR = val;
+            } else if (['LITROS', 'CAPACIDADE', 'LITRAGEM', 'LTS'].some(alias => k.includes(alias))) {
+              newRow.LITROS = val;
+            } else if (['FORMA', 'MODELO', 'FORMATO'].some(alias => k.includes(alias))) {
+              newRow.FORMA = val;
+            } else if (['VALOR', 'PREÇO', 'PRECO', 'UNIT'].some(alias => k.includes(alias))) {
+              newRow.VALOR = val;
+            }
+            newRow[k] = val; // Mantém a chave original em maiúsculo também
           });
           return newRow;
         });
@@ -262,7 +271,9 @@ const LuzarteBudgets = () => {
 
       if (selectedClient && updated.produto && updated.cor) {
         const table = selectedClient.tabela_precos.toUpperCase().trim();
-        const data = priceBase[table] || [];
+        // Busca a aba correta (exata ou parcial)
+        const sheetKey = Object.keys(priceBase).find(k => k === table || k.includes(table) || table.includes(k)) || table;
+        const data = priceBase[sheetKey] || [];
         
         const match = data.find(row => 
           String(row.NOME || '').toUpperCase().trim() === updated.produto.toUpperCase().trim() &&
@@ -347,18 +358,27 @@ const LuzarteBudgets = () => {
   };
 
   const availableProducts = useMemo(() => {
-    if (!selectedClient) return [];
+    if (!selectedClient || Object.keys(priceBase).length === 0) return [];
+    
     const table = selectedClient.tabela_precos.toUpperCase().trim();
-    const data = priceBase[table] || [];
-    return Array.from(new Set(data.map(row => String(row.NOME || '').toUpperCase().trim()))).sort();
+    // Busca a aba correta (exata ou parcial)
+    const sheetKey = Object.keys(priceBase).find(k => k === table || k.includes(table) || table.includes(k)) || Object.keys(priceBase)[0];
+    const data = priceBase[sheetKey] || [];
+    
+    return Array.from(new Set(data
+      .map(row => String(row.NOME || row.PRODUTO || '').trim())
+      .filter(val => val !== "" && val !== "undefined")
+    )).sort();
   }, [selectedClient, priceBase]);
 
   const getOptionsForProduct = (item: BudgetItem, field: 'COR' | 'LITROS' | 'FORMA') => {
-    if (!selectedClient || !item.produto) return [];
-    const table = selectedClient.tabela_precos.toUpperCase().trim();
-    const data = priceBase[table] || [];
+    if (!selectedClient || !item.produto || Object.keys(priceBase).length === 0) return [];
     
-    let filtered = data.filter(row => String(row.NOME || '').toUpperCase().trim() === item.produto.toUpperCase().trim());
+    const table = selectedClient.tabela_precos.toUpperCase().trim();
+    const sheetKey = Object.keys(priceBase).find(k => k === table || k.includes(table) || table.includes(k)) || Object.keys(priceBase)[0];
+    const data = priceBase[sheetKey] || [];
+    
+    let filtered = data.filter(row => String(row.NOME || row.PRODUTO || '').toUpperCase().trim() === item.produto.toUpperCase().trim());
     
     if (field === 'LITROS' && item.cor) {
       filtered = filtered.filter(row => String(row.COR || '').toUpperCase().trim() === item.cor.toUpperCase().trim());
@@ -369,8 +389,8 @@ const LuzarteBudgets = () => {
     }
 
     return Array.from(new Set(filtered
-      .map(row => String(row[field] || '').toUpperCase().trim())
-      .filter(val => val !== "" && val !== "UNDEFINED")
+      .map(row => String(row[field] || '').trim())
+      .filter(val => val !== "" && val !== "undefined")
     )).sort();
   };
 
