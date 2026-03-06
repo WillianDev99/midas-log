@@ -14,7 +14,6 @@ import {
   AlertTriangle,
   FileText,
   CalendarClock,
-  UserSquare2,
   Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -194,21 +193,15 @@ const AdminDashboard = () => {
           <TabsContent value="luzarte" className="space-y-6">
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ToolCard 
-                title="Gerenciar Orçamentos" 
-                description="Criação, edição e emissão de orçamentos para clientes Luzarte."
+                title="Orçamentos Luzarte" 
+                description="Criação e gestão de orçamentos inteligentes com base em tabelas de Atacado e Varejo."
                 icon={Calculator}
                 href="/admin/luzarte-budgets"
               />
               <ToolCard 
-                title="Base Técnica Luzarte" 
-                description="Gestão de clientes, vendedores e tabelas de preços Luzarte."
-                icon={UserSquare2}
-                href="/admin/luzarte-base"
-              />
-              <ToolCard 
-                title="Cálculo de Avarias" 
-                description="Ferramenta para registro de avarias em produtos Luzarte."
-                icon={AlertTriangle}
+                title="Catálogo de Produtos" 
+                description="Visualização técnica dos produtos Luzarte, formas e cores disponíveis."
+                icon={FileText}
                 disabled
               />
             </div>
