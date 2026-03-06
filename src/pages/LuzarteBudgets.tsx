@@ -25,7 +25,8 @@ import {
   Users,
   UserCheck,
   Phone,
-  MapPin
+  MapPin,
+  User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -411,6 +412,38 @@ const LuzarteBudgets = () => {
     } catch (error: any) { showError(error.message); }
   };
 
+  const copyBudget = (budget: any) => {
+    setBudgetName(`CÓPIA - ${budget.name}`);
+    setSelectedClient(budget.luzarte_clients);
+    setSelectedSeller(sellers.find(s => s.name === budget.seller_name) || null);
+    setPaymentTerm(budget.payment_term);
+    setItems(budget.items.map((item: any) => ({ ...item, id: Math.random().toString(36).substr(2, 9) })));
+    setEditingBudgetId(null);
+    setViewMode('form');
+    showSuccess("Cópia criada! Você pode renomear e ajustar os itens.");
+  };
+
+  const editBudget = (budget: any) => {
+    setBudgetName(budget.name);
+    setSelectedClient(budget.luzarte_clients);
+    setSelectedSeller(sellers.find(s => s.name === budget.seller_name) || null);
+    setPaymentTerm(budget.payment_term);
+    setItems(budget.items);
+    setEditingBudgetId(budget.id);
+    setViewMode('form');
+  };
+
+  const deleteBudget = async (id: string) => {
+    if (!confirm("Excluir este orçamento permanentemente?")) return;
+    try {
+      await supabase.from('luzarte_budgets').delete().eq('id', id);
+      setBudgets(budgets.filter(b => b.id !== id));
+      showSuccess("Orçamento excluído.");
+    } catch (error: any) {
+      showError(error.message);
+    }
+  };
+
   const availableProducts = useMemo(() => {
     if (!selectedClient || Object.keys(priceBase).length === 0) return [];
     const table = selectedClient.tabela_precos.toUpperCase().trim();
@@ -478,6 +511,17 @@ const LuzarteBudgets = () => {
       </Popover>
     );
   };
+
+  // Agrupamento de orçamentos por vendedor
+  const groupedBudgets = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    budgets.forEach(budget => {
+      const seller = budget.seller_name || "Sem Vendedor";
+      if (!groups[seller]) groups[seller] = [];
+      groups[seller].push(budget);
+    });
+    return groups;
+  }, [budgets]);
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
@@ -748,21 +792,60 @@ const LuzarteBudgets = () => {
               <Card className="border-none shadow-sm bg-white"><CardContent className="p-6"><div className="flex items-center gap-4"><div className="bg-green-100 p-3 rounded-xl text-green-600"><UserCheck size={24} /></div><div><p className="text-xs font-bold text-slate-500 uppercase">Vendedores</p><p className="text-2xl font-bold text-slate-900">{sellers.length}</p></div></div></CardContent></Card>
             </div>
 
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2"><History size={20} className="text-amber-600" /> Histórico</h2>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {budgets.map(budget => (
-                  <Card key={budget.id} className="hover:shadow-md transition-all border-slate-200 group">
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start"><div className="bg-slate-100 p-2 rounded-lg text-slate-600"><FileText size={20} /></div><div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600" onClick={() => copyBudget(budget)}><Copy size={16} /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" onClick={() => editBudget(budget)}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => deleteBudget(budget.id)}><Trash2 size={16} /></Button></div></div>
-                      <CardTitle className="mt-4 text-lg uppercase truncate">{budget.name || budget.luzarte_clients?.razao_social}</CardTitle>
-                      <CardDescription>{new Date(budget.created_at).toLocaleDateString('pt-BR')} • {budget.seller_name}</CardDescription>
-                    </CardHeader>
-                    <CardContent><div className="flex justify-between items-center mb-4"><span className="text-xs font-bold text-slate-500 uppercase">{budget.items.length} itens</span><span className="font-bold text-slate-900">{budget.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div><Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600" onClick={() => { setViewingBudget(budget); setViewMode('view'); }}>Visualizar Detalhes<ChevronRight size={16} /></Button></CardContent>
-                  </Card>
-                ))}
-                {budgets.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200"><FileText className="mx-auto text-slate-300 mb-4" size={48} /><p className="text-slate-500">Nenhum orçamento encontrado.</p></div>}
-              </div>
+            <div className="space-y-8">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2"><History size={20} className="text-amber-600" /> Histórico de Orçamentos</h2>
+              
+              {Object.entries(groupedBudgets).map(([seller, sellerBudgets]) => (
+                <div key={seller} className="space-y-4">
+                  <div className="flex items-center gap-3 border-b pb-2">
+                    <div className="bg-slate-900 text-white p-1.5 rounded-lg">
+                      <User size={18} />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 uppercase tracking-tight">{seller}</h3>
+                    <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {sellerBudgets.length} {sellerBudgets.length === 1 ? 'ORÇAMENTO' : 'ORÇAMENTOS'}
+                    </span>
+                  </div>
+                  
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {sellerBudgets.map(budget => (
+                      <Card key={budget.id} className="hover:shadow-md transition-all border-slate-200 group">
+                        <CardHeader className="pb-3">
+                          <div className="flex justify-between items-start">
+                            <div className="bg-slate-100 p-2 rounded-lg text-slate-600">
+                              <FileText size={20} />
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600" onClick={() => copyBudget(budget)}><Copy size={16} /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" onClick={() => editBudget(budget)}><Edit3 size={16} /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => deleteBudget(budget.id)}><Trash2 size={16} /></Button>
+                            </div>
+                          </div>
+                          <CardTitle className="mt-4 text-lg uppercase truncate">{budget.name || budget.luzarte_clients?.razao_social}</CardTitle>
+                          <CardDescription>{new Date(budget.created_at).toLocaleDateString('pt-BR')}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-xs font-bold text-slate-500 uppercase">{budget.items.length} itens</span>
+                            <span className="font-bold text-slate-900">{budget.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                          </div>
+                          <Button variant="outline" className="w-full justify-between group-hover:border-amber-500 group-hover:text-amber-600" onClick={() => { setViewingBudget(budget); setViewMode('view'); }}>
+                            Visualizar Detalhes
+                            <ChevronRight size={16} />
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {budgets.length === 0 && (
+                <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                  <FileText className="mx-auto text-slate-300 mb-4" size={48} />
+                  <p className="text-slate-500">Nenhum orçamento encontrado.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
