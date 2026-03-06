@@ -13,8 +13,7 @@ import {
   Home,
   AlertTriangle,
   FileText,
-  CalendarClock,
-  Calculator
+  CalendarClock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -127,9 +126,6 @@ const AdminDashboard = () => {
             <TabsTrigger value="cerbras" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
               CERBRAS
             </TabsTrigger>
-            <TabsTrigger value="luzarte" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
-              LUZARTE
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="hidracor" className="space-y-6">
@@ -186,23 +182,6 @@ const AdminDashboard = () => {
                 description="Análise de datas e horários previstos para coleta na fábrica Cerbras."
                 icon={CalendarClock}
                 href="/admin/cerbras-collection"
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="luzarte" className="space-y-6">
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <ToolCard 
-                title="Orçamentos Luzarte" 
-                description="Criação e gestão de orçamentos inteligentes com base em tabelas de Atacado e Varejo."
-                icon={Calculator}
-                href="/admin/luzarte-budgets"
-              />
-              <ToolCard 
-                title="Catálogo de Produtos" 
-                description="Visualização técnica dos produtos Luzarte, formas e cores disponíveis."
-                icon={FileText}
-                disabled
               />
             </div>
           </TabsContent>

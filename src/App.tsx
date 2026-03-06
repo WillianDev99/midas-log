@@ -17,7 +17,6 @@ import CerbrasWeightsByCity from "./pages/CerbrasWeightsByCity";
 import CerbrasCollectionForecast from "./pages/CerbrasCollectionForecast";
 import ExternalLoads from "./pages/ExternalLoads";
 import SavedExternalLoads from "./pages/SavedExternalLoads";
-import LuzarteBudgets from "./pages/LuzarteBudgets";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,7 +42,6 @@ const App = () => (
             <Route path="/admin/cerbras-collection" element={<CerbrasCollectionForecast />} />
             <Route path="/admin/external-loads" element={<ExternalLoads />} />
             <Route path="/admin/external-loads/saved" element={<SavedExternalLoads />} />
-            <Route path="/admin/luzarte-budgets" element={<LuzarteBudgets />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
