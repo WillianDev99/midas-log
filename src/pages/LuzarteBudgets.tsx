@@ -61,7 +61,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/table';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -166,7 +166,8 @@ const LuzarteBudgets = () => {
 
   const loadPriceBase = async () => {
     try {
-      const response = await fetch('/LUZARTE_BASE.xlsx');
+      // Atualizado para carregar o novo arquivo BASE.xlsx
+      const response = await fetch('/BASE.xlsx');
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
       const base: Record<string, any[]> = {};
