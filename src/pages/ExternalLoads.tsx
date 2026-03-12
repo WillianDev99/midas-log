@@ -303,7 +303,7 @@ const ExternalLoads = () => {
           peso: mainWeightStr,
           frete: mainFreightType,
           observacoes: String(row[6] || ''),
-          status: String(row[7] || ''),
+          status: String(row[8] || ''), // Alterado de row[7] para row[8] (Coluna I)
           parsedDeliveries: parsed,
           totalToPay: totalFreight * 0.7
         };
