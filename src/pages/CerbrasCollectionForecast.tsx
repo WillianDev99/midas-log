@@ -192,8 +192,8 @@ const CerbrasCollectionForecast = () => {
       'CLIENTE': item.cliente,
       'Nº PEDIDO': item.pedido,
       'PRODUTOS': item.produtos,
-      'PLT': item.plt,
       'M²': item.m2,
+      'PLT': item.plt,
       'TRANSPORTADORA/RETIRA': item.transportadora
     }));
 
@@ -202,7 +202,7 @@ const CerbrasCollectionForecast = () => {
     XLSX.utils.book_append_sheet(wb, ws, "Previsão de Coleta");
     
     const wscols = [
-      {wch: 12}, {wch: 25}, {wch: 15}, {wch: 45}, {wch: 15}, {wch: 40}, {wch: 8}, {wch: 12}, {wch: 25}
+      {wch: 12}, {wch: 25}, {wch: 15}, {wch: 45}, {wch: 15}, {wch: 40}, {wch: 12}, {wch: 8}, {wch: 25}
     ];
     ws['!cols'] = wscols;
 
