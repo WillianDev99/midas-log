@@ -89,7 +89,7 @@ const ExternalLoads = () => {
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
-  const TAX_RATE = 0.13; // Alterado de 0.0998 para 0.13
+  const TAX_RATE = 0.13; // Imposto de 13%
 
   useEffect(() => {
     const init = async () => {
@@ -897,6 +897,7 @@ const ExternalLoads = () => {
                                                             else if (totalD >= 4 && totalD <= 10) col = 'H';
                                                             else if (totalD > 10) col = 'I';
                                                             const valStr = String(row[col as keyof typeof row] || '0');
+                                                            // Divisão por 1000 para converter tonelada em kg
                                                             finalVal = (parseFloat(valStr.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0) / 1000;
                                                           } else {
                                                             if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
