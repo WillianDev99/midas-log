@@ -22,7 +22,8 @@ import {
   Search,
   Trash2,
   FileText,
-  Bookmark
+  Bookmark,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -44,6 +45,7 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -62,6 +64,8 @@ interface ExternalLoad {
   status: string;
   parsedDeliveries?: any[];
   totalToPay?: number;
+  manualDeliveryCount?: number;
+  useEqualizationTable?: boolean;
 }
 
 type SortConfig = {
@@ -80,11 +84,12 @@ const ExternalLoads = () => {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
-  const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[] }>({ cif: [], fob: [] });
+  const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[] }>({ cif: [], fob: [], equalization: [] });
   const [manualSearch, setManualSearch] = useState("");
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
+  const TAX_RATE = 0.13; // Alterado de 0.0998 para 0.13
 
   useEffect(() => {
     const init = async () => {
@@ -110,6 +115,7 @@ const ExternalLoads = () => {
 
   const loadFreightTables = async () => {
     try {
+      // Tabela Antiga
       const response = await fetch('/TABELA_MIDAS_2025.xlsx');
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
@@ -130,29 +136,30 @@ const ExternalLoads = () => {
         return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && city !== 'undefined';
       });
 
-      setFreightTables({ cif: cleanCIF, fob: cleanFOB });
+      // Nova Tabela de Equalização
+      const eqResponse = await fetch('/TABELA_EQUALIZACAO.xlsx');
+      const eqArrayBuffer = await eqResponse.arrayBuffer();
+      const eqWorkbook = XLSX.read(eqArrayBuffer, { type: 'buffer' });
+      const eqSheet = eqWorkbook.Sheets[eqWorkbook.SheetNames[0]];
+      const eqData = XLSX.utils.sheet_to_json(eqSheet, { header: 'A' });
+
+      const cleanEQ = eqData.filter((row: any) => {
+        const city = String(row['B'] || '');
+        return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && normalizeText(city) !== 'cod';
+      });
+
+      setFreightTables({ cif: cleanCIF, fob: cleanFOB, equalization: cleanEQ });
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
     }
   };
 
-  const getAliquot = (city: string, uf: string, type: string, weight: number) => {
+  const getAliquot = (city: string, uf: string, type: string, weight: number, useEqualization: boolean = false, totalDeliveries: number = 1) => {
     const normCity = normalizeText(city);
     const cleanUF = uf.substring(0, 2).toUpperCase();
 
-    if (type === 'CIF') {
-      const matches = freightTables.cif.filter(row => normalizeText(String(row['B'] || '')) === normCity);
-      const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
-      
-      if (!entry) return 0;
-      
-      let val = 0;
-      if (weight <= 7000) val = parseFloat(String(entry['I'] || 0));
-      else if (weight <= 17000) val = parseFloat(String(entry['J'] || 0));
-      else val = parseFloat(String(entry['K'] || 0));
-      
-      return val / 1000;
-    } else {
+    // Se for FOB, sempre usa a tabela antiga (apenas CE, PI, MA)
+    if (type === 'FOB') {
       const matches = freightTables.fob.filter(row => normalizeText(String(row['A'] || '')) === normCity);
       const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['B'] || '').toUpperCase().includes(cleanUF));
       
@@ -162,6 +169,37 @@ const ExternalLoads = () => {
       if (weight <= 14000) return parseFloat(String(entry['F'] || 0));
       return parseFloat(String(entry['I'] || 0));
     }
+
+    // Se for CIF e estiver usando a nova tabela de equalização
+    if (useEqualization) {
+      const matches = freightTables.equalization.filter(row => normalizeText(String(row['B'] || '')) === normCity);
+      const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
+
+      if (!entry) return 0;
+
+      let col = 'F'; // 1 entrega
+      if (totalDeliveries >= 2 && totalDeliveries <= 3) col = 'G';
+      else if (totalDeliveries >= 4 && totalDeliveries <= 10) col = 'H';
+      else if (totalDeliveries > 10) col = 'I';
+
+      const valStr = String(entry[col as keyof typeof entry] || '0');
+      const val = parseFloat(valStr.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
+      
+      return val / 1000; // Converte de tonelada para kg
+    }
+
+    // CIF Tabela Antiga
+    const matches = freightTables.cif.filter(row => normalizeText(String(row['B'] || '')) === normCity);
+    const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
+    
+    if (!entry) return 0;
+    
+    let val = 0;
+    if (weight <= 7000) val = parseFloat(String(entry['I'] || 0));
+    else if (weight <= 17000) val = parseFloat(String(entry['J'] || 0));
+    else val = parseFloat(String(entry['K'] || 0));
+    
+    return val / 1000;
   };
 
   const fetchSavedLoads = async () => {
@@ -303,9 +341,11 @@ const ExternalLoads = () => {
           peso: mainWeightStr,
           frete: mainFreightType,
           observacoes: String(row[6] || ''),
-          status: String(row[8] || ''), // Alterado de row[7] para row[8] (Coluna I)
+          status: String(row[8] || ''),
           parsedDeliveries: parsed,
-          totalToPay: totalFreight * 0.7
+          totalToPay: totalFreight * 0.7,
+          manualDeliveryCount: parsed.length,
+          useEqualizationTable: false
         };
       });
 
@@ -401,7 +441,32 @@ const ExternalLoads = () => {
   }, [activeData]);
 
   const handleUpdateLoad = (loadId: string, updates: Partial<ExternalLoad>) => {
-    const updateFn = (loads: ExternalLoad[]) => loads.map(l => l.id === loadId ? { ...l, ...updates } : l);
+    const updateFn = (loads: ExternalLoad[]) => loads.map(l => {
+      if (l.id === loadId) {
+        const updatedLoad = { ...l, ...updates };
+        
+        // Se mudou o Switch ou o contador de entregas, recalcula todas as alíquotas CIF
+        if (updates.useEqualizationTable !== undefined || updates.manualDeliveryCount !== undefined) {
+          const newDeliveries = updatedLoad.parsedDeliveries?.map(d => {
+            const newAliquot = getAliquot(
+              d.city, 
+              d.uf, 
+              d.type, 
+              d.weight, 
+              updatedLoad.useEqualizationTable, 
+              updatedLoad.manualDeliveryCount
+            );
+            return { ...d, aliquot: newAliquot, freight: d.weight * newAliquot };
+          });
+          updatedLoad.parsedDeliveries = newDeliveries;
+          const totalReceived = newDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+          updatedLoad.totalToPay = totalReceived * 0.7;
+        }
+        
+        return updatedLoad;
+      }
+      return l;
+    });
     if (viewMode === 'current') setCurrentLoads(updateFn);
     else setPreviousLoads(updateFn);
   };
@@ -769,7 +834,20 @@ const ExternalLoads = () => {
                               <Table>
                                 <TableHeader className="bg-slate-900">
                                   <TableRow>
-                                    <TableHead className="text-white text-[10px] uppercase">Entregas</TableHead>
+                                    <TableHead className="text-white text-[10px] uppercase">
+                                      <div className="flex items-center gap-2">
+                                        Entregas
+                                        <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded border border-white/20">
+                                          <ArrowRightLeft size={12} className="text-amber-400" />
+                                          <span className="text-[9px] text-white/70">Nova Tabela CIF</span>
+                                          <Switch 
+                                            checked={load.useEqualizationTable} 
+                                            onCheckedChange={(checked) => handleUpdateLoad(load.id, { useEqualizationTable: checked })}
+                                            className="scale-75 data-[state=checked]:bg-amber-500"
+                                          />
+                                        </div>
+                                      </div>
+                                    </TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">Cidade</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">UF</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">CIF/FOB</TableHead>
@@ -801,9 +879,9 @@ const ExternalLoads = () => {
                                               <div className="space-y-2">
                                                 <Input placeholder="Pesquisar cidade..." className="h-8 text-xs" value={manualSearch} onChange={(e) => setManualSearch(e.target.value)} />
                                                 <div className="max-h-60 overflow-y-auto space-y-1">
-                                                  {(delivery.type === 'CIF' ? freightTables.cif : freightTables.fob)
+                                                  {(delivery.type === 'CIF' ? (load.useEqualizationTable ? freightTables.equalization : freightTables.cif) : freightTables.fob)
                                                     .filter((row: any) => {
-                                                      const name = delivery.type === 'CIF' ? String(row['B'] || '') : String(row['A'] || '');
+                                                      const name = (delivery.type === 'CIF' && load.useEqualizationTable) ? String(row['B'] || '') : (delivery.type === 'CIF' ? String(row['B'] || '') : String(row['A'] || ''));
                                                       return normalizeText(name).includes(normalizeText(manualSearch));
                                                     })
                                                     .slice(0, 50)
@@ -812,9 +890,19 @@ const ExternalLoads = () => {
                                                         let finalVal = 0;
                                                         const weight = delivery.weight;
                                                         if (delivery.type === 'CIF') {
-                                                          if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
-                                                          else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
-                                                          else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
+                                                          if (load.useEqualizationTable) {
+                                                            let col = 'F';
+                                                            const totalD = load.manualDeliveryCount || 1;
+                                                            if (totalD >= 2 && totalD <= 3) col = 'G';
+                                                            else if (totalD >= 4 && totalD <= 10) col = 'H';
+                                                            else if (totalD > 10) col = 'I';
+                                                            const valStr = String(row[col as keyof typeof row] || '0');
+                                                            finalVal = (parseFloat(valStr.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0) / 1000;
+                                                          } else {
+                                                            if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                                            else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
+                                                            else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
+                                                          }
                                                         } else {
                                                           if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0));
                                                           else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0));
@@ -822,7 +910,9 @@ const ExternalLoads = () => {
                                                         }
                                                         handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
                                                       }}>
-                                                        <div className="font-bold uppercase">{delivery.type === 'CIF' ? `${row['B']} (${row['E']})` : `${row['A']} (${row['B']})`}</div>
+                                                        <div className="font-bold uppercase">
+                                                          {delivery.type === 'CIF' ? (load.useEqualizationTable ? `${row['B']} (${row['E']})` : `${row['B']} (${row['E']})`) : `${row['A']} (${row['B']})`}
+                                                        </div>
                                                       </Button>
                                                     ))}
                                                 </div>
@@ -835,7 +925,18 @@ const ExternalLoads = () => {
                                     </TableRow>
                                   ))}
                                   <TableRow className="bg-slate-50 font-bold">
-                                    <TableCell colSpan={4} className="text-right uppercase text-[10px]">Total:</TableCell>
+                                    <TableCell className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] uppercase text-slate-500">Total Entregas:</span>
+                                        <Input 
+                                          type="number" 
+                                          className="h-7 w-16 text-xs font-bold bg-white" 
+                                          value={load.manualDeliveryCount} 
+                                          onChange={(e) => handleUpdateLoad(load.id, { manualDeliveryCount: parseInt(e.target.value) || 0 })}
+                                        />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell colSpan={3} className="text-right uppercase text-[10px]">Total:</TableCell>
                                     <TableCell className="text-xs">{formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
                                     <TableCell className="text-xs">-</TableCell>
                                     <TableCell className="text-xs text-amber-700">R$ {formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0)}</TableCell>
@@ -846,7 +947,7 @@ const ExternalLoads = () => {
                               {(() => {
                                 const totalReceived = load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
                                 const totalToPay = load.totalToPay || 0;
-                                const tax = totalReceived * 0.0998;
+                                const tax = totalReceived * TAX_RATE;
                                 const marginBefore = totalReceived - totalToPay;
                                 const marginAfter = totalReceived - totalToPay - tax;
                                 const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
@@ -866,7 +967,7 @@ const ExternalLoads = () => {
                                       <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)</span>
                                     </div>
                                     <div className="flex gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto:</span>
+                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (13%):</span>
                                       <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)</span>
                                     </div>
                                   </div>
