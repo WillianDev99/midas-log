@@ -113,6 +113,17 @@ const ExternalLoads = () => {
     return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  const parseValue = (val: any) => {
+    if (typeof val === 'number') return val;
+    const str = String(val || '0').replace('R$', '').trim();
+    if (str.includes(',')) {
+      // Formato brasileiro: 1.234,56
+      return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+    }
+    // Formato padrão ou apenas número: 1234.56
+    return parseFloat(str) || 0;
+  };
+
   const loadFreightTables = async () => {
     try {
       // Tabela Antiga
@@ -165,9 +176,9 @@ const ExternalLoads = () => {
       
       if (!entry) return 0;
 
-      if (weight <= 3000) return parseFloat(String(entry['C'] || 0));
-      if (weight <= 14000) return parseFloat(String(entry['F'] || 0));
-      return parseFloat(String(entry['I'] || 0));
+      if (weight <= 3000) return parseValue(entry['C']);
+      if (weight <= 14000) return parseValue(entry['F']);
+      return parseValue(entry['I']);
     }
 
     // Se for CIF e estiver usando a nova tabela de equalização
@@ -182,8 +193,7 @@ const ExternalLoads = () => {
       else if (totalDeliveries >= 4 && totalDeliveries <= 10) col = 'H';
       else if (totalDeliveries > 10) col = 'I';
 
-      const valStr = String(entry[col as keyof typeof entry] || '0');
-      const val = parseFloat(valStr.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
+      const val = parseValue(entry[col as keyof typeof entry]);
       
       return val / 1000; // Converte de tonelada para kg
     }
@@ -195,9 +205,9 @@ const ExternalLoads = () => {
     if (!entry) return 0;
     
     let val = 0;
-    if (weight <= 7000) val = parseFloat(String(entry['I'] || 0));
-    else if (weight <= 17000) val = parseFloat(String(entry['J'] || 0));
-    else val = parseFloat(String(entry['K'] || 0));
+    if (weight <= 7000) val = parseValue(entry['I']);
+    else if (weight <= 17000) val = parseValue(entry['J']);
+    else val = parseValue(entry['K']);
     
     return val / 1000;
   };
@@ -820,13 +830,24 @@ const ExternalLoads = () => {
                                   Rota: {load.rota}
                                 </DialogDescription>
                               </div>
-                              <div className="flex gap-2">
-                                <Button onClick={() => handleSaveLoad(load)} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
-                                  {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar Carga
-                                </Button>
-                                <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
-                                  <Printer size={16} /> Imprimir para Motorista
-                                </Button>
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                                  <ArrowRightLeft size={14} className="text-amber-600" />
+                                  <span className="text-[10px] font-bold text-slate-600 uppercase">Nova Tabela CIF</span>
+                                  <Switch 
+                                    checked={load.useEqualizationTable} 
+                                    onCheckedChange={(checked) => handleUpdateLoad(load.id, { useEqualizationTable: checked })}
+                                    className="scale-90 data-[state=checked]:bg-amber-500"
+                                  />
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button onClick={() => handleSaveLoad(load)} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+                                    {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar Carga
+                                  </Button>
+                                  <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
+                                    <Printer size={16} /> Imprimir para Motorista
+                                  </Button>
+                                </div>
                               </div>
                             </DialogHeader>
                             
@@ -834,20 +855,7 @@ const ExternalLoads = () => {
                               <Table>
                                 <TableHeader className="bg-slate-900">
                                   <TableRow>
-                                    <TableHead className="text-white text-[10px] uppercase">
-                                      <div className="flex items-center gap-2">
-                                        Entregas
-                                        <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded border border-white/20">
-                                          <ArrowRightLeft size={12} className="text-amber-400" />
-                                          <span className="text-[9px] text-white/70">Nova Tabela CIF</span>
-                                          <Switch 
-                                            checked={load.useEqualizationTable} 
-                                            onCheckedChange={(checked) => handleUpdateLoad(load.id, { useEqualizationTable: checked })}
-                                            className="scale-75 data-[state=checked]:bg-amber-500"
-                                          />
-                                        </div>
-                                      </div>
-                                    </TableHead>
+                                    <TableHead className="text-white text-[10px] uppercase">Entregas</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">Cidade</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">UF</TableHead>
                                     <TableHead className="text-white text-[10px] uppercase">CIF/FOB</TableHead>
@@ -896,9 +904,9 @@ const ExternalLoads = () => {
                                                             if (totalD >= 2 && totalD <= 3) col = 'G';
                                                             else if (totalD >= 4 && totalD <= 10) col = 'H';
                                                             else if (totalD > 10) col = 'I';
-                                                            const valStr = String(row[col as keyof typeof row] || '0');
+                                                            const rawVal = row[col as keyof typeof row];
                                                             // Divisão por 1000 para converter tonelada em kg
-                                                            finalVal = (parseFloat(valStr.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0) / 1000;
+                                                            finalVal = parseValue(rawVal) / 1000;
                                                           } else {
                                                             if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
                                                             else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;

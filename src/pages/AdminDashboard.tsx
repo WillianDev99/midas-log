@@ -130,6 +130,9 @@ const AdminDashboard = () => {
             <TabsTrigger value="luzarte" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
               LUZARTE
             </TabsTrigger>
+            <TabsTrigger value="fretes" className="px-8 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+              FRETES
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="hidracor" className="space-y-6">
@@ -203,6 +206,17 @@ const AdminDashboard = () => {
                 description="Visualização técnica dos produtos Luzarte, formas e cores disponíveis."
                 icon={FileText}
                 disabled
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="fretes" className="space-y-6">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <ToolCard 
+                title="Cálculo de Fretes" 
+                description="Simulador de fretes multi-fábrica com base em tabelas de cidades e clientes especiais."
+                icon={Calculator}
+                href="/admin/cerbras-freight"
               />
             </div>
           </TabsContent>
