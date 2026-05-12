@@ -117,16 +117,13 @@ const ExternalLoads = () => {
     if (typeof val === 'number') return val;
     const str = String(val || '0').replace('R$', '').trim();
     if (str.includes(',')) {
-      // Formato brasileiro: 1.234,56
       return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
     }
-    // Formato padrão ou apenas número: 1234.56
     return parseFloat(str) || 0;
   };
 
   const loadFreightTables = async () => {
     try {
-      // Tabela Antiga
       const response = await fetch('/TABELA_MIDAS_2025.xlsx');
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
@@ -147,7 +144,6 @@ const ExternalLoads = () => {
         return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && city !== 'undefined';
       });
 
-      // Nova Tabela de Equalização
       const eqResponse = await fetch('/TABELA_EQUALIZACAO.xlsx');
       const eqArrayBuffer = await eqResponse.arrayBuffer();
       const eqWorkbook = XLSX.read(eqArrayBuffer, { type: 'buffer' });
@@ -169,36 +165,33 @@ const ExternalLoads = () => {
     const normCity = normalizeText(city);
     const cleanUF = uf.substring(0, 2).toUpperCase();
 
-    // Se for FOB, sempre usa a tabela antiga (apenas CE, PI, MA)
     if (type === 'FOB') {
       const matches = freightTables.fob.filter(row => normalizeText(String(row['A'] || '')) === normCity);
       const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['B'] || '').toUpperCase().includes(cleanUF));
       
       if (!entry) return 0;
 
-      if (weight <= 3000) return parseValue(entry['C']);
-      if (weight <= 14000) return parseValue(entry['F']);
-      return parseValue(entry['I']);
+      // Dividindo por 1000 para converter de tonelada para kg
+      if (weight <= 3000) return parseValue(entry['C']) / 1000;
+      if (weight <= 14000) return parseValue(entry['F']) / 1000;
+      return parseValue(entry['I']) / 1000;
     }
 
-    // Se for CIF e estiver usando a nova tabela de equalização
     if (useEqualization) {
       const matches = freightTables.equalization.filter(row => normalizeText(String(row['B'] || '')) === normCity);
       const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
 
       if (!entry) return 0;
 
-      let col = 'F'; // 1 entrega
+      let col = 'F';
       if (totalDeliveries >= 2 && totalDeliveries <= 3) col = 'G';
       else if (totalDeliveries >= 4 && totalDeliveries <= 10) col = 'H';
       else if (totalDeliveries > 10) col = 'I';
 
       const val = parseValue(entry[col as keyof typeof entry]);
-      
-      return val / 1000; // Converte de tonelada para kg
+      return val / 1000;
     }
 
-    // CIF Tabela Antiga
     const matches = freightTables.cif.filter(row => normalizeText(String(row['B'] || '')) === normCity);
     const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
     
@@ -455,7 +448,6 @@ const ExternalLoads = () => {
       if (l.id === loadId) {
         const updatedLoad = { ...l, ...updates };
         
-        // Se mudou o Switch ou o contador de entregas, recalcula todas as alíquotas CIF
         if (updates.useEqualizationTable !== undefined || updates.manualDeliveryCount !== undefined) {
           const newDeliveries = updatedLoad.parsedDeliveries?.map(d => {
             const newAliquot = getAliquot(
@@ -905,7 +897,6 @@ const ExternalLoads = () => {
                                                             else if (totalD >= 4 && totalD <= 10) col = 'H';
                                                             else if (totalD > 10) col = 'I';
                                                             const rawVal = row[col as keyof typeof row];
-                                                            // Divisão por 1000 para converter tonelada em kg
                                                             finalVal = parseValue(rawVal) / 1000;
                                                           } else {
                                                             if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
@@ -913,9 +904,9 @@ const ExternalLoads = () => {
                                                             else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
                                                           }
                                                         } else {
-                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0));
-                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0));
-                                                          else finalVal = parseFloat(String(row['I'] || 0));
+                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0)) / 1000;
+                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0)) / 1000;
+                                                          else finalVal = parseFloat(String(row['I'] || 0)) / 1000;
                                                         }
                                                         handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
                                                       }}>

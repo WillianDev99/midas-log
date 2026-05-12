@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Plus, 
@@ -60,6 +60,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -137,12 +142,10 @@ interface DriverData {
 const CerbrasFreightCalculator = () => {
   const { user } = useAuth();
   
-  // States for data from Excel
   const [clients, setClients] = useState<ClientData[]>([]);
   const [cityFreights, setCityFreights] = useState<CityFreight[]>([]);
   const [specialFreights, setSpecialFreights] = useState<SpecialClientFreight[]>([]);
   
-  // States for Hidracor data
   const [hidracorClients, setHidracorClients] = useState<ClientData[]>([]);
   const [hidracorCityFreights, setHidracorCityFreights] = useState<any[]>([]);
   const [hidracorSpecialFreights, setHidracorSpecialFreights] = useState<SpecialClientFreight[]>([]);
@@ -150,7 +153,6 @@ const CerbrasFreightCalculator = () => {
   const [drivers, setDrivers] = useState<DriverData[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // States for current calculation
   const [driverName, setDriverName] = useState("");
   const [driverPlate, setDriverPlate] = useState("");
   const [billingDate, setBillingDate] = useState(new Date().toISOString().split('T')[0]);
@@ -159,13 +161,11 @@ const CerbrasFreightCalculator = () => {
   const [taxPercent, setTaxPercent] = useState<number>(13);
   const [isSaving, setIsSaving] = useState(false);
   
-  // States for saved calculations
   const [savedCalculations, setSavedCalculations] = useState<SavedCalculation[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFactory, setSelectedFactory] = useState<"CERBRAS" | "HIDRACOR" | "HIDRACOR_EXTERNA">("CERBRAS");
 
-  // States for autocomplete and client modal
   const [searchClient, setSearchClient] = useState("");
   const [showClientModal, setShowClientModal] = useState(false);
   const [isEditingClient, setIsEditingClient] = useState(false);
@@ -177,7 +177,6 @@ const CerbrasFreightCalculator = () => {
     especial: false
   });
 
-  // States for driver autocomplete and modal
   const [searchDriver, setSearchDriver] = useState("");
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [isEditingDriver, setIsEditingDriver] = useState(false);
@@ -189,7 +188,6 @@ const CerbrasFreightCalculator = () => {
     antt: ""
   });
 
-  // Romaneio States
   const [showRomaneioModal, setShowRomaneioModal] = useState(false);
   const [romaneioData, setRomaneioData] = useState({
     ciot_manifesto: "",
@@ -203,12 +201,10 @@ const CerbrasFreightCalculator = () => {
     carga_quitada: false
   });
 
-  // Database Management States
   const [showDatabaseModal, setShowDatabaseModal] = useState(false);
   const [dbSearchTerm, setDbSearchTerm] = useState("");
   const [activeDbTab, setActiveDbTab] = useState("clients");
 
-  // City Freight Modal States
   const [showCityFreightModal, setShowCityFreightModal] = useState(false);
   const [isEditingCityFreight, setIsEditingCityFreight] = useState(false);
   const [editingCityFreightIndex, setEditingCityFreightIndex] = useState<number | null>(null);
@@ -218,7 +214,6 @@ const CerbrasFreightCalculator = () => {
     valor: 0
   });
 
-  // Special Freight Modal States
   const [showSpecialFreightModal, setShowSpecialFreightModal] = useState(false);
   const [isEditingSpecialFreight, setIsEditingSpecialFreight] = useState(false);
   const [editingSpecialFreightIndex, setEditingSpecialFreightIndex] = useState<number | null>(null);
@@ -230,14 +225,12 @@ const CerbrasFreightCalculator = () => {
     valor: 0
   });
 
-  // Romaneio List Modal State
   const [showRomaneioListModal, setShowRomaneioListModal] = useState(false);
 
   const isRomaneio = (calc: SavedCalculation) => {
     return calc.items.some(item => (item.nfe && item.nfe.trim() !== "") || (item.cte && item.cte.trim() !== ""));
   };
 
-  // Initialization
   useEffect(() => {
     loadAllData();
     fetchHistory();
@@ -271,7 +264,6 @@ const CerbrasFreightCalculator = () => {
       const cityRes = await fetch('/Fretes por Cidade Cerbras.XLSM');
       const cityBuf = await cityRes.arrayBuffer();
       const cityWb = XLSX.read(cityBuf);
-      // Choose sheet named 'Planilha' if exists, otherwise first sheet
       const citySheetName = cityWb.SheetNames.find(name => name.toLowerCase().includes('planilha')) || cityWb.SheetNames[0];
       const cityWs = cityWb.Sheets[citySheetName];
       const cityRaw: any[][] = XLSX.utils.sheet_to_json(cityWs, { header: 1 });
@@ -281,7 +273,6 @@ const CerbrasFreightCalculator = () => {
       }));
       const cityDataStart = cityHeaderIdx > -1 ? cityHeaderIdx + 1 : 1;
       const cityCols = cityRaw[cityHeaderIdx] || [];
-      // Map headers to indices
       const headerMap: Record<string, number> = {};
       cityCols.forEach((c, i) => {
         const header = String(c).toUpperCase();
@@ -292,7 +283,6 @@ const CerbrasFreightCalculator = () => {
       const idxCid = headerMap['CIDADE'] ?? -1;
       const idxUF = headerMap['UF'] ?? -1;
       let idxFrete = headerMap['FRETE'] ?? -1;
-      // If freight column not identified, attempt to infer the first numeric column after city and UF
       if (idxFrete === -1 && idxCid > -1 && idxUF > -1) {
         for (let i = Math.max(idxCid, idxUF) + 1; i < cityCols.length; i++) {
           const sample = cityRaw[cityDataStart][i];
@@ -350,7 +340,6 @@ const CerbrasFreightCalculator = () => {
       })).filter(d => d.motorista !== "");
       setDrivers(parsedDrivers);
 
-      // --- Hidracor Loading ---
       const hClientsRes = await fetch('/Cadastro Clientes Hidracor.xlsx');
       const hClientsBuf = await hClientsRes.arrayBuffer();
       const hClientsWb = XLSX.read(hClientsBuf);
@@ -361,7 +350,7 @@ const CerbrasFreightCalculator = () => {
         cnpj: String(row[1] || '').trim(),
         cidade: String(row[2] || '').trim().toUpperCase(),
         uf: String(row[3] || '').trim().toUpperCase(),
-        especial: false // To be refined by checking special table
+        especial: false
       })).filter(c => c.cliente !== "");
       
       const hSpecialRes = await fetch('/Clientes Especiais Hidracor.XLSM');
@@ -377,7 +366,6 @@ const CerbrasFreightCalculator = () => {
         valor: Number(row[4] || 0)
       })).filter(f => f.cliente !== "");
       
-      // Update especial status in clients list
       const hFinalClients = hParsedClients.map(c => ({
         ...c,
         especial: hParsedSpecial.some(s => s.cnpj === c.cnpj)
@@ -472,6 +460,12 @@ const CerbrasFreightCalculator = () => {
     const standard = cityFreights.find(f => normalize(f.cidade) === targetCity && normalize(f.uf) === targetUF);
     return standard ? standard.valor : 0;
   };
+
+  const totalWeight = items.reduce((acc, i) => acc + i.peso, 0);
+  const totalValue = items.reduce((acc, i) => acc + i.valor, 0);
+  const fretePossivel = totalValue * 0.77;
+  const weightCE = items.filter(i => i.uf === 'CE').reduce((acc, i) => acc + i.peso, 0);
+  const weightOthers = items.filter(i => i.uf !== 'CE').reduce((acc, i) => acc + i.peso, 0);
 
   useEffect(() => {
     if (selectedFactory === 'HIDRACOR' && items.length > 0) {
@@ -622,13 +616,6 @@ const CerbrasFreightCalculator = () => {
     );
   }, [dbSearchTerm, specialFreights]);
 
-  const totalWeight = items.reduce((acc, i) => acc + i.peso, 0);
-  const totalValue = items.reduce((acc, i) => acc + i.valor, 0);
-  const fretePossivel = totalValue * 0.77;
-  const weightCE = items.filter(i => i.uf === 'CE').reduce((acc, i) => acc + i.peso, 0);
-  const weightOthers = items.filter(i => i.uf !== 'CE').reduce((acc, i) => acc + i.peso, 0);
-
-
   const subtotalImpostoCE = weightCE * 0.02 * (taxPercent / 100);
   const subtotalImpostoOthers = weightOthers * 0.08 * (taxPercent / 100);
   const totalImposto = subtotalImpostoCE + subtotalImpostoOthers;
@@ -763,24 +750,17 @@ const CerbrasFreightCalculator = () => {
             table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
             th, td { border: 1px solid #000; padding: 4px; text-align: left; }
             th { background: #f3f4f6; font-size: 9px; }
-            
-            /* Compact table for info and financial data */
             .info-table { width: 420px; margin-bottom: 5px; }
             .info-table td:first-child { width: 1%; white-space: nowrap; font-weight: bold; background: #f9fafb; padding-right: 15px; }
-            
             .grid-2 { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
             .left-panel { width: 420px; }
             .right-panel { width: 300px; }
-
             .summary-box { width: 100%; border: 1px solid #000; border-radius: 0; }
             .summary-box td { text-align: right; border-bottom: 1px solid #eee; padding: 4px; }
             .summary-box td:first-child { text-align: left; font-weight: bold; background: #f9fafb; white-space: nowrap; }
             .summary-box tr:last-child td { border-bottom: none; }
-            
             .occurrences { height: 120px; border: 1px solid #000; padding: 5px; margin-top: 10px; flex: 1; }
             .occurrences-title { text-align: center; font-weight: bold; border-bottom: 1px solid #000; margin-bottom: 5px; padding-bottom: 2px; }
-            .clearfix::after { content: ""; clear: both; display: table; }
-            
             .status-box { border: 1px solid #000; padding: 5px; margin-bottom: 10px; font-weight: bold; }
             .acerto-table { width: 100%; margin-top: 5px; }
             .acerto-table td { padding: 3px 5px; }
@@ -1107,7 +1087,6 @@ const CerbrasFreightCalculator = () => {
         </div>
       </main>
 
-      {/* MODAL: CLIENT (Create/Edit) */}
       <Dialog open={showClientModal} onOpenChange={setShowClientModal}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="text-amber-600" /> {isEditingClient ? "Editar Cliente" : "Cadastrar Novo Cliente"}</DialogTitle></DialogHeader>
@@ -1124,7 +1103,6 @@ const CerbrasFreightCalculator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: DRIVER (Create/Edit) */}
       <Dialog open={showDriverModal} onOpenChange={setShowDriverModal}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="text-amber-600" /> {isEditingDriver ? "Editar Motorista" : "Cadastrar Novo Motorista"}</DialogTitle></DialogHeader>
@@ -1141,7 +1119,6 @@ const CerbrasFreightCalculator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: ROMANEIO GENERATOR */}
       <Dialog open={showRomaneioModal} onOpenChange={setShowRomaneioModal}>
         <DialogContent className="max-w-[90vw] w-[1000px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1232,7 +1209,7 @@ const CerbrasFreightCalculator = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* MODAL: DATABASE MANAGEMENT */}
+
       <Dialog open={showDatabaseModal} onOpenChange={setShowDatabaseModal}>
         <DialogContent className="max-w-[95vw] w-[1200px] max-h-[90vh] flex flex-col p-0">
           <DialogHeader className="p-6 pb-2">
@@ -1429,7 +1406,6 @@ const CerbrasFreightCalculator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: CITY FREIGHT (Create/Edit) */}
       <Dialog open={showCityFreightModal} onOpenChange={setShowCityFreightModal}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><MapPin className="text-amber-600" /> {isEditingCityFreight ? "Editar Frete por Cidade" : "Novo Frete por Cidade"}</DialogTitle></DialogHeader>
@@ -1442,7 +1418,6 @@ const CerbrasFreightCalculator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: SPECIAL FREIGHT (Create/Edit) */}
       <Dialog open={showSpecialFreightModal} onOpenChange={setShowSpecialFreightModal}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Star className="text-amber-600" /> {isEditingSpecialFreight ? "Editar Frete Especial" : "Novo Frete Especial"}</DialogTitle></DialogHeader>
@@ -1458,7 +1433,7 @@ const CerbrasFreightCalculator = () => {
           <DialogFooter><Button variant="outline" onClick={() => setShowSpecialFreightModal(false)}>Cancelar</Button><Button className="bg-amber-600 text-white" onClick={handleSaveSpecialFreight}>Salvar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* MODAL: ROMANEIO LIST */}
+
       <Dialog open={showRomaneioListModal} onOpenChange={setShowRomaneioListModal}>
         <DialogContent className="max-w-[90vw] w-[1000px] max-h-[90vh] flex flex-col p-0">
           <DialogHeader className="p-6 pb-2">
