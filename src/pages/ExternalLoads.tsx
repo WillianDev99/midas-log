@@ -84,7 +84,7 @@ const ExternalLoads = () => {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
-  const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[] }>({ cif: [], fob: [], equalization: [] });
+  const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[], special: any[] }>({ cif: [], fob: [], equalization: [], special: [] });
   const [manualSearch, setManualSearch] = useState("");
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
@@ -136,7 +136,7 @@ const ExternalLoads = () => {
 
       const cleanCIF = cifData.filter((row: any) => {
         const city = String(row['B'] || '');
-        return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade';
+        return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && normalizeText(city) !== 'cod';
       });
 
       const cleanFOB = fobData.filter((row: any) => {
@@ -155,7 +155,23 @@ const ExternalLoads = () => {
         return city && normalizeText(city) !== 'municipio' && normalizeText(city) !== 'cidade' && normalizeText(city) !== 'cod';
       });
 
-      setFreightTables({ cif: cleanCIF, fob: cleanFOB, equalization: cleanEQ });
+      // Carregar Clientes Especiais
+      let cleanSpecial: any[] = [];
+      try {
+        const spResponse = await fetch('/Clientes Especiais Hidracor.XLSM');
+        const spArrayBuffer = await spResponse.arrayBuffer();
+        const spWorkbook = XLSX.read(spArrayBuffer, { type: 'buffer' });
+        const spSheet = spWorkbook.Sheets[spWorkbook.SheetNames[0]];
+        const spData = XLSX.utils.sheet_to_json(spSheet, { header: 'A' });
+        cleanSpecial = spData.filter((row: any) => {
+          const client = String(row['A'] || '');
+          return client && normalizeText(client) !== 'cliente';
+        });
+      } catch (e) {
+        console.error("Erro ao carregar clientes especiais:", e);
+      }
+
+      setFreightTables({ cif: cleanCIF, fob: cleanFOB, equalization: cleanEQ, special: cleanSpecial });
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
     }
@@ -171,10 +187,10 @@ const ExternalLoads = () => {
       
       if (!entry) return 0;
 
-      // Dividindo por 1000 para converter de tonelada para kg
-      if (weight <= 3000) return parseValue(entry['C']) / 1000;
-      if (weight <= 14000) return parseValue(entry['F']) / 1000;
-      return parseValue(entry['I']) / 1000;
+      // Valores FOB na planilha são por KG, não divide por 1000
+      if (weight <= 3000) return parseValue(entry['C']);
+      if (weight <= 14000) return parseValue(entry['F']);
+      return parseValue(entry['I']);
     }
 
     if (useEqualization) {
@@ -192,17 +208,19 @@ const ExternalLoads = () => {
       return val / 1000;
     }
 
+    // CIF Cliente Comum (Busca por cidade na tabela BASE CIF)
     const matches = freightTables.cif.filter(row => normalizeText(String(row['B'] || '')) === normCity);
     const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
     
     if (!entry) return 0;
-    
-    let val = 0;
-    if (weight <= 7000) val = parseValue(entry['I']);
-    else if (weight <= 17000) val = parseValue(entry['J']);
-    else val = parseValue(entry['K']);
-    
-    return val / 1000;
+
+    // Regra Tabela CIF Comum:
+    // Até 7 ton -> Coluna I
+    // Até 17 ton -> Coluna J
+    // Acima de 17 ton -> Coluna K
+    if (weight <= 7000) return parseValue(entry['I']) / 1000; 
+    if (weight <= 17000) return parseValue(entry['J']) / 1000;
+    return parseValue(entry['K']) / 1000;
   };
 
   const fetchSavedLoads = async () => {

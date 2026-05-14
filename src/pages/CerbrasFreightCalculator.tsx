@@ -390,6 +390,43 @@ const CerbrasFreightCalculator = () => {
       })).filter(f => f.cidade);
       setHidracorCityFreights(hParsedCity);
 
+      // Carregar do Banco de Dados (Supabase)
+      try {
+        const { data: dbClients, error: clientsError } = await supabase.from('midas_clients').select('*');
+        if (!clientsError && dbClients) {
+          const formattedDbClients: ClientData[] = dbClients.map(c => ({
+            cliente: c.cliente,
+            cnpj: c.cnpj,
+            cidade: c.cidade,
+            uf: c.uf,
+            especial: c.especial
+          }));
+          setClients(prev => {
+            const existingCnpjs = new Set(prev.map(p => p.cnpj));
+            const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
+            return [...prev, ...uniqueDb];
+          });
+        }
+
+        const { data: dbDrivers, error: driversError } = await supabase.from('midas_drivers').select('*');
+        if (!driversError && dbDrivers) {
+          const formattedDbDrivers: DriverData[] = dbDrivers.map(d => ({
+            motorista: d.motorista,
+            placa: d.placa,
+            veiculo: d.veiculo,
+            capacidade: d.capacidade,
+            antt: d.antt
+          }));
+          setDrivers(prev => {
+            const existingPlates = new Set(prev.map(p => p.placa));
+            const uniqueDb = formattedDbDrivers.filter(d => !existingPlates.has(d.placa));
+            return [...prev, ...uniqueDb];
+          });
+        }
+      } catch (e) {
+        console.error("Erro ao carregar dados do banco:", e);
+      }
+
     } catch (error) {
       console.error("Error loading Excel data:", error);
       showError("Erro ao carregar tabelas de referência.");
@@ -625,20 +662,56 @@ const CerbrasFreightCalculator = () => {
 
   const handleSelectDriver = (d: DriverData) => { setDriverName(d.motorista); setDriverPlate(d.placa); setSearchDriver(""); };
 
-  const handleSaveClient = () => {
+  const handleSaveClient = async () => {
     if (!newClient.cliente || !newClient.cnpj || !newClient.cidade) return showError("Campos obrigatórios.");
     const client = { ...newClient, cliente: newClient.cliente.toUpperCase() };
-    if (isEditingClient) { setClients(clients.map(c => c.cnpj === client.cnpj ? client : c)); } 
-    else { setClients([client, ...clients]); handleAddItem(client); }
-    setShowClientModal(false);
+    
+    try {
+      const { error } = await supabase.from('midas_clients').upsert([{
+        cliente: client.cliente,
+        cnpj: client.cnpj,
+        cidade: client.cidade,
+        uf: client.uf,
+        especial: client.especial,
+        user_id: user?.id
+      }], { onConflict: 'cnpj' });
+
+      if (error) throw error;
+      
+      if (isEditingClient) { setClients(clients.map(c => c.cnpj === client.cnpj ? client : c)); } 
+      else { setClients([client, ...clients]); handleAddItem(client); }
+      
+      showSuccess("Cliente salvo no banco de dados!");
+      setShowClientModal(false);
+    } catch (error: any) {
+      showError("Erro ao salvar cliente: " + error.message);
+    }
   };
 
-  const handleSaveDriver = () => {
+  const handleSaveDriver = async () => {
     if (!newDriver.motorista || !newDriver.placa) return showError("Nome e Placa.");
     const driver = { ...newDriver, motorista: newDriver.motorista.toUpperCase(), placa: newDriver.placa.toUpperCase() };
-    if (isEditingDriver) { setDrivers(drivers.map(d => d.placa === driver.placa ? driver : d)); }
-    else { setDrivers([driver, ...drivers]); handleSelectDriver(driver); }
-    setShowDriverModal(false);
+    
+    try {
+      const { error } = await supabase.from('midas_drivers').upsert([{
+        motorista: driver.motorista,
+        placa: driver.placa,
+        veiculo: driver.veiculo,
+        capacidade: driver.capacidade,
+        antt: driver.antt,
+        user_id: user?.id
+      }], { onConflict: 'placa' });
+
+      if (error) throw error;
+
+      if (isEditingDriver) { setDrivers(drivers.map(d => d.placa === driver.placa ? driver : d)); }
+      else { setDrivers([driver, ...drivers]); handleSelectDriver(driver); }
+      
+      showSuccess("Motorista salvo no banco de dados!");
+      setShowDriverModal(false);
+    } catch (error: any) {
+      showError("Erro ao salvar motorista: " + error.message);
+    }
   };
 
   const handleSaveCityFreight = () => {
