@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Trash2, 
@@ -21,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
+import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
 
 const SavedExternalLoads = () => {
@@ -251,9 +252,38 @@ const SavedExternalLoads = () => {
     printWindow.document.close();
   };
 
-  const filteredLoads = loads.filter(l => 
+  const sortedLoads = useMemo(() => {
+    return [...loads].sort((a, b) => {
+      // Tenta ordenar pela data original (faturamento), senão pela data de criação
+      const dateA = a.data_original || a.created_at;
+      const dateB = b.data_original || b.created_at;
+      
+      // Se for formato DD/MM/YYYY, converte para YYYY-MM-DD para comparar
+      const toSortable = (d: string) => {
+        if (d.includes('/')) {
+          const [day, month, year] = d.split('/');
+          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+        return d;
+      };
+
+      return toSortable(dateB).localeCompare(toSortable(dateA));
+    });
+  }, [loads]);
+
+  const filteredLoads = sortedLoads.filter(l => 
     l.rota.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const groupedLoads = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    filteredLoads.forEach(load => {
+      const date = load.data_original || "Data não informada";
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(load);
+    });
+    return groups;
+  }, [filteredLoads]);
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
@@ -282,40 +312,60 @@ const SavedExternalLoads = () => {
 
       <main className="flex-1 p-4 lg:p-8">
         <div className="grid gap-6">
-          {filteredLoads.map(load => (
-            <Card key={load.id} className="border-none shadow-sm hover:shadow-md transition-all">
-              <CardContent className="p-6">
-                <div className="flex flex-col md:flex-row justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 text-amber-600 mb-2">
-                      <Calendar size={16} />
-                      <span className="text-xs font-bold uppercase">Salvo em: {new Date(load.created_at).toLocaleString('pt-BR')}</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 mb-1">{load.rota}</h3>
-                    <div className="flex flex-wrap gap-4 text-sm text-slate-500">
-                      <span className="flex items-center gap-1"><Truck size={14} /> {load.deliveries?.length} entregas</span>
-                      <span className="flex items-center gap-1 font-bold text-slate-700">
-                        R$ {formatCurrency(load.total_to_pay)} (Pago)
-                      </span>
-                      <span className="flex items-center gap-1 text-blue-600 font-medium">
-                        <User size={14} /> {load.driver_name || 'Sem motorista'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handlePrintMotorista(load)} className="gap-2">
-                      <Printer size={16} /> Motorista
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handlePrintCompleto(load)} className="gap-2 border-amber-200 text-amber-700">
-                      <FileText size={16} /> Imprimir Completo
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteLoad(load.id)} className="text-red-500 hover:bg-red-50">
-                      <Trash2 size={18} />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          {Object.entries(groupedLoads).map(([date, dateLoads]) => (
+            <div key={date} className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-4">
+                <Calendar className="text-slate-400" size={18} />
+                <h2 className="text-sm font-black text-slate-500 uppercase tracking-widest">
+                  Faturamento: {date}
+                </h2>
+                <Badge variant="outline" className="ml-2 text-[10px] text-slate-400 border-slate-200">
+                  {dateLoads.length} {dateLoads.length === 1 ? 'carga' : 'cargas'}
+                </Badge>
+              </div>
+              
+              <div className="grid gap-4 mb-8">
+                {dateLoads.map(load => (
+                  <Card key={load.id} className="border-none shadow-sm hover:shadow-md transition-all group">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col md:flex-row justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 text-amber-600 mb-2">
+                            <Calendar size={14} />
+                            <span className="text-[10px] font-bold uppercase">
+                              {load.data_original ? `Data: ${load.data_original}` : `Salvo em: ${new Date(load.created_at).toLocaleDateString('pt-BR')}`}
+                            </span>
+                            <span className="text-[10px] text-slate-300">|</span>
+                            <span className="text-[10px] text-slate-400 font-medium">Snapshot: {new Date(load.created_at).toLocaleString('pt-BR')}</span>
+                          </div>
+                          <h3 className="text-lg font-bold text-slate-900 mb-1 group-hover:text-amber-700 transition-colors">{load.rota}</h3>
+                          <div className="flex flex-wrap gap-4 text-sm text-slate-500">
+                            <span className="flex items-center gap-1"><Truck size={14} /> {load.deliveries?.length} entregas</span>
+                            <span className="flex items-center gap-1 font-bold text-slate-700">
+                              R$ {formatCurrency(load.total_to_pay)} (Pago)
+                            </span>
+                            <span className="flex items-center gap-1 text-blue-600 font-medium">
+                              <User size={14} /> {load.driver_name || 'Sem motorista'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => handlePrintMotorista(load)} className="gap-2 h-9">
+                            <Printer size={16} /> Motorista
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handlePrintCompleto(load)} className="gap-2 h-9 border-amber-200 text-amber-700 hover:bg-amber-50">
+                            <FileText size={16} /> Completo
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => deleteLoad(load.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-9 w-9">
+                            <Trash2 size={18} />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
 
           {filteredLoads.length === 0 && (

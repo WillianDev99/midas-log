@@ -704,7 +704,7 @@ const CerbrasFormatter = () => {
               </div>
               <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
                 <Calculator size={16} className="text-slate-400" />
-                {Object.entries(totals).map(([col, val]) => (
+                {(Object.entries(totals) as [string, number][]).map(([col, val]) => (
                   <div key={col} className="text-[10px] border-r last:border-0 pr-2 last:pr-0">
                     <span className="text-slate-500 font-medium uppercase">{col}:</span>
                     <span className="ml-1 font-bold text-amber-700">{val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
