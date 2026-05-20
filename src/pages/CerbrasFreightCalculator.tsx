@@ -498,6 +498,11 @@ const CerbrasFreightCalculator = () => {
             const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
             return [...prev, ...uniqueDb];
           });
+          setHidracorClients(prev => {
+            const existingCnpjs = new Set(prev.map(p => p.cnpj));
+            const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
+            return [...prev, ...uniqueDb];
+          });
         }
 
         const { data: dbDrivers, error: driversError } = await supabase.from('midas_drivers').select('*');
@@ -720,9 +725,14 @@ const CerbrasFreightCalculator = () => {
     };
     if (client) {
       if (selectedFactory === 'HIDRACOR') {
-        // Para Hidracor, não carregamos o valor por tonelada inicialmente
-        // Esperamos o usuário preencher o peso para calcular pela faixa
-        newItem.tonelada = 0;
+        if (client.especial) {
+          newItem.tonelada = lookupTonelada(client);
+          newItem.valor = (newItem.peso * newItem.tonelada) / 1000;
+        } else {
+          // Para Hidracor comum, não carregamos o valor por tonelada inicialmente
+          // Esperamos o usuário preencher o peso para calcular pela faixa
+          newItem.tonelada = 0;
+        }
       } else {
         newItem.tonelada = lookupTonelada(client);
       }
@@ -804,7 +814,7 @@ const CerbrasFreightCalculator = () => {
       let hasAnyChange = false;
       const updatedItems = items.map(item => {
         if (item.fabrica === 'HIDRACOR' && !item.especial) {
-          const newTon = getHidracorCityFreight(item.cidade, item.uf, totalWeight);
+          const newTon = getHidracorCityFreight(item.cidade, item.uf, item.peso);
           // Só atualiza automaticamente se encontrarmos um valor válido (> 0)
           // Isso permite que o usuário digite manualmente se a cidade não for encontrada
           if (newTon > 0 && newTon !== item.tonelada) {
