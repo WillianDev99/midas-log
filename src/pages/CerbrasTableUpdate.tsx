@@ -465,27 +465,45 @@ const CerbrasTableUpdate = () => {
   const findProductLevelInPdf = (sheetProductNameCleaned: string, pdfProductsByLevel: Record<number, string[]>): number | null => {
     const normSheet = normalizeName(sheetProductNameCleaned);
     if (!normSheet) return null;
+
+    // Define a list of generic/common words (or short terms) to exclude from partial matches
+    const GENERIC_WORDS = new Set([
+      'POLIDO', 'MATTE', 'BEGE', 'BEIGE', 'GRISS', 'CINZA', 'HD', 'DECK', 
+      'BLANDO', 'ACETINADO', 'BRILHANTE', 'RETIFICADO', 'LISO', 'RELEVO', 
+      'MICRO', 'PEQUENO', 'MEDIO', 'MÉDIO', 'GRANDE', 'SUPER', 'PRIME', 
+      'PORCELANATO', 'CERAMICA', 'CERÂMICA', 'A', 'B', 'C', 'CX', 'M2'
+    ]);
     
+    // Pass 1: Exact Match (Highest priority)
     for (let level = 1; level <= 9; level++) {
       const pdfProds = pdfProductsByLevel[level] || [];
       for (const pdfProd of pdfProds) {
         const normPdf = normalizeName(pdfProd);
         if (!normPdf) continue;
         
-        // Exact normalized name match
         if (normSheet === normPdf) {
-          return level;
-        }
-        
-        // Substring checks
-        if (normSheet.includes(normPdf) && normPdf.length > 4) {
-          return level;
-        }
-        if (normPdf.includes(normSheet) && normSheet.length > 4) {
           return level;
         }
       }
     }
+    
+    // Pass 2: Partial/Substring Match (Lower priority, with safety checks)
+    for (let level = 1; level <= 9; level++) {
+      const pdfProds = pdfProductsByLevel[level] || [];
+      for (const pdfProd of pdfProds) {
+        const normPdf = normalizeName(pdfProd);
+        if (!normPdf) continue;
+        
+        // Skip partial matches if either term is generic or too short
+        if (GENERIC_WORDS.has(normPdf) || normPdf.length <= 4) continue;
+        if (GENERIC_WORDS.has(normSheet) || normSheet.length <= 4) continue;
+        
+        if (normSheet.includes(normPdf) || normPdf.includes(normSheet)) {
+          return level;
+        }
+      }
+    }
+    
     return null;
   };
 
