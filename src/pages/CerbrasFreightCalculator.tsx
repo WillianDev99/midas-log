@@ -149,7 +149,7 @@ interface DriverData {
 }
 
 const CerbrasFreightCalculator = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
   const [clients, setClients] = useState<ClientData[]>([]);
   const [cityFreights, setCityFreights] = useState<CityFreight[]>([]);
@@ -215,7 +215,8 @@ const CerbrasFreightCalculator = () => {
     adiantamentos: [] as { amount: number; date: string; description: string }[],
     tem_avaria: false,
     avarias: [] as { fabrica: string; valor: number; cliente: string; nfe: string; observacao: string }[],
-    carga_quitada: false
+    carga_quitada: false,
+    situacao: 'em_rota'
   });
 
   const [showDatabaseModal, setShowDatabaseModal] = useState(false);
@@ -260,9 +261,11 @@ const CerbrasFreightCalculator = () => {
   }, [items]);
 
   useEffect(() => {
-    loadAllData();
-    fetchHistory();
-  }, []);
+    if (!loading) {
+      loadAllData();
+      fetchHistory();
+    }
+  }, [loading]);
 
   const loadAllData = async () => {
     setIsLoadingData(true);
@@ -287,7 +290,6 @@ const CerbrasFreightCalculator = () => {
         uf: String(row[idxUF_C] || '').trim().toUpperCase(),
         especial: String(row[idxEsp_C] || '').toUpperCase() === 'SIM'
       })).filter(c => c.cliente !== "");
-      setClients(parsedClients);
 
       const cityRes = await fetch('/Fretes por Cidade Cerbras.XLSM');
       const cityBuf = await cityRes.arrayBuffer();
@@ -322,7 +324,6 @@ const CerbrasFreightCalculator = () => {
         uf: idxUF > -1 ? String(row[idxUF] || '').trim().toUpperCase() : '',
         valor: idxFrete > -1 && typeof row[idxFrete] === 'number' ? row[idxFrete] : 0,
       })).filter(f => f.cidade && f.uf);
-      setCityFreights(parsedCityFreights);
 
       const specialRes = await fetch('/Clientes Especiais Cerbras.XLSM');
       const specialBuf = await specialRes.arrayBuffer();
@@ -344,7 +345,6 @@ const CerbrasFreightCalculator = () => {
         uf: String(row[idxUF_S] || '').trim().toUpperCase(),
         valor: typeof row[idxTon_S] === 'number' ? row[idxTon_S] : 0
       })).filter(f => f.cliente !== "");
-      setSpecialFreights(parsedSpecialFreights);
 
       const driversRes = await fetch('/Dados Motoristas.xlsx');
       const driversBuf = await driversRes.arrayBuffer();
@@ -366,7 +366,6 @@ const CerbrasFreightCalculator = () => {
         capacidade: String(row[idxCap] || '').trim(),
         antt: String(row[idxANTT] || '').trim()
       })).filter(d => d.motorista !== "");
-      setDrivers(parsedDrivers);
 
       const hClientsRes = await fetch('/Cadastro Clientes Hidracor.xlsx');
       const hClientsBuf = await hClientsRes.arrayBuffer();
@@ -398,8 +397,6 @@ const CerbrasFreightCalculator = () => {
         ...c,
         especial: hParsedSpecial.some(s => s.cnpj === c.cnpj)
       }));
-      setHidracorClients(hFinalClients);
-      setHidracorSpecialFreights(hParsedSpecial);
 
       const hCityRes = await fetch('/Fretes por Cidade Hidracor.xlsx');
       const hCityBuf = await hCityRes.arrayBuffer();
@@ -435,7 +432,6 @@ const CerbrasFreightCalculator = () => {
           return parseFloat(clean) || 0;
         };
 
-        // Usa o mapeamento por header, mas se falhar ou estiver em 0, tenta as colunas fixas C (2) e H (7)
         const getColVal = (key: string, fixedIdx: number) => {
           const val = hHeaderMap[key] !== undefined ? parseVal(row[hHeaderMap[key]]) : 0;
           return val > 0 ? val : parseVal(row[fixedIdx]);
@@ -452,35 +448,37 @@ const CerbrasFreightCalculator = () => {
           tLess3: getColVal('TLESS3', 7)
         };
       }).filter(f => f.cidade);
-      setHidracorCityFreights(hParsedCity);
 
       // Carregar Tabelas Externas Hidracor
+      let extCif: any[] = [];
+      let extFob: any[] = [];
+      let extEqualization: any[] = [];
       try {
         const extRes = await fetch('/TABELA_MIDAS_2025.xlsx');
         const extBuf = await extRes.arrayBuffer();
         const extWb = XLSX.read(extBuf);
         
         const cifSheet = extWb.Sheets[extWb.SheetNames[0]];
-        const cifData = XLSX.utils.sheet_to_json(cifSheet, { header: 'A' });
+        extCif = XLSX.utils.sheet_to_json(cifSheet, { header: 'A' }) as any[];
         
         const fobSheet = extWb.Sheets[extWb.SheetNames[1]];
-        const fobData = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' });
+        extFob = XLSX.utils.sheet_to_json(fobSheet, { header: 'A' }) as any[];
 
-        // Carregar Tabela de Equalização
         const eqRes = await fetch('/TABELA_EQUALIZACAO.xlsx');
         const eqBuf = await eqRes.arrayBuffer();
         const eqWb = XLSX.read(eqBuf);
         const eqSheet = eqWb.Sheets[eqWb.SheetNames[0]];
-        const eqData = XLSX.utils.sheet_to_json(eqSheet, { header: 'A' });
-
-        setHidracorExternalTables({
-          cif: cifData as any[],
-          fob: fobData as any[],
-          equalization: eqData as any[]
-        });
+        extEqualization = XLSX.utils.sheet_to_json(eqSheet, { header: 'A' }) as any[];
       } catch (e) {
         console.error("Erro ao carregar tabelas externas:", e);
       }
+
+      // Arrays acumuladores finais
+      let finalClients = [...parsedClients];
+      let finalCityFreights = [...parsedCityFreights];
+      let finalDrivers = [...parsedDrivers];
+      let finalHidracorClients = [...hFinalClients];
+      let finalHidracorCityFreights = [...hParsedCity];
 
       // Carregar do Banco de Dados (Supabase)
       try {
@@ -493,16 +491,14 @@ const CerbrasFreightCalculator = () => {
             uf: c.uf,
             especial: c.especial
           }));
-          setClients(prev => {
-            const existingCnpjs = new Set(prev.map(p => p.cnpj));
-            const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
-            return [...prev, ...uniqueDb];
-          });
-          setHidracorClients(prev => {
-            const existingCnpjs = new Set(prev.map(p => p.cnpj));
-            const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
-            return [...prev, ...uniqueDb];
-          });
+          
+          const existingCnpjs = new Set(finalClients.map(p => p.cnpj));
+          const uniqueDb = formattedDbClients.filter(c => !existingCnpjs.has(c.cnpj));
+          finalClients = [...finalClients, ...uniqueDb];
+
+          const existingHCnpjs = new Set(finalHidracorClients.map(p => p.cnpj));
+          const uniqueHDb = formattedDbClients.filter(c => !existingHCnpjs.has(c.cnpj));
+          finalHidracorClients = [...finalHidracorClients, ...uniqueHDb];
         }
 
         const { data: dbDrivers, error: driversError } = await supabase.from('midas_drivers').select('*');
@@ -514,15 +510,53 @@ const CerbrasFreightCalculator = () => {
             capacidade: d.capacidade,
             antt: d.antt
           }));
-          setDrivers(prev => {
-            const existingPlates = new Set(prev.map(p => p.placa));
-            const uniqueDb = formattedDbDrivers.filter(d => !existingPlates.has(d.placa));
-            return [...prev, ...uniqueDb];
-          });
+          const existingPlates = new Set(finalDrivers.map(p => p.placa));
+          const uniqueDbDrivers = formattedDbDrivers.filter(d => !existingPlates.has(d.placa));
+          finalDrivers = [...finalDrivers, ...uniqueDbDrivers];
+        }
+
+        const { data: dbCityFreights, error: cityFreightsError } = await supabase.from('midas_city_freights').select('*');
+        if (!cityFreightsError && dbCityFreights) {
+          const formattedDbCityFreights: CityFreight[] = dbCityFreights.map(c => ({
+            cidade: c.cidade,
+            uf: c.uf,
+            valor: Number(c.valor)
+          }));
+          const dbKeys = new Set(formattedDbCityFreights.map(c => `${c.cidade}-${c.uf}`));
+          const filteredPrev = finalCityFreights.filter(p => !dbKeys.has(`${p.cidade}-${p.uf}`));
+          finalCityFreights = [...formattedDbCityFreights, ...filteredPrev];
+
+          const formattedDbHidracor: any[] = dbCityFreights.map(c => ({
+            cidade: c.cidade,
+            uf: c.uf,
+            t17: Number(c.valor),
+            t14: Number(c.valor),
+            t11: Number(c.valor),
+            t6: Number(c.valor),
+            t3: Number(c.valor),
+            tLess3: Number(c.valor)
+          }));
+          const dbHKeys = new Set(formattedDbHidracor.map(c => `${c.cidade}-${c.uf}`));
+          const filteredHPrev = finalHidracorCityFreights.filter(p => !dbHKeys.has(`${p.cidade}-${p.uf}`));
+          finalHidracorCityFreights = [...formattedDbHidracor, ...filteredHPrev];
         }
       } catch (e) {
         console.error("Erro ao carregar dados do banco:", e);
       }
+
+      // Atualiza todos os estados de uma única vez no final
+      setClients(finalClients);
+      setCityFreights(finalCityFreights);
+      setSpecialFreights(parsedSpecialFreights);
+      setDrivers(finalDrivers);
+      setHidracorClients(finalHidracorClients);
+      setHidracorSpecialFreights(hParsedSpecial);
+      setHidracorCityFreights(finalHidracorCityFreights);
+      setHidracorExternalTables({
+        cif: extCif,
+        fob: extFob,
+        equalization: extEqualization
+      });
 
     } catch (error) {
       console.error("Error loading Excel data:", error);
@@ -903,7 +937,8 @@ const CerbrasFreightCalculator = () => {
       adiantamentos: [],
       tem_avaria: false,
       avarias: [],
-      carga_quitada: false 
+      carga_quitada: false,
+      situacao: 'em_rota'
     });
   };
 
@@ -911,7 +946,7 @@ const CerbrasFreightCalculator = () => {
     setDriverName(calc.driver_name); setDriverPlate(calc.driver_plate || ""); setBillingDate(calc.billing_date);
     setItems(calc.items); setDriverPayment(calc.driver_payment || 0); setTaxPercent(calc.tax_percent || 13);
     setEditingId(calc.id); setSelectedFactory(calc.factory || "CERBRAS");
-    if (calc.romaneio_data) setRomaneioData(prev => ({ ...prev, ...calc.romaneio_data }));
+    if (calc.romaneio_data) setRomaneioData(prev => ({ situacao: 'em_rota', ...prev, ...calc.romaneio_data }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -998,7 +1033,7 @@ const CerbrasFreightCalculator = () => {
     return (romaneioData.avarias || []).reduce((acc, a) => acc + (a.valor || 0), 0);
   }, [romaneioData.avarias]);
 
-  const lucroLiquido = totalValue - driverPayment - totalImposto - totalAvariasVal;
+  const lucroLiquido = totalValue - driverPayment - totalImposto;
   const saldoFinalMotorista = driverPayment - totalAdiantamento - totalAvariasVal;
 
   const handleAddAdiantamento = () => {
@@ -1018,7 +1053,15 @@ const CerbrasFreightCalculator = () => {
   const handleAddAvaria = () => {
     setRomaneioData({
       ...romaneioData,
-      avarias: [...(romaneioData.avarias || []), { fabrica: "CERBRAS", valor: 0, cliente: "", nfe: "", observacao: "" }]
+      avarias: [...(romaneioData.avarias || []), {
+        id: Math.random().toString(36).substr(2, 9),
+        fabrica: selectedFactory,
+        valor: 0,
+        cliente: "",
+        nfe: "",
+        observacao: "",
+        status: 'a_pagar'
+      }]
     });
   };
 
@@ -1033,7 +1076,13 @@ const CerbrasFreightCalculator = () => {
 
   const handleSaveClient = async () => {
     if (!newClient.cliente || !newClient.cnpj || !newClient.cidade) return showError("Campos obrigatórios.");
-    const client = { ...newClient, cliente: newClient.cliente.toUpperCase() };
+    const client = { 
+      cliente: newClient.cliente.toUpperCase().trim(),
+      cnpj: newClient.cnpj.trim(),
+      cidade: newClient.cidade.toUpperCase().trim(),
+      uf: newClient.uf.toUpperCase().trim(),
+      especial: newClient.especial
+    };
     
     try {
       const { error } = await supabase.from('midas_clients').upsert([{
@@ -1083,18 +1132,49 @@ const CerbrasFreightCalculator = () => {
     }
   };
 
-  const handleSaveCityFreight = () => {
+  const handleSaveCityFreight = async () => {
     if (!newCityFreight.cidade || !newCityFreight.valor) return showError("Cidade e Valor.");
     const cf = { ...newCityFreight, cidade: newCityFreight.cidade.toUpperCase() };
-    if (isEditingCityFreight && editingCityFreightIndex !== null) {
-      const updated = [...cityFreights];
-      updated[editingCityFreightIndex] = cf;
-      setCityFreights(updated);
-    } else {
-      setCityFreights([cf, ...cityFreights]);
+
+    try {
+      const { error } = await supabase.from('midas_city_freights').upsert([{
+        cidade: cf.cidade,
+        uf: cf.uf,
+        valor: cf.valor
+      }], { onConflict: 'cidade,uf' });
+      
+      if (error) throw error;
+      
+      if (isEditingCityFreight && editingCityFreightIndex !== null) {
+        const updated = [...cityFreights];
+        updated[editingCityFreightIndex] = cf;
+        setCityFreights(updated);
+      } else {
+        setCityFreights([cf, ...cityFreights]);
+      }
+
+      // Espelhar também para o estado da Hidracor
+      const hcf = {
+        cidade: cf.cidade,
+        uf: cf.uf,
+        t17: Number(cf.valor),
+        t14: Number(cf.valor),
+        t11: Number(cf.valor),
+        t6: Number(cf.valor),
+        t3: Number(cf.valor),
+        tLess3: Number(cf.valor)
+      };
+      setHidracorCityFreights(prev => {
+        const dbKeys = new Set([`${hcf.cidade}-${hcf.uf}`]);
+        const filteredPrev = prev.filter(p => !dbKeys.has(`${p.cidade}-${p.uf}`));
+        return [hcf, ...filteredPrev];
+      });
+
+      setShowCityFreightModal(false);
+      showSuccess("Frete por cidade salvo no banco de dados!");
+    } catch (error: any) {
+      showError("Erro ao salvar frete por cidade: " + error.message);
     }
-    setShowCityFreightModal(false);
-    showSuccess("Frete por cidade salvo!");
   };
 
   const handleSaveSpecialFreight = () => {
@@ -1259,7 +1339,7 @@ const CerbrasFreightCalculator = () => {
                   <tr><td>% FRETE MDF PI/MA</td><td>R$ ${(wOthers * 0.08).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td></tr>
                   <tr><td>% IMPOSTO (${tPct}%)</td><td>R$ ${tImp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td></tr>
                 `}
-                <tr style="background:#eee; font-size: 11px;"><td>LUCRO LÍQUIDO</td><td><strong>R$ ${(tV - dPay - tImp - tAvar).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td></tr>
+                <tr style="background:#eee; font-size: 11px;"><td>LUCRO LÍQUIDO</td><td><strong>R$ ${(tV - dPay - tImp).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td></tr>
               </table>
             </div>
           </div>
@@ -1417,6 +1497,19 @@ const CerbrasFreightCalculator = () => {
 
   return (
     <>
+      {isLoadingData && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center animate-in fade-in duration-200">
+          <Card className="w-80 border-slate-200 shadow-xl bg-white/95">
+            <CardContent className="pt-6 flex flex-col items-center justify-center space-y-4">
+              <Loader2 className="animate-spin text-amber-600 h-10 w-10" />
+              <div className="text-center space-y-1">
+                <p className="text-sm font-semibold text-slate-800">Carregando dados de referência...</p>
+                <p className="text-xs text-slate-500">Buscando planilhas e banco de dados.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center sticky top-0 z-50 shadow-sm">
           <div className="flex items-center gap-4">
@@ -1848,6 +1941,21 @@ const CerbrasFreightCalculator = () => {
                       <div className="flex items-center gap-2 pt-2 border-t border-amber-100">
                         <Checkbox id="main-quitada" checked={romaneioData.carga_quitada} onCheckedChange={(v) => setRomaneioData({...romaneioData, carga_quitada: !!v})} />
                         <label htmlFor="main-quitada" className="text-[10px] font-black uppercase text-amber-900 cursor-pointer">Marcar Carga como Quitada</label>
+                      </div>
+                      <div className="flex flex-col gap-1 pt-2 border-t border-amber-100">
+                        <label htmlFor="main-situacao" className="text-[10px] font-black uppercase text-amber-900">Situação da Carga</label>
+                        <Select 
+                          value={romaneioData.situacao || 'em_rota'} 
+                          onValueChange={(v) => setRomaneioData({...romaneioData, situacao: v})}
+                        >
+                          <SelectTrigger id="main-situacao" className="h-8 text-xs bg-white border-amber-200 text-amber-900">
+                            <SelectValue placeholder="Situação" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="em_rota">EM ROTA</SelectItem>
+                            <SelectItem value="finalizada">FINALIZADA</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>

@@ -290,7 +290,8 @@ const ExternalLoads = () => {
             type: t,
             weight: w,
             aliquot,
-            freight: w * aliquot
+            freight: w * aliquot,
+            tax_rate: TAX_RATE
           });
         }
       });
@@ -304,7 +305,8 @@ const ExternalLoads = () => {
           type: mainFreightType,
           weight: mainWeight,
           aliquot,
-          freight: mainWeight * aliquot
+          freight: mainWeight * aliquot,
+          tax_rate: TAX_RATE
         });
       }
     }
@@ -322,7 +324,8 @@ const ExternalLoads = () => {
           type: mainFreightType,
           weight: mainWeight,
           aliquot,
-          freight: mainWeight * aliquot
+          freight: mainWeight * aliquot,
+          tax_rate: TAX_RATE
         });
       });
     }

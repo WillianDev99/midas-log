@@ -168,7 +168,8 @@ const SavedExternalLoads = () => {
     const totalWeight = load.deliveries?.reduce((acc: number, d: any) => acc + d.weight, 0) || 0;
     const totalFreight = load.deliveries?.reduce((acc: number, d: any) => acc + d.freight, 0) || 0;
     const totalToPay = load.total_to_pay || 0;
-    const tax = totalFreight * 0.0998;
+    const taxRate = load.deliveries?.[0]?.tax_rate ?? 0.0998;
+    const tax = totalFreight * taxRate;
     const marginBefore = totalFreight - totalToPay;
     const marginAfter = totalFreight - totalToPay - tax;
     
@@ -230,7 +231,7 @@ const SavedExternalLoads = () => {
             <div class="summary-item"><span>Peso Total:</span> <span class="font-bold">${formatCurrency(totalWeight)} KG</span></div>
             <div class="summary-item"><span>Frete Total Recebido:</span> <span class="font-bold">R$ ${formatCurrency(totalFreight)}</span></div>
             <div class="summary-item"><span>Total Pago ao Motorista:</span> <span class="font-bold">R$ ${formatCurrency(totalToPay)}</span></div>
-            <div class="summary-item"><span>Imposto (9.98%):</span> <span class="font-bold">R$ ${formatCurrency(tax)}</span></div>
+            <div class="summary-item"><span>Imposto (${(taxRate * 100).toFixed(2)}%):</span> <span class="font-bold">R$ ${formatCurrency(tax)}</span></div>
             
             <div class="summary-item" style="border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px;">
               <span>Margem Bruta (Antes do Imposto):</span> 
@@ -254,20 +255,7 @@ const SavedExternalLoads = () => {
 
   const sortedLoads = useMemo(() => {
     return [...loads].sort((a, b) => {
-      // Tenta ordenar pela data original (faturamento), senão pela data de criação
-      const dateA = a.data_original || a.created_at;
-      const dateB = b.data_original || b.created_at;
-      
-      // Se for formato DD/MM/YYYY, converte para YYYY-MM-DD para comparar
-      const toSortable = (d: string) => {
-        if (d.includes('/')) {
-          const [day, month, year] = d.split('/');
-          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
-        return d;
-      };
-
-      return toSortable(dateB).localeCompare(toSortable(dateA));
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [loads]);
 
@@ -278,7 +266,7 @@ const SavedExternalLoads = () => {
   const groupedLoads = useMemo(() => {
     const groups: Record<string, any[]> = {};
     filteredLoads.forEach(load => {
-      const date = load.data_original || "Data não informada";
+      const date = load.created_at ? new Date(load.created_at).toLocaleDateString('pt-BR') : "Data não informada";
       if (!groups[date]) groups[date] = [];
       groups[date].push(load);
     });
@@ -317,7 +305,7 @@ const SavedExternalLoads = () => {
               <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-4">
                 <Calendar className="text-slate-400" size={18} />
                 <h2 className="text-sm font-black text-slate-500 uppercase tracking-widest">
-                  Faturamento: {date}
+                  Salvo em: {date}
                 </h2>
                 <Badge variant="outline" className="ml-2 text-[10px] text-slate-400 border-slate-200">
                   {dateLoads.length} {dateLoads.length === 1 ? 'carga' : 'cargas'}

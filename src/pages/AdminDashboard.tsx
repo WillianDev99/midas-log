@@ -14,7 +14,8 @@ import {
   AlertTriangle,
   FileText,
   CalendarClock,
-  Calculator
+  Calculator,
+  CreditCard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -150,12 +151,6 @@ const AdminDashboard = () => {
                 href="/admin/external-loads"
               />
               <ToolCard 
-                title="Cálculo de Avarias" 
-                description="Ferramenta para cálculo e registro de avarias em produtos Hidracor."
-                icon={AlertTriangle}
-                disabled
-              />
-              <ToolCard 
                 title="Gerar Romaneio" 
                 description="Geração automática de romaneios para cargas externas contratadas."
                 icon={FileText}
@@ -177,12 +172,6 @@ const AdminDashboard = () => {
                 description="Cálculo e análise de distribuição de pesos por região e cidade para a Cerbras."
                 icon={MapPin}
                 href="/admin/cerbras-weights"
-              />
-              <ToolCard 
-                title="Cálculo de Avarias" 
-                description="Ferramenta para cálculo e registro de avarias em produtos Cerbras."
-                icon={AlertTriangle}
-                disabled
               />
               <ToolCard 
                 title="Previsão de Coleta" 
@@ -217,6 +206,18 @@ const AdminDashboard = () => {
                 description="Simulador de fretes multi-fábrica com base em tabelas de cidades e clientes especiais."
                 icon={Calculator}
                 href="/admin/cerbras-freight"
+              />
+              <ToolCard 
+                title="Relatório de Avarias" 
+                description="Visualização, controle de pagamento e filtragem mensal de avarias registradas."
+                icon={AlertTriangle}
+                href="/admin/avarias-report"
+              />
+              <ToolCard 
+                title="Pagamento de Motoristas" 
+                description="Controle de saldos, adiantamentos, descontos e situação de entrega por motorista."
+                icon={CreditCard}
+                href="/admin/driver-payments"
               />
             </div>
           </TabsContent>
