@@ -179,6 +179,12 @@ const AdminDashboard = () => {
                 icon={CalendarClock}
                 href="/admin/cerbras-collection"
               />
+              <ToolCard 
+                title="Atualização de Tabelas" 
+                description="Upload de PDFs de preços para extração automática e atualização de planilhas de venda."
+                icon={FileSpreadsheet}
+                href="/admin/cerbras-table-update"
+              />
             </div>
           </TabsContent>
 

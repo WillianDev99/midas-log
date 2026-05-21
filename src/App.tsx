@@ -21,6 +21,7 @@ import LuzarteBudgets from "./pages/LuzarteBudgets";
 import CerbrasFreightCalculator from "./pages/CerbrasFreightCalculator";
 import AvariasReport from "./pages/AvariasReport";
 import DriverPaymentsReport from "./pages/DriverPaymentsReport";
+import CerbrasTableUpdate from "./pages/CerbrasTableUpdate";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/admin/cerbras-freight" element={<CerbrasFreightCalculator />} />
             <Route path="/admin/avarias-report" element={<AvariasReport />} />
             <Route path="/admin/driver-payments" element={<DriverPaymentsReport />} />
+            <Route path="/admin/cerbras-table-update" element={<CerbrasTableUpdate />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
