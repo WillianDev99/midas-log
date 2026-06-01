@@ -847,7 +847,7 @@ const CerbrasFreightCalculator = () => {
     if (selectedFactory === 'HIDRACOR' && items.length > 0) {
       let hasAnyChange = false;
       const updatedItems = items.map(item => {
-        if (item.fabrica === 'HIDRACOR' && !item.especial) {
+        if (item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF') {
           const newTon = getHidracorCityFreight(item.cidade, item.uf, item.peso);
           // Só atualiza automaticamente se encontrarmos um valor válido (> 0)
           // Isso permite que o usuário digite manualmente se a cidade não for encontrada
@@ -1627,7 +1627,22 @@ const CerbrasFreightCalculator = () => {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right"><Input type="number" className="h-8 text-right text-xs font-bold border-slate-200" value={item.peso || ''} onChange={(e) => updateItem(item.id, { peso: Number(e.target.value) })} /></TableCell>
-                              <TableCell className="text-right"><div className="flex items-center justify-end gap-1"><span className="text-[10px] text-slate-400">R$</span><Input type="number" className="h-8 w-32 text-right text-xs font-bold border-slate-200 bg-slate-50" value={item.tonelada || ''} onChange={(e) => updateItem(item.id, { tonelada: Number(e.target.value) })} /></div></TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <span className="text-[10px] text-slate-400">R$</span>
+                                  <Input 
+                                    type="number" 
+                                    className={`h-8 w-32 text-right text-xs font-bold border-slate-200 ${
+                                      item.fabrica === 'HIDRACOR' && item.tipo === 'CIF' 
+                                        ? 'bg-white cursor-text border-slate-300' 
+                                        : 'bg-slate-50 cursor-not-allowed text-slate-500'
+                                    }`} 
+                                    value={item.tonelada || ''} 
+                                    onChange={(e) => updateItem(item.id, { tonelada: Number(e.target.value) })} 
+                                    disabled={!(item.fabrica === 'HIDRACOR' && item.tipo === 'CIF')}
+                                  />
+                                </div>
+                              </TableCell>
                               <TableCell className="text-right"><span className="text-xs font-bold text-amber-700">R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></TableCell>
                               <TableCell>
                                 <Select value={item.tipo} onValueChange={(v) => updateItem(item.id, { tipo: v })}>
