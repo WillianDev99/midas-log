@@ -625,21 +625,21 @@ const TaxSimulator = () => {
               </Card>
 
               {/* Card 4: Total Geral */}
-              <Card className="border-none shadow-sm bg-gradient-to-br from-emerald-600 to-teal-700 text-white relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-300" />
+              <Card className="border-none shadow-sm bg-white relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-600" />
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
-                    <CardDescription className="text-[10px] font-bold uppercase text-emerald-100">Base Tributável Total</CardDescription>
-                    <TrendingUp size={16} className="text-emerald-200" />
+                    <CardDescription className="text-[10px] font-bold uppercase text-slate-500">Base Tributável Total</CardDescription>
+                    <TrendingUp size={16} className="text-emerald-600" />
                   </div>
-                  <CardTitle className="text-2xl font-black">
+                  <CardTitle className="text-2xl font-black text-slate-800">
                     R$ {formatCurrency(totalBase)}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1">
-                  <p className="text-[10px] text-emerald-200/90">Soma das bases tributáveis do período.</p>
-                  <div className="border-t border-emerald-500 my-1 pt-1" />
-                  <p className="text-xs font-black text-emerald-300 uppercase tracking-tight flex justify-between">
+                  <p className="text-[10px] text-slate-400">Soma das bases tributáveis do período.</p>
+                  <div className="border-t border-slate-100 my-1 pt-1" />
+                  <p className="text-xs font-black text-emerald-700 uppercase tracking-tight flex justify-between">
                     <span>Imposto ({taxRate}%):</span>
                     <span>R$ {formatCurrency(totalImpostoSimulado)}</span>
                   </p>
