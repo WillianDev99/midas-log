@@ -15,7 +15,8 @@ import {
   FileText,
   CalendarClock,
   Calculator,
-  CreditCard
+  CreditCard,
+  Percent
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -224,6 +225,12 @@ const AdminDashboard = () => {
                 description="Controle de saldos, adiantamentos, descontos e situação de entrega por motorista."
                 icon={CreditCard}
                 href="/admin/driver-payments"
+              />
+              <ToolCard 
+                title="Simulador de Imposto" 
+                description="Simulação de impostos (ex: 13%) sobre bases de MDF (2% e 8%) e Cargas Externas Hidracor."
+                icon={Percent}
+                href="/admin/tax-simulator"
               />
             </div>
           </TabsContent>
