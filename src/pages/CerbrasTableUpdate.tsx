@@ -90,10 +90,22 @@ const normalizeName = (name: string): string => {
 };
 
 const normalizeFormat = (fmt: string): string => {
-  return fmt
+  const cleanFmt = fmt
     .toUpperCase()
     .replace(/\s+/g, '')
     .replace(/,/g, '.'); // convert comma to dot
+
+  const parts = cleanFmt.split('X');
+  const normParts = parts.map(part => {
+    if (part.includes('.')) {
+      const num = parseFloat(part);
+      if (!isNaN(num) && num < 10) {
+        return String(Math.round(num * 100));
+      }
+    }
+    return part;
+  });
+  return normParts.join('X');
 };
 
 const termsMap: Record<string, number> = {
