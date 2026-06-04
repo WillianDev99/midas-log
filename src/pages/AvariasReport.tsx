@@ -29,6 +29,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { fetchClosedMonths, isMonthClosed } from '@/utils/closedMonths';
 
 interface AvariaRow {
   calculationId: string;
@@ -53,6 +54,7 @@ const AvariasReport = () => {
   const { user } = useAuth();
   const [calculations, setCalculations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [closedMonths, setClosedMonths] = useState<string[]>([]);
   
   // Filtros
   const [reportMonth, setReportMonth] = useState<number>(new Date().getMonth() + 1);
@@ -69,7 +71,17 @@ const AvariasReport = () => {
 
   useEffect(() => {
     fetchCalculations();
+    loadClosedMonths();
   }, []);
+
+  const loadClosedMonths = async () => {
+    try {
+      const months = await fetchClosedMonths();
+      setClosedMonths(months);
+    } catch (e) {
+      console.error("[AvariasReport] Error loading closed months:", e);
+    }
+  };
 
   const fetchCalculations = async () => {
     setLoading(true);
@@ -181,6 +193,10 @@ const AvariasReport = () => {
 
   // Abre modal para preencher os dados de pagamento
   const handleOpenPayModal = (avaria: AvariaRow) => {
+    if (isMonthClosed(avaria.billingDate, closedMonths)) {
+      showError("Este mês está fechado. Não é possível alterar o pagamento.");
+      return;
+    }
     setSelectedAvaria(avaria);
     setPaymentDate(new Date().toISOString().split('T')[0]); // Data de hoje
     setBeneficiary(avaria.driverName); // Beneficiário padrão é o próprio motorista
@@ -189,6 +205,10 @@ const AvariasReport = () => {
 
   // Atualiza no Supabase o status de uma avaria
   const handleUpdateStatus = async (avaria: AvariaRow, newStatus: 'a_pagar' | 'paga', customDate?: string, customBeneficiary?: string) => {
+    if (isMonthClosed(avaria.billingDate, closedMonths)) {
+      showError("Este mês está fechado. Não é possível alterar o status das avarias.");
+      return;
+    }
     const calc = calculations.find(c => c.id === avaria.calculationId);
     if (!calc) return;
 
@@ -559,6 +579,7 @@ const AvariasReport = () => {
                                 className="h-7 px-2 text-slate-500 hover:text-amber-700 hover:bg-amber-50 text-[10px] gap-1"
                                 onClick={() => handleOpenPayModal(row)}
                                 title="Editar dados de pagamento"
+                                disabled={isMonthClosed(row.billingDate, closedMonths)}
                               >
                                 Editar
                               </Button>
@@ -568,6 +589,7 @@ const AvariasReport = () => {
                                 className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
                                 onClick={() => handleUpdateStatus(row, 'a_pagar')}
                                 title="Marcar como A Pagar (Reverter)"
+                                disabled={isMonthClosed(row.billingDate, closedMonths)}
                               >
                                 <Undo2 size={14} />
                               </Button>
@@ -578,6 +600,7 @@ const AvariasReport = () => {
                               size="sm" 
                               className="h-7 px-3 border-amber-200 text-amber-700 hover:bg-amber-50 text-[10px] font-bold gap-1 shadow-sm"
                               onClick={() => handleOpenPayModal(row)}
+                              disabled={isMonthClosed(row.billingDate, closedMonths)}
                             >
                               <CheckCircle2 size={12} /> Quitar
                             </Button>

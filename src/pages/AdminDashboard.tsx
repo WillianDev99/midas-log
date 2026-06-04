@@ -232,6 +232,12 @@ const AdminDashboard = () => {
                 icon={Percent}
                 href="/admin/tax-simulator"
               />
+              <ToolCard 
+                title="Fechamento de Mês" 
+                description="Bloqueie alterações e edições de romaneios para períodos já fechados."
+                icon={CalendarClock}
+                href="/admin/closed-months"
+              />
             </div>
           </TabsContent>
         </Tabs>

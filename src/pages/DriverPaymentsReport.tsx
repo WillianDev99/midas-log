@@ -39,6 +39,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { fetchClosedMonths, isMonthClosed } from '@/utils/closedMonths';
 
 interface Adiantamento {
   amount: number;
@@ -87,6 +88,7 @@ const DriverPaymentsReport = () => {
   const { user } = useAuth();
   const [calculations, setCalculations] = useState<SavedCalculation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [closedMonths, setClosedMonths] = useState<string[]>([]);
   
   // Filtros
   const [reportMonth, setReportMonth] = useState<string>("ALL");
@@ -115,7 +117,17 @@ const DriverPaymentsReport = () => {
     setReportMonth(currentMonth);
     setReportYear(currentYear);
     fetchCalculations();
+    loadClosedMonths();
   }, []);
+
+  const loadClosedMonths = async () => {
+    try {
+      const months = await fetchClosedMonths();
+      setClosedMonths(months);
+    } catch (e) {
+      console.error("[DriverPaymentsReport] Error loading closed months:", e);
+    }
+  };
 
   const fetchCalculations = async () => {
     setLoading(true);
@@ -226,6 +238,10 @@ const DriverPaymentsReport = () => {
 
   // Função para abrir modal de edição de adiantamentos
   const handleOpenAdvanceModal = (calc: SavedCalculation) => {
+    if (isMonthClosed(calc.billing_date, closedMonths)) {
+      showError("Este mês está fechado. Não é possível alterar adiantamentos.");
+      return;
+    }
     setSelectedCalc(calc);
     setAdvancesList(calc.romaneio_data?.adiantamentos || []);
     setNewAdvanceAmount("");
@@ -296,6 +312,10 @@ const DriverPaymentsReport = () => {
 
   // Atualiza quitação diretamente da tabela
   const handleToggleQuitação = async (calc: SavedCalculation) => {
+    if (isMonthClosed(calc.billing_date, closedMonths)) {
+      showError("Este mês está fechado. Não é possível alterar a quitação.");
+      return;
+    }
     const romData = calc.romaneio_data || {};
     const isCurrentlyQuitada = !!romData.carga_quitada;
     const updatedRomData = {
@@ -326,6 +346,10 @@ const DriverPaymentsReport = () => {
 
   // Atualiza a situação geral da carga
   const handleUpdateSituation = async (calc: SavedCalculation, value: string) => {
+    if (isMonthClosed(calc.billing_date, closedMonths)) {
+      showError("Este mês está fechado. Não é possível alterar a situação da carga.");
+      return;
+    }
     const romData = calc.romaneio_data || {};
     const updatedRomData = {
       ...romData,
@@ -859,6 +883,7 @@ const DriverPaymentsReport = () => {
                             <Select 
                               value={romData.situacao || 'em_rota'} 
                               onValueChange={(v) => handleUpdateSituation(calc, v)}
+                              disabled={isMonthClosed(calc.billing_date, closedMonths)}
                             >
                               <SelectTrigger className="h-7 text-[10px] font-bold bg-white border-slate-200 text-slate-700 uppercase">
                                 <SelectValue placeholder="Situação" />
@@ -882,6 +907,7 @@ const DriverPaymentsReport = () => {
                                 className="h-7 px-2 border-slate-200 text-slate-600 hover:bg-slate-50 text-[10px] font-semibold gap-1"
                                 onClick={() => handleOpenAdvanceModal(calc)}
                                 title="Editar Adiantamentos"
+                                disabled={isMonthClosed(calc.billing_date, closedMonths)}
                               >
                                 Adiantar
                               </Button>
@@ -892,6 +918,7 @@ const DriverPaymentsReport = () => {
                                   className="h-7 w-7 text-slate-400 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-200"
                                   onClick={() => handleToggleQuitação(calc)}
                                   title="Estornar Quitação (Marcar como Pendente)"
+                                  disabled={isMonthClosed(calc.billing_date, closedMonths)}
                                 >
                                   <Undo2 size={13} />
                                 </Button>
@@ -901,6 +928,7 @@ const DriverPaymentsReport = () => {
                                   size="sm" 
                                   className="h-7 px-2 border-amber-200 text-amber-700 hover:bg-amber-50 hover:border-amber-300 text-[10px] font-black gap-1 shadow-sm"
                                   onClick={() => handleToggleQuitação(calc)}
+                                  disabled={isMonthClosed(calc.billing_date, closedMonths)}
                                 >
                                   <CheckCircle2 size={12} /> Quitar
                                 </Button>
