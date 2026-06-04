@@ -1,0 +1,1210 @@
+[
+  {
+    "pageNum": 1,
+    "group": "CERÂMICA",
+    "format": "46X46",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        16.14,
+        16.4,
+        16.52,
+        16.65,
+        16.78,
+        16.91,
+        17.04,
+        17.17
+      ],
+      "2": [
+        17.54,
+        17.82,
+        17.96,
+        18.1,
+        18.24,
+        18.38,
+        18.52,
+        18.66
+      ],
+      "3": [
+        18.41,
+        18.71,
+        18.85,
+        19,
+        19.15,
+        19.3,
+        19.44,
+        19.59
+      ],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [
+        "Ipanema Bege",
+        "Ipanema Cinza"
+      ],
+      "2": [
+        "Araripe Bege",
+        "Araripe Cinza",
+        "Dunas Bege",
+        "Icapui Branco",
+        "Manaus Bege Hd",
+        "Manaus Cinza Hd",
+        "Aurora Bege",
+        "Aurora Branco",
+        "Ipu Marfim HD",
+        "Ipu Mogno HD"
+      ],
+      "3": [
+        "Cascais",
+        "Cristal",
+        "Estoril",
+        "Marajo Deck",
+        "Neve",
+        "Quartzo Bege",
+        "Quartzo Branco",
+        "Parati HD",
+        "Terrace Bege HD",
+        "Petrópolis",
+        "Itatiaia",
+        "Metrópole"
+      ],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 2,
+    "group": "CERÂMICA",
+    "format": "57X57",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [
+        18.41,
+        18.71,
+        18.85,
+        19,
+        19.15,
+        19.3,
+        19.44,
+        19.59
+      ],
+      "4": [
+        19.3,
+        19.61,
+        19.76,
+        19.91,
+        20.07,
+        20.22,
+        20.38,
+        20.53
+      ],
+      "5": [
+        20.17,
+        20.49,
+        20.65,
+        20.81,
+        20.98,
+        21.14,
+        21.3,
+        21.46
+      ],
+      "6": [
+        21.05,
+        21.39,
+        21.56,
+        21.73,
+        21.89,
+        22.06,
+        22.23,
+        22.4
+      ],
+      "7": [
+        21.93,
+        22.28,
+        22.45,
+        22.63,
+        22.8,
+        22.98,
+        23.15,
+        23.33
+      ],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [
+        "Lisboa Cinza",
+        "Lisboa Bege"
+      ],
+      "4": [
+        "Icapui Branco",
+        "Neve",
+        "Quartzo Bege",
+        "Quartzo Branco",
+        "Atenas Bege HD",
+        "Atenas Cinza HD",
+        "Firenze Natural HD"
+      ],
+      "5": [
+        "Caribe Bege HD",
+        "Caribe Natural HD",
+        "Aurora Bege",
+        "Aurora Branco",
+        "Panamá Cinza HD",
+        "Travertino Lux HD",
+        "Panama Retro HD",
+        "Santorini Matte HD"
+      ],
+      "6": [
+        "Santorini Deck HD",
+        "Capadócia",
+        "Castanho Natural",
+        "Castanho Ambar",
+        "Metrô Nude",
+        "Metrô Grey",
+        "Metrô Graphite"
+      ],
+      "7": [
+        "Ubajara",
+        "Serra Branca",
+        "Tiradentes"
+      ],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 3,
+    "group": "CERÂMICA",
+    "format": "33X46",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [
+        18.41,
+        18.71,
+        18.85,
+        19,
+        19.15,
+        19.3,
+        19.44,
+        19.59
+      ],
+      "4": [
+        19.3,
+        19.61,
+        19.76,
+        19.91,
+        20.07,
+        20.22,
+        20.38,
+        20.53
+      ],
+      "5": [
+        20.17,
+        20.49,
+        20.65,
+        20.81,
+        20.98,
+        21.14,
+        21.3,
+        21.46
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [
+        "Cristal",
+        "Quartzo Branco"
+      ],
+      "4": [
+        "Aurora Branco",
+        "Cariri Branco",
+        "Cariri Cinza HD"
+      ],
+      "5": [
+        "Cariri Azul HD",
+        "Cariri Preto HD",
+        "Ubatuba HD"
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 4,
+    "group": "SUPER PRIME",
+    "format": "56X56",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [
+        30.36,
+        30.85,
+        31.09,
+        31.33,
+        31.58,
+        31.82,
+        32.06,
+        32.3
+      ],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [
+        "Luminatto Blanco Polido",
+        "Luminatto Beige Polido",
+        "Milano Polido HD",
+        "Napoli Polido HD"
+      ],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 5,
+    "group": "SUPER PRIME",
+    "format": "33X66",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        29.15,
+        29.61,
+        29.85,
+        30.08,
+        30.31,
+        30.55,
+        30.78,
+        31.01
+      ],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [
+        "CARAÍVA CINZA HD",
+        "CARAÍVA NUDE HD",
+        "CARAÍVA BEGE HD",
+        "CARAÍVA BRANCO HD"
+      ],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 6,
+    "group": "SUPER PRIME",
+    "format": "32X65",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        29.15,
+        29.61,
+        29.85,
+        30.08,
+        30.31,
+        30.55,
+        30.78,
+        31.01
+      ],
+      "2": [
+        30.36,
+        30.85,
+        31.09,
+        31.33,
+        31.58,
+        31.82,
+        32.06,
+        32.3
+      ],
+      "3": [
+        31.79,
+        32.3,
+        32.55,
+        32.81,
+        33.06,
+        33.32,
+        33.57,
+        33.83
+      ],
+      "4": [
+        33.24,
+        33.77,
+        34.04,
+        34.3,
+        34.57,
+        34.83,
+        35.1,
+        35.37
+      ],
+      "5": [
+        34.74,
+        35.3,
+        35.57,
+        35.85,
+        36.13,
+        36.41,
+        36.69,
+        36.96
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [
+        "Pastille branco",
+        "Aurora Branco",
+        "Quartzo Branco"
+      ],
+      "2": [
+        "Pastille cinza",
+        "Pastille azul",
+        "Pastille preto",
+        "Denver Gris",
+        "Denver Nude",
+        "Denver Beige"
+      ],
+      "3": [
+        "Pastille Venezia Beige",
+        "Pastille Venezia Gris",
+        "Pastille Verona",
+        "Pastille Perlatto",
+        "Pastille Pallazo"
+      ],
+      "4": [
+        "Ripa ipê",
+        "Ripa Verona",
+        "Ripa Venezia beige",
+        "Ripa Venezia gris",
+        "Ripa Perlatto",
+        "Ripa Pallazo",
+        "Ripa Roma Beige",
+        "Prisma Lux",
+        "Ripa cemento Beige",
+        "Ripa cemento nude",
+        "Ripa cemento gris",
+        "Ripa off white"
+      ],
+      "5": [
+        "Mosaic"
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 7,
+    "group": "SUPER PRIME",
+    "format": "75X75",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        29.15,
+        29.61,
+        29.85,
+        30.08,
+        30.31,
+        30.55,
+        30.78,
+        31.01
+      ],
+      "2": [
+        30.36,
+        30.85,
+        31.09,
+        31.33,
+        31.58,
+        31.82,
+        32.06,
+        32.3
+      ],
+      "3": [
+        31.79,
+        32.3,
+        32.55,
+        32.81,
+        33.06,
+        33.32,
+        33.57,
+        33.83
+      ],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": [
+        42.02,
+        42.69,
+        43.03,
+        43.36,
+        43.7,
+        44.04,
+        44.37,
+        44.71
+      ]
+    },
+    "productsByLevel": {
+      "1": [
+        "Denver Beige",
+        "Denver Nude",
+        "Denver Gris"
+      ],
+      "2": [
+        "Verona Mate HD",
+        "Venezia Beige Matte HD",
+        "Venezia Gris Matte HD",
+        "Chicago Mate HD",
+        "Luminatto Beige Matte",
+        "Luminato Blanco Matte",
+        "Pallazzo Matte",
+        "Perlatto Matte",
+        "Roma Beige Matte"
+      ],
+      "3": [
+        "Patagonia Beige Granilhado",
+        "Patagonia Griss Granilhado",
+        "Luminato Beige Polido",
+        "Verona Polido HD",
+        "Luminato Blanco Polido HD",
+        "Venezia Beige Polido HD",
+        "Venezia Griss Polido HD",
+        "Pallazzo Polido",
+        "Perlatto Polido",
+        "Roma Beige Polido",
+        "Arvoredo"
+      ],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": [
+        "Azure Polido",
+        "Eclipse Polido"
+      ]
+    }
+  },
+  {
+    "pageNum": 8,
+    "group": "SUPER PRIME",
+    "format": "100X100",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [
+        36.37,
+        36.95,
+        37.24,
+        37.53,
+        37.82,
+        38.11,
+        38.4,
+        38.7
+      ],
+      "4": [
+        38,
+        38.6,
+        38.91,
+        39.21,
+        39.52,
+        39.82,
+        40.12,
+        40.43
+      ],
+      "5": [],
+      "6": [
+        41.15,
+        41.81,
+        42.13,
+        42.46,
+        42.79,
+        43.12,
+        43.45,
+        43.78
+      ],
+      "7": [],
+      "8": [],
+      "9": [
+        47.39,
+        48.15,
+        48.53,
+        48.91,
+        49.29,
+        49.67,
+        50.05,
+        50.43
+      ]
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [
+        "Chicago Matte HD",
+        "Luminato Blanco",
+        "Matte"
+      ],
+      "4": [
+        "Verona Matte HD",
+        "Venezia Beige Matte",
+        "HD",
+        "Venezia Griss Matte",
+        "HD"
+      ],
+      "5": [],
+      "6": [
+        "Verona Polido HD",
+        "Luminato Blando",
+        "Polido",
+        "Venezia Beige Polido",
+        "HD",
+        "Venezia Griss Polido",
+        "HD"
+      ],
+      "7": [],
+      "8": [],
+      "9": [
+        "Azure Polido",
+        "Eclipse Polido"
+      ]
+    }
+  },
+  {
+    "pageNum": 9,
+    "group": "SUPER PRIME",
+    "format": "17X106",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [
+        36.29,
+        36.87,
+        37.16,
+        37.46,
+        37.75,
+        38.04,
+        38.33,
+        38.62
+      ],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [
+        "Dallas Matte HD",
+        "Texas Matte HD",
+        "Laredo Deck HD",
+        "Texas Deck HD"
+      ],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 10,
+    "group": "PORCELANATO",
+    "format": "70X70",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [
+        38.62,
+        39.24,
+        39.55,
+        39.86,
+        40.17,
+        40.48,
+        40.79,
+        41.1
+      ],
+      "3": [
+        41.39,
+        42.05,
+        42.39,
+        42.72,
+        43.05,
+        43.38,
+        43.71,
+        44.04
+      ],
+      "4": [
+        43.46,
+        44.15,
+        44.5,
+        44.85,
+        45.19,
+        45.54,
+        45.89,
+        46.24
+      ],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [
+        "Icaro Matte HD",
+        "Olimpo Matte HD",
+        "Technatto White Matte HD",
+        "Technatto Crema Matte",
+        "Homero Matte HD",
+        "Quebec Matte HD"
+      ],
+      "3": [
+        "London Matte HD",
+        "Netuno Beige Matte HD",
+        "Netuno Gris Matte HD",
+        "Marmo Gris Matte HD",
+        "Onyx Reale Matte HD",
+        "Soho Graphite Matte HD",
+        "Soho Grey Matte HD",
+        "Soho Nude Matte HD",
+        "Technatto White Polido",
+        "Calacatta Oro Supreme Matte HD"
+      ],
+      "4": [
+        "Ancara Granilhado HD",
+        "Cairo Granilhado HD",
+        "Dakar Granilhado HD",
+        "Technatto Crema Polido",
+        "Zeus Matte HD",
+        "Icaro Polido HD",
+        "Homero Polido HD",
+        "Netuno Beige Polido HD",
+        "Netuno Gris Polido HD",
+        "Zeus Polido HD",
+        "Marmo Gris Polido HD",
+        "Onyx Reale Polido HD",
+        "Forest Deck HD"
+      ],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 11,
+    "group": "PORCELANATO",
+    "format": "94,5X94,5",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        48.3,
+        49.08,
+        49.46,
+        49.85,
+        50.24,
+        50.62,
+        51.01,
+        51.4
+      ],
+      "2": [],
+      "3": [
+        53.13,
+        53.98,
+        54.41,
+        54.83,
+        55.26,
+        55.68,
+        56.11,
+        56.53
+      ],
+      "4": [
+        55.55,
+        56.44,
+        56.88,
+        57.33,
+        57.77,
+        58.22,
+        58.66,
+        59.1
+      ],
+      "5": [
+        57.96,
+        58.89,
+        59.35,
+        59.81,
+        60.28,
+        60.74,
+        61.21,
+        61.67
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [
+        "ÍCARO MATTE HD",
+        "OLIMPO MATTE HD",
+        "TECHNATTO WHITE MATTE"
+      ],
+      "2": [],
+      "3": [
+        "AMAZONITE MATTE HD",
+        "BASALTINA ACERO GRANILHADO HD",
+        "BASALTINA IVORY GRANILHADO HD",
+        "BASALTINA NUDE GRANILHADO HD",
+        "BASALTINA NUDE MATTE HD",
+        "BASALTINA ORLA GRANILHADO HD",
+        "CALACATA ORO SUPREME HD",
+        "CALACATA ORO SUPREME POLIDO",
+        "HD",
+        "CALACATTA RADIANCE MATTE HD",
+        "CALACATTA RADIANCE POLIDO HD",
+        "CARRARA ELEGANCE MATTE HD",
+        "CARRARA ELEGANCE POLIDO HD",
+        "CARRARA GLOW MATTE HD",
+        "ICARO POLIDO HD",
+        "IVORY NEBULA MATTE HD",
+        "MAGNUM MATTE HD",
+        "MARMO GRISS MATTE HD",
+        "MIRAGE MATTE HD",
+        "MIRAGE POLIDO HD",
+        "OLIMPO POLIDO HD",
+        "ONIX VELVET MATTE HD",
+        "ONYX REALE MATTE HD",
+        "ONYX REALE POLIDO HD",
+        "PERLA VENATA MATTE HD",
+        "SOHO GRAFITE MATTE HD",
+        "SOHO GREY MATTE HD",
+        "SOHO NUDE MATTE HD",
+        "TAJ'MAHAL SUPREME MATTE",
+        "TECHNATTO WHITE POLIDO",
+        "TRAVERTINO NAVONA NUDE POLIDO",
+        "HD"
+      ],
+      "4": [
+        "CARRARA GLOW POLIDO HD",
+        "IVORY NEBULA POLIDO HD",
+        "MARMO GRIS POLIDO HD",
+        "ONIX VELVET POLIDO HD",
+        "PERLA VENATA POLIDO HD",
+        "TAJ'MAHAL SUPREME POLIDO HD",
+        "CARRARA ELEGANCE POLIDO HD"
+      ],
+      "5": [
+        "AMAZONITE POLIDO HD",
+        "CEPPO GRIS MATTE HD",
+        "CEPPO NUDE GRANILHADO HD",
+        "CEPPO NUDE MATTE HD",
+        "CEPPO STONE ACERO MATTE",
+        "CEPPO STONE BEGE MATTE",
+        "CEPPO STONE BEGE GRANILHADO",
+        "CEPPO STONE NUDE MATTE HD",
+        "MAGNUM POLIDO HD",
+        "TRAVERTINO NAVONA NUDE MATTE HD",
+        "TRAVERTINO ROMANO NUDE MATTE HD"
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 12,
+    "group": "PORCELANATO",
+    "format": "120X120",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [
+        70.14,
+        71.26,
+        71.82,
+        72.38,
+        72.94,
+        73.5,
+        74.07,
+        74.63
+      ],
+      "6": [
+        73.65,
+        74.82,
+        75.41,
+        76,
+        76.59,
+        77.18,
+        77.77,
+        78.36
+      ],
+      "7": [
+        77.33,
+        78.57,
+        79.18,
+        79.8,
+        80.42,
+        81.04,
+        81.66,
+        82.28
+      ],
+      "8": [
+        81.19,
+        82.49,
+        83.14,
+        83.79,
+        84.44,
+        85.09,
+        85.74,
+        86.39
+      ],
+      "9": [
+        85.25,
+        86.62,
+        87.3,
+        87.98,
+        88.66,
+        89.35,
+        90.03,
+        90.71
+      ]
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [
+        "ÍCARO MATTE HD",
+        "OLIMPO MATTE HD",
+        "TECHNATTO WHITE",
+        "MATTE",
+        "TOKYO IVORY",
+        "TOKYO BEIGE",
+        "TOKYO GRAPHITE",
+        "TOKYO GREY"
+      ],
+      "6": [
+        "ÍCARO POLIDO HD",
+        "OLIMPO POLIDO HD",
+        "TECHNATTO WHITE",
+        "POLIDO"
+      ],
+      "7": [
+        "AMAZONITE MATTE HD",
+        "BASALTINA NUDE MATTE",
+        "HD",
+        "CALACATA ORO SUPREME",
+        "MATTE HD",
+        "CALACATTA RADIANCE",
+        "MATTE HD",
+        "CARRARA ELEGANCE",
+        "MATTE HD",
+        "CARRARA GLOW MATTE",
+        "HD",
+        "IVORY NEBULA MATTE HD",
+        "MARMO GRIS MATTE HD",
+        "MIRAGE MATTE HD",
+        "ONYX REALE MATTE",
+        "PERLA VENATA MATTE HD ONYX REALE POLIDO HD",
+        "SOHO GRAPHITE MATTE",
+        "HD",
+        "SOHO GREY MATTE HD",
+        "SOHO NUDE MATTE HD",
+        "TAJ MAHAL SUPREME",
+        "MATTE",
+        "ONIX VELVET MATTE HD"
+      ],
+      "8": [
+        "MIRAGE POLIDO HD",
+        "BASALTINA ACERO",
+        "GRANILHADO HD",
+        "BASALTINA IVORY",
+        "GRANILHADO HD",
+        "BASALTINA NUDE",
+        "GRANILHADO HD",
+        "BASALTINA ORLA",
+        "GRANILHADO HD",
+        "CALACATA ORO",
+        "SUPREME POLIDO",
+        "CALACATTA RADIANCE",
+        "POLIDO HD",
+        "CARRARA ELEGANCE",
+        "POLIDO HD",
+        "MAGNUM MATTE HD",
+        "MARMO GRIS POLIDO HD IVORY NEBULA POLIDO HD",
+        "TRAVERTINO NAVONA",
+        "NUDE POLIDO HD"
+      ],
+      "9": [
+        "AMAZONITE POLIDO HD",
+        "CARRARA GLOW POLIDO",
+        "HD",
+        "CEPPO GRIS MATTE HD",
+        "CEPPO NUDE",
+        "GRANILHADO HD",
+        "CEPPO NUDE MATTE HD",
+        "CEPPO STONE ACERO",
+        "MATTE",
+        "CEPPO STONE BEGE",
+        "GRANILHADO",
+        "CEPPO STONE BEGE",
+        "MATTE",
+        "CEPPO STONE NUDE",
+        "MATTE",
+        "MAGNUM POLIDO HD",
+        "NERO ORO POLIDO HD",
+        "ONIX VELVET POLIDO HD",
+        "PERLA VENATA POLIDO HD",
+        "TAJ MAHAL SUPREME",
+        "POLIDO",
+        "TRAVERTINO NAVONA",
+        "NUDE MATTE HD",
+        "TRAVERTINO ROMANO",
+        "NUDE MATTE HD"
+      ]
+    }
+  },
+  {
+    "pageNum": 13,
+    "group": "PORCELANATO",
+    "format": "60X120",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [
+        57.7,
+        58.63,
+        59.09,
+        59.55,
+        60.01,
+        60.47,
+        60.93,
+        61.4
+      ],
+      "2": [
+        60.59,
+        61.56,
+        62.04,
+        62.53,
+        63.01,
+        63.5,
+        63.98,
+        64.46
+      ],
+      "3": [
+        63.62,
+        64.63,
+        65.14,
+        65.65,
+        66.16,
+        66.67,
+        67.18,
+        67.69
+      ],
+      "4": [
+        66.8,
+        67.87,
+        68.4,
+        68.94,
+        69.47,
+        70,
+        70.54,
+        71.07
+      ],
+      "5": [
+        70.14,
+        71.26,
+        71.82,
+        72.38,
+        72.94,
+        73.51,
+        74.07,
+        74.63
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [
+        "ÍCARO MATTE HD",
+        "OLIMO MATTE HD",
+        "TECHNATTO WHITE",
+        "MATTE"
+      ],
+      "2": [
+        "ÍCARO POLIDO HD",
+        "OLIMPO POLIDO HD",
+        "TECHNATTO WHITE",
+        "POLIDO"
+      ],
+      "3": [
+        "BASALTINA NUDE MATTE HD",
+        "CALACATA ORO SUPREME MATTE",
+        "HD",
+        "CALACATTA RADIANCE MATTE HD",
+        "CARRARA ELEGANCE MATTE HD",
+        "CARRARA GLOW MATTE HD",
+        "IVORY NEBULA MATTE HD",
+        "MIRAGE MATTE HD",
+        "ONIX VELVET MATTE HD",
+        "ONYX REALE MATTE",
+        "PERLA VENATA MATTE HD",
+        "TAJ MAHAL SUPREME MATTE"
+      ],
+      "4": [
+        "AMAZONITE MATTE HD",
+        "CALACATA ORO SUPREME",
+        "POLIDO",
+        "CALACATTA RADIANCE",
+        "POLIDO HD",
+        "CARRARA ELEGANCE POLIDO",
+        "HD",
+        "MIRAGE POLIDO HD",
+        "ONYX REALE POLIDO HD",
+        "TAJ MAHAL SUPREME MATTE"
+      ],
+      "5": [
+        "AMAZONITE POLIDO HD",
+        "CARRARA GLOW POLIDO HD",
+        "IVORY NEBULA POLIDO HD",
+        "ONIX VELVET POLIDO HD",
+        "PERLA VENATA POLIDO HD",
+        "TAJ MAHAL SUPREME POLIDO",
+        "TRAVERTINO NAVONA NUDE",
+        "MATTE HD",
+        "TRAVERTINO NAVONA NUDE",
+        "POLIDO HD",
+        "TRAVERTINO ROMANO NUDE",
+        "MATTE HD"
+      ],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  {
+    "pageNum": 14,
+    "group": "PORCELANATO",
+    "format": "30X61",
+    "clientSize": "MICRO",
+    "priceGrid": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [
+        43.46,
+        44.15,
+        44.5,
+        44.85,
+        45.19,
+        45.54,
+        45.89,
+        46.24
+      ],
+      "5": [],
+      "6": [
+        49.66,
+        50.46,
+        50.85,
+        51.25,
+        51.65,
+        52.05,
+        52.44,
+        52.84
+      ],
+      "7": [],
+      "8": [],
+      "9": []
+    },
+    "productsByLevel": {
+      "1": [],
+      "2": [],
+      "3": [],
+      "4": [
+        "Icaro Matte HD",
+        "Olimpo Matte HD",
+        "Quebec Matte HD",
+        "Technatto White Matte",
+        "Homero Matte HD",
+        "Onyx Reale Matte HD"
+      ],
+      "5": [],
+      "6": [
+        "Homero Polido HD",
+        "Icaro Polido HD",
+        "Olimpo Polido HD",
+        "Onyx Reale Polido",
+        "HD",
+        "Techanto White",
+        "Polido"
+      ],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  }
+]
