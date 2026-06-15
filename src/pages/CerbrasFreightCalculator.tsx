@@ -1451,6 +1451,7 @@ const CerbrasFreightCalculator = () => {
   const filteredReportData = useMemo(() => {
     return savedCalculations
       .filter(calc => {
+        if (!isRomaneio(calc)) return false;
         const date = new Date(calc.billing_date);
         const monthMatch = (date.getMonth() + 1) === reportMonth;
         const yearMatch = date.getFullYear() === reportYear;
@@ -1469,7 +1470,7 @@ const CerbrasFreightCalculator = () => {
         const cityCounts: Record<string, number> = {};
         calc.items.forEach(i => { cityCounts[i.cidade] = (cityCounts[i.cidade] || 0) + 1; });
         const route = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
-
+ 
         return {
           factory: calc.factory || 'CERBRAS',
           date: calc.billing_date.split('-').reverse().join('/'),
@@ -1482,10 +1483,11 @@ const CerbrasFreightCalculator = () => {
         };
       });
   }, [savedCalculations, reportMonth, reportYear, reportFactoryFilter, reportSearch]);
-
+ 
   const filteredDetailedData = useMemo(() => {
     const data: any[] = [];
     savedCalculations.forEach(calc => {
+      if (!isRomaneio(calc)) return;
       const date = new Date(calc.billing_date);
       const monthMatch = (date.getMonth() + 1) === reportMonth;
       const yearMatch = date.getFullYear() === reportYear;
@@ -1498,7 +1500,7 @@ const CerbrasFreightCalculator = () => {
             calc.driver_name.toLowerCase().includes(searchLower) || 
             item.cliente.toLowerCase().includes(searchLower) ||
             item.cidade.toLowerCase().includes(searchLower);
-
+ 
           if (searchMatch) {
             data.push({
               factory: calc.factory || 'CERBRAS',
