@@ -16,6 +16,7 @@ import {
   Edit3, 
   Loader2,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   FileText,
   Building2,
@@ -253,6 +254,39 @@ const CerbrasFreightCalculator = () => {
   const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [reportSearch, setReportSearch] = useState("");
   const [reportFactoryFilter, setReportFactoryFilter] = useState<string>("ALL");
+
+  const [historyMonthFilter, setHistoryMonthFilter] = useState<string>("ALL");
+  const [historyDayFilter, setHistoryDayFilter] = useState<string>("");
+  const [historyDriverFilter, setHistoryDriverFilter] = useState<string>("");
+
+  const monthsMap = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+
+  const filteredHistory = useMemo(() => {
+    return savedCalculations.filter(calc => {
+      const dateStr = calc.billing_date || new Date(calc.created_at).toISOString().split('T')[0];
+      const date = new Date(dateStr);
+      const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+      
+      if (historyMonthFilter !== "ALL") {
+        const matchMonth = (utcDate.getMonth() + 1).toString() === historyMonthFilter;
+        if (!matchMonth) return false;
+      }
+      
+      if (historyDayFilter) {
+        if (dateStr !== historyDayFilter) return false;
+      }
+      
+      if (historyDriverFilter.trim() !== "") {
+        const matchDriver = calc.driver_name.toLowerCase().includes(historyDriverFilter.toLowerCase());
+        if (!matchDriver) return false;
+      }
+      
+      return true;
+    });
+  }, [savedCalculations, historyMonthFilter, historyDayFilter, historyDriverFilter]);
 
   const isRomaneio = (calc: SavedCalculation) => {
     return calc.items.length > 0 && calc.items.every(item => item.nfe?.trim() && item.cte?.trim());
@@ -2201,15 +2235,85 @@ const CerbrasFreightCalculator = () => {
             <SheetHeader className="p-6 bg-slate-50 border-b">
               <SheetTitle className="flex items-center gap-2"><History className="text-amber-600" size={20} /> Cálculos Recentes</SheetTitle>
             </SheetHeader>
+
+            {/* Filtros do Histórico */}
+            <div className="p-4 border-b bg-slate-50/50 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Mês</label>
+                  <Select value={historyMonthFilter} onValueChange={setHistoryMonthFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-white border-slate-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border border-slate-200">
+                      <SelectItem value="ALL" className="text-xs">TODOS</SelectItem>
+                      {monthsMap.map((name, i) => (
+                        <SelectItem key={i+1} value={(i+1).toString()} className="text-xs">
+                          {name.toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase">Dia Especifico</label>
+                  <Input 
+                    type="date" 
+                    className="h-8 text-xs bg-white border-slate-200" 
+                    value={historyDayFilter}
+                    onChange={(e) => setHistoryDayFilter(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Motorista</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 text-slate-400" size={12} />
+                  <Input 
+                    placeholder="Buscar motorista..." 
+                    className="h-8 pl-7 pr-7 text-xs bg-white border-slate-200" 
+                    value={historyDriverFilter}
+                    onChange={(e) => setHistoryDriverFilter(e.target.value)}
+                  />
+                  {historyDriverFilter && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="absolute right-1 top-1 h-6 w-6 text-slate-400 hover:text-slate-600" 
+                      onClick={() => setHistoryDriverFilter("")}
+                    >
+                      <X size={12} />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {(historyMonthFilter !== "ALL" || historyDayFilter || historyDriverFilter) && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-full text-[10px] text-amber-700 hover:text-amber-800 hover:bg-amber-50 font-bold" 
+                  onClick={() => {
+                    setHistoryMonthFilter("ALL");
+                    setHistoryDayFilter("");
+                    setHistoryDriverFilter("");
+                  }}
+                >
+                  Limpar Filtros
+                </Button>
+              )}
+            </div>
+
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {isLoadingHistory ? (
                 <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>
               ) : savedCalculations.length === 0 ? (
                 <div className="py-10 text-center text-slate-400 text-xs">Nenhum histórico encontrado.</div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-xs">Nenhum cálculo corresponde aos filtros selecionados.</div>
               ) : (
                 (() => {
                   const grouped: Record<string, SavedCalculation[]> = {};
-                  savedCalculations.forEach(calc => {
+                  filteredHistory.forEach(calc => {
                     const date = calc.billing_date || new Date(calc.created_at).toISOString().split('T')[0];
                     if (!grouped[date]) grouped[date] = [];
                     grouped[date].push(calc);
