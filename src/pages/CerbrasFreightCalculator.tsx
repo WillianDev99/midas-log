@@ -898,7 +898,7 @@ const CerbrasFreightCalculator = () => {
   const removeItem = (id: string) => { setItems(items.filter(i => i.id !== id)); };
 
   const handleSave = async (extraData?: any) => {
-    if (isLocked) return showError("Este período está fechado. Não é possível alterar romaneios.");
+    if (isLocked && !editingId) return showError("Este período está fechado. Não é possível criar novos romaneios.");
     if (!driverName) return showError("Informe o nome do motorista.");
     if (items.length === 0) return showError("Adicione clientes.");
 
@@ -919,7 +919,16 @@ const CerbrasFreightCalculator = () => {
     try {
       let error;
       if (editingId) {
-        const { error: err } = await supabase.from('cerbras_freight_calculations').update(payload).eq('id', editingId);
+        let updatePayload;
+        if (isLocked) {
+          // Se o período estiver fechado, permitimos apenas atualizar os dados do romaneio (romaneio_data)
+          updatePayload = {
+            romaneio_data: extraData || romaneioData
+          };
+        } else {
+          updatePayload = payload;
+        }
+        const { error: err } = await supabase.from('cerbras_freight_calculations').update(updatePayload).eq('id', editingId);
         error = err;
       } else {
         const { error: err } = await supabase.from('cerbras_freight_calculations').insert([payload]);
@@ -929,7 +938,11 @@ const CerbrasFreightCalculator = () => {
         const history = [...savedCalculations];
         if (editingId) {
           const idx = history.findIndex(h => h.id === editingId);
-          history[idx] = { ...payload, id: editingId } as any;
+          if (isLocked) {
+            history[idx] = { ...history[idx], romaneio_data: extraData || romaneioData } as any;
+          } else {
+            history[idx] = { ...payload, id: editingId } as any;
+          }
         } else {
           history.unshift({ ...payload, id: Math.random().toString() } as any);
         }
@@ -1552,7 +1565,7 @@ const CerbrasFreightCalculator = () => {
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowRomaneioListModal(true)}><FileText size={16} /> Romaneios</Button>
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowReportModal(true)}><TrendingUp size={16} /> Relatórios</Button>
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowDatabaseModal(true)}><Database size={16} /> Base</Button>
-            <Button className="bg-amber-600 hover:bg-amber-700 text-white gap-2 shadow-md shadow-amber-200" onClick={() => handleSave()} disabled={isSaving || isLocked}>{isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}{editingId ? "Atualizar" : "Salvar"}</Button>
+            <Button className="bg-amber-600 hover:bg-amber-700 text-white gap-2 shadow-md shadow-amber-200" onClick={() => handleSave()} disabled={isSaving || (isLocked && !editingId)}>{isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}{editingId ? "Atualizar" : "Salvar"}</Button>
           </div>
         </header>
 
@@ -1561,8 +1574,8 @@ const CerbrasFreightCalculator = () => {
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 text-red-800 shadow-sm animate-in fade-in duration-300">
             <AlertTriangle className="text-red-600 mt-0.5 shrink-0" size={18} />
             <div className="text-xs space-y-1">
-              <p className="font-bold">⚠️ Período Bloqueado/Fechado</p>
-              <p>O mês correspondente à data de faturamento selecionada está **fechado**. Todas as alterações de valores, inserções, edições e exclusões para esta carga estão desativadas.</p>
+              <p className="font-bold">⚠️ Período Parcialmente Bloqueado</p>
+              <p>O mês desta carga está **fechado**. As informações básicas de faturamento, fábrica, motorista, peso e valores cobrados estão congelados, mas você ainda pode ajustar e salvar dados do romaneio (observações, parcelas, adiantamentos e avarias).</p>
             </div>
           </div>
         )}
@@ -1837,7 +1850,7 @@ const CerbrasFreightCalculator = () => {
                       <Button variant="outline" size="sm" className="h-8 gap-2" onClick={() => handlePrintRomaneio({ driver_name: driverName, driver_plate: driverPlate, billing_date: billingDate, items, driver_payment: driverPayment, tax_percent: taxPercent, romaneio_data: romaneioData })}>
                         <Printer size={14} /> Imprimir Romaneio
                       </Button>
-                      <Button className="h-8 bg-slate-900 hover:bg-black text-white gap-2 shadow-md" onClick={() => handleSave(romaneioData)} disabled={isLocked}>
+                      <Button className="h-8 bg-slate-900 hover:bg-black text-white gap-2 shadow-md" onClick={() => handleSave(romaneioData)} disabled={isSaving || (isLocked && !editingId)}>
                         <Save size={14} /> Salvar Tudo
                       </Button>
                     </div>
@@ -1860,16 +1873,16 @@ const CerbrasFreightCalculator = () => {
                             <Switch 
                               checked={romaneioData.ciot_ok} 
                               onCheckedChange={(v) => setRomaneioData({...romaneioData, ciot_ok: v})} 
-                              disabled={isLocked}
+                              disabled={isSaving}
                             />
                           </div>
                         </div>
                         <Input 
-                          value={romaneioData.ciot_number} 
-                          onChange={(e) => setRomaneioData({...romaneioData, ciot_number: e.target.value})} 
-                          placeholder="Digite o número do CIOT..." 
-                          className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
-                          disabled={isLocked}
+                           value={romaneioData.ciot_number} 
+                           onChange={(e) => setRomaneioData({...romaneioData, ciot_number: e.target.value})} 
+                           placeholder="Digite o número do CIOT..." 
+                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
+                           disabled={isSaving}
                         />
                       </div>
 
@@ -1884,16 +1897,16 @@ const CerbrasFreightCalculator = () => {
                             <Switch 
                               checked={romaneioData.manifesto_ok} 
                               onCheckedChange={(v) => setRomaneioData({...romaneioData, manifesto_ok: v})} 
-                              disabled={isLocked}
+                              disabled={isSaving}
                             />
                           </div>
                         </div>
                         <Input 
-                          value={romaneioData.manifesto_number} 
-                          onChange={(e) => setRomaneioData({...romaneioData, manifesto_number: e.target.value})} 
-                          placeholder="Digite o número do Manifesto..." 
-                          className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
-                          disabled={isLocked}
+                           value={romaneioData.manifesto_number} 
+                           onChange={(e) => setRomaneioData({...romaneioData, manifesto_number: e.target.value})} 
+                           placeholder="Digite o número do Manifesto..." 
+                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
+                           disabled={isSaving}
                         />
                       </div>
 
@@ -1912,7 +1925,7 @@ const CerbrasFreightCalculator = () => {
                             <Switch 
                               checked={romaneioData[item.key]} 
                               onCheckedChange={(v) => setRomaneioData({...romaneioData, [item.key]: v})} 
-                              disabled={isLocked}
+                              disabled={isSaving}
                             />
                           </div>
                         </div>
@@ -1931,7 +1944,7 @@ const CerbrasFreightCalculator = () => {
                             size="sm" 
                             className="h-6 px-2 text-[9px] font-bold bg-white text-amber-600 border-amber-200 hover:bg-amber-50 gap-1"
                             onClick={handleAddAdiantamento}
-                            disabled={isLocked}
+                            disabled={isSaving}
                           >
                             <Plus size={10} /> Adicionar Pagamento
                           </Button>
@@ -1954,7 +1967,7 @@ const CerbrasFreightCalculator = () => {
                                       newAdv[idx].amount = Number(e.target.value);
                                       setRomaneioData({...romaneioData, adiantamentos: newAdv});
                                     }} 
-                                    disabled={isLocked}
+                                    disabled={isSaving}
                                   />
                                 </div>
                                 <Input 
@@ -1966,14 +1979,14 @@ const CerbrasFreightCalculator = () => {
                                     newAdv[idx].date = e.target.value;
                                     setRomaneioData({...romaneioData, adiantamentos: newAdv});
                                   }} 
-                                  disabled={isLocked}
+                                  disabled={isSaving}
                                 />
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
                                   className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
                                   onClick={() => handleRemoveAdiantamento(idx)}
-                                  disabled={isLocked}
+                                  disabled={isSaving}
                                 >
                                   <Trash2 size={14} />
                                 </Button>
@@ -2002,7 +2015,7 @@ const CerbrasFreightCalculator = () => {
                         </span>
                       </div>
                       <div className="flex items-center gap-2 pt-2 border-t border-amber-100">
-                        <Checkbox id="main-quitada" checked={romaneioData.carga_quitada} onCheckedChange={(v) => setRomaneioData({...romaneioData, carga_quitada: !!v})} disabled={isLocked} />
+                        <Checkbox id="main-quitada" checked={romaneioData.carga_quitada} onCheckedChange={(v) => setRomaneioData({...romaneioData, carga_quitada: !!v})} disabled={isSaving} />
                         <label htmlFor="main-quitada" className="text-[10px] font-black uppercase text-amber-900 cursor-pointer">Marcar Carga como Quitada</label>
                       </div>
                       <div className="flex flex-col gap-1 pt-2 border-t border-amber-100">
@@ -2010,7 +2023,7 @@ const CerbrasFreightCalculator = () => {
                         <Select 
                           value={romaneioData.situacao || 'em_rota'} 
                           onValueChange={(v) => setRomaneioData({...romaneioData, situacao: v})}
-                          disabled={isLocked}
+                          disabled={isSaving}
                         >
                           <SelectTrigger id="main-situacao" className="h-8 text-xs bg-white border-amber-200 text-amber-900">
                             <SelectValue placeholder="Situação" />
@@ -2032,7 +2045,7 @@ const CerbrasFreightCalculator = () => {
                         <Switch 
                           checked={romaneioData.tem_avaria} 
                           onCheckedChange={(v) => setRomaneioData({...romaneioData, tem_avaria: v})} 
-                          disabled={isLocked}
+                          disabled={isSaving}
                         />
                       </div>
                     </div>
@@ -2047,7 +2060,7 @@ const CerbrasFreightCalculator = () => {
                               size="sm" 
                               className="h-6 px-2 text-[9px] font-bold bg-white text-red-600 border-red-200 hover:bg-red-50 gap-1"
                               onClick={handleAddAvaria}
-                              disabled={isLocked}
+                              disabled={isSaving}
                             >
                               <Plus size={10} /> Adicionar Avaria
                             </Button>
@@ -2066,7 +2079,7 @@ const CerbrasFreightCalculator = () => {
                                         const newAv = [...romaneioData.avarias];
                                         newAv[idx].fabrica = v;
                                         setRomaneioData({...romaneioData, avarias: newAv});
-                                      }} disabled={isLocked}>
+                                      }} disabled={isSaving}>
                                         <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
                                         <SelectContent>
                                           <SelectItem value="CERBRAS">CERBRAS</SelectItem>
@@ -2088,7 +2101,7 @@ const CerbrasFreightCalculator = () => {
                                             newAv[idx].valor = Number(e.target.value);
                                             setRomaneioData({...romaneioData, avarias: newAv});
                                           }} 
-                                          disabled={isLocked}
+                                          disabled={isSaving}
                                         />
                                       </div>
                                     </div>
@@ -2098,7 +2111,7 @@ const CerbrasFreightCalculator = () => {
                                         const newAv = [...romaneioData.avarias];
                                         newAv[idx].cliente = v;
                                         setRomaneioData({...romaneioData, avarias: newAv});
-                                      }} disabled={isLocked}>
+                                      }} disabled={isSaving}>
                                         <SelectTrigger className="h-7 text-[10px]"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                                         <SelectContent>
                                           {items.map(i => (
@@ -2117,7 +2130,7 @@ const CerbrasFreightCalculator = () => {
                                           newAv[idx].nfe = e.target.value;
                                           setRomaneioData({...romaneioData, avarias: newAv});
                                         }} 
-                                        disabled={isLocked}
+                                        disabled={isSaving}
                                       />
                                     </div>
                                   </div>
@@ -2132,7 +2145,7 @@ const CerbrasFreightCalculator = () => {
                                         setRomaneioData({...romaneioData, avarias: newAv});
                                       }}
                                       placeholder="Descreva a avaria..."
-                                      disabled={isLocked}
+                                      disabled={isSaving}
                                     />
                                   </div>
                                   <Button 
@@ -2140,7 +2153,7 @@ const CerbrasFreightCalculator = () => {
                                     size="icon" 
                                     className="h-6 w-6 text-red-300 hover:text-red-600 absolute top-0 right-0"
                                     onClick={() => handleRemoveAvaria(idx)}
-                                    disabled={isLocked}
+                                    disabled={isSaving}
                                   >
                                     <X size={12} />
                                   </Button>
@@ -2164,7 +2177,7 @@ const CerbrasFreightCalculator = () => {
                           value={romaneioData.ocorrencias} 
                           onChange={(e) => setRomaneioData({...romaneioData, ocorrencias: e.target.value})}
                           placeholder="Relate aqui qualquer imprevisto ou observação especial sobre esta carga..."
-                          disabled={isLocked}
+                          disabled={isSaving}
                         />
                       </div>
                     </div>
