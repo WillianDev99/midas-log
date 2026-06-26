@@ -432,6 +432,12 @@ const ExternalLoads = () => {
     setSortConfig({ key, direction });
   };
 
+  const renderSortIcon = (key: string) => {
+    if (sortConfig.key !== key) return <ArrowUpDown size={12} className="text-slate-300" />;
+    if (sortConfig.direction === 'asc') return <ArrowUp size={12} className="text-amber-600" />;
+    return <ArrowDown size={12} className="text-amber-600" />;
+  };
+
   const activeData = viewMode === 'current' ? currentLoads : previousLoads;
 
   const sortedData = useMemo(() => {
@@ -736,7 +742,7 @@ const ExternalLoads = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
+                          {renderSortIcon('data')}
                         </div>
                         <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('data', e.target.value)} />
                       </div>
@@ -745,7 +751,7 @@ const ExternalLoads = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
+                          {renderSortIcon('rota')}
                         </div>
                         <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('rota', e.target.value)} />
                       </div>
@@ -754,39 +760,78 @@ const ExternalLoads = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
+                          {renderSortIcon('entregas')}
                         </div>
                         <Input placeholder="Filt." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('entregas', e.target.value)} />
                       </div>
                     </TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                    <TableHead className="min-w-[110px] py-4 px-4 bg-white">
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
+                          <div className="flex items-center space-x-1 cursor-pointer flex-1" onClick={() => handleSort('uf')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
+                            {renderSortIcon('uf')}
+                          </div>
                           <Popover>
                             <PopoverTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
                                 <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-40 p-2">
-                              <div className="space-y-2">
-                                {allUFs.map(uf => (
-                                  <div key={uf} className="flex items-center space-x-2">
-                                    <Checkbox 
-                                      id={`uf-${uf}`} 
-                                      checked={selectedUFs.includes(uf)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) setSelectedUFs([...selectedUFs, uf]);
-                                        else setSelectedUFs(selectedUFs.filter(u => u !== uf));
-                                      }}
-                                    />
-                                    <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
+                            <PopoverContent className="w-44 p-2">
+                              <div className="space-y-3">
+                                <div className="space-y-1 border-b pb-2">
+                                  <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Ordenar</span>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'asc' ? 'bg-amber-50 text-amber-600' : ''}`}
+                                    onClick={() => setSortConfig({ key: 'uf', direction: 'asc' })}
+                                  >
+                                    <ArrowUp size={12} className="mr-1.5" />
+                                    A-Z (Ordem Crescente)
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'desc' ? 'bg-amber-50 text-amber-600' : ''}`}
+                                    onClick={() => setSortConfig({ key: 'uf', direction: 'desc' })}
+                                  >
+                                    <ArrowDown size={12} className="mr-1.5" />
+                                    Z-A (Ordem Decrescente)
+                                  </Button>
+                                  {(sortConfig.key === 'uf' && sortConfig.direction !== null) && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="w-full justify-start text-[10px] h-6 px-1 text-slate-400"
+                                      onClick={() => setSortConfig({ key: '', direction: null })}
+                                    >
+                                      Remover Ordenação
+                                    </Button>
+                                  )}
+                                </div>
+                                <div className="space-y-2">
+                                  <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Filtrar por UF</span>
+                                  <div className="max-h-40 overflow-y-auto space-y-1.5 px-1">
+                                    {allUFs.map(uf => (
+                                      <div key={uf} className="flex items-center space-x-2">
+                                        <Checkbox 
+                                          id={`uf-${uf}`} 
+                                          checked={selectedUFs.includes(uf)}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) setSelectedUFs([...selectedUFs, uf]);
+                                            else setSelectedUFs(selectedUFs.filter(u => u !== uf));
+                                          }}
+                                        />
+                                        <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                                {selectedUFs.length > 0 && (
-                                  <Button variant="ghost" size="sm" className="w-full text-[10px] h-6 mt-2" onClick={() => setSelectedUFs([])}>Limpar</Button>
-                                )}
+                                  {selectedUFs.length > 0 && (
+                                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-6 mt-1" onClick={() => setSelectedUFs([])}>Limpar Filtros</Button>
+                                  )}
+                                </div>
                               </div>
                             </PopoverContent>
                           </Popover>
@@ -800,7 +845,7 @@ const ExternalLoads = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
+                          {renderSortIcon('peso')}
                         </div>
                         <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('peso', e.target.value)} />
                       </div>
@@ -809,7 +854,7 @@ const ExternalLoads = () => {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
-                          <ArrowUpDown size={12} className="text-slate-300" />
+                          {renderSortIcon('frete')}
                         </div>
                         <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('frete', e.target.value)} />
                       </div>
