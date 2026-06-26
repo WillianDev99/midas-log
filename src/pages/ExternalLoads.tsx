@@ -333,6 +333,29 @@ const ExternalLoads = () => {
     return deliveries;
   };
 
+  const excelSerialToFormattedDate = (serialVal: any): string => {
+    if (!serialVal) return "";
+    const serial = Number(serialVal);
+    if (!isNaN(serial) && serial > 0) {
+      const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      const timezoneOffset = date.getTimezoneOffset() * 60 * 1000;
+      const localDate = new Date(date.getTime() + timezoneOffset);
+      const day = String(localDate.getDate()).padStart(2, '0');
+      const month = String(localDate.getMonth() + 1).padStart(2, '0');
+      const year = localDate.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    
+    // Se já for uma data no formato YYYY-MM-DD
+    const strVal = String(serialVal).trim();
+    const matchISO = strVal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (matchISO) {
+      return `${matchISO[3]}/${matchISO[2]}/${matchISO[1]}`;
+    }
+
+    return strVal;
+  };
+
   const updateFromGoogleSheets = async () => {
     setUpdating(true);
     try {
@@ -358,7 +381,7 @@ const ExternalLoads = () => {
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: String(row[0] || ''),
+          data: excelSerialToFormattedDate(row[0]),
           rota: rota,
           entregas: String(row[2] || ''),
           uf: cleanUF,
@@ -444,8 +467,23 @@ const ExternalLoads = () => {
     let sortableItems = [...activeData];
     if (sortConfig.direction !== null) {
       sortableItems.sort((a: any, b: any) => {
-        const aValue = a[sortConfig.key];
-        const bValue = b[sortConfig.key];
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+
+        // Caso especial para ordenação de data no formato DD/MM/YYYY
+        if (sortConfig.key === 'data') {
+          const parseDate = (dStr: string) => {
+            if (!dStr) return 0;
+            const parts = dStr.split('/');
+            if (parts.length === 3) {
+              return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0])).getTime();
+            }
+            return new Date(dStr).getTime() || 0;
+          };
+          aValue = parseDate(String(aValue));
+          bValue = parseDate(String(bValue));
+        }
+
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
