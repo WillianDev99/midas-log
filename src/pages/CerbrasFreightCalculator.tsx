@@ -493,12 +493,12 @@ const CerbrasFreightCalculator = () => {
         return {
           cidade: hHeaderMap['CIDADE'] !== undefined ? String(row[hHeaderMap['CIDADE']] || '').trim().toUpperCase() : '',
           uf: hHeaderMap['UF'] !== undefined ? String(row[hHeaderMap['UF']] || '').trim().toUpperCase() : '',
-          t17: getColVal('T17', 2),
-          t14: getColVal('T14', 3),
-          t11: getColVal('T11', 4),
-          t6: getColVal('T6', 5),
-          t3: getColVal('T3', 6),
-          tLess3: getColVal('TLESS3', 7)
+          t17: Math.round(getColVal('T17', 2)),
+          t14: Math.round(getColVal('T14', 3)),
+          t11: Math.round(getColVal('T11', 4)),
+          t6: Math.round(getColVal('T6', 5)),
+          t3: Math.round(getColVal('T3', 6)),
+          tLess3: Math.round(getColVal('TLESS3', 7))
         };
       }).filter(f => f.cidade);
 
