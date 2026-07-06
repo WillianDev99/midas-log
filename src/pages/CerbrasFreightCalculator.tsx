@@ -1500,8 +1500,8 @@ const CerbrasFreightCalculator = () => {
       .filter(calc => {
         if (!isRomaneio(calc)) return false;
         const date = new Date(calc.billing_date);
-        const monthMatch = (date.getMonth() + 1) === reportMonth;
-        const yearMatch = date.getFullYear() === reportYear;
+        const monthMatch = (date.getUTCMonth() + 1) === reportMonth;
+        const yearMatch = date.getUTCFullYear() === reportYear;
         const factoryMatch = reportFactoryFilter === 'ALL' || calc.factory === reportFactoryFilter;
         const searchLower = reportSearch.toLowerCase();
         const searchMatch = !reportSearch || 
@@ -1536,8 +1536,8 @@ const CerbrasFreightCalculator = () => {
     savedCalculations.forEach(calc => {
       if (!isRomaneio(calc)) return;
       const date = new Date(calc.billing_date);
-      const monthMatch = (date.getMonth() + 1) === reportMonth;
-      const yearMatch = date.getFullYear() === reportYear;
+      const monthMatch = (date.getUTCMonth() + 1) === reportMonth;
+      const yearMatch = date.getUTCFullYear() === reportYear;
       const factoryMatch = reportFactoryFilter === 'ALL' || calc.factory === reportFactoryFilter;
       
       if (monthMatch && yearMatch && factoryMatch) {
