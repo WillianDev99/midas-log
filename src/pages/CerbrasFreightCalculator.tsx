@@ -2390,7 +2390,15 @@ const CerbrasFreightCalculator = () => {
                           <p className="text-[10px] text-slate-400 -mt-1 font-medium">{calc.driver_plate}</p>
                           <div className="flex justify-between items-end mt-2">
                             <div className="text-[10px] text-slate-500"><p>{calc.items.length} clientes</p><p>{calc.items.reduce((acc, i) => acc + i.peso, 0).toLocaleString('pt-BR')} KG</p></div>
-                            <p className="text-xs font-bold text-amber-700">R$ {calc.items.reduce((acc, i) => acc + i.valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            <p className="text-xs font-bold text-amber-700">R$ {
+                              calc.items.reduce((acc, i) => {
+                                if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
+                                  const roundedTon = Math.round(i.tonelada);
+                                  return acc + (i.peso * roundedTon) / 1000;
+                                }
+                                return acc + i.valor;
+                              }, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                            }</p>
                           </div>
                         </div>
                       ))}
