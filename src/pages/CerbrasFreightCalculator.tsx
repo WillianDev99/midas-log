@@ -1319,7 +1319,17 @@ const CerbrasFreightCalculator = () => {
     if (!printWindow) return;
     const logoUrl = window.location.origin + "/logo.png";
     const data = calc.romaneio_data || romaneioData;
-    const itemsList = calc.items || items;
+    const itemsList = (calc.items || items).map((i: any) => {
+      if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
+        const roundedTon = Math.round(i.tonelada);
+        return {
+          ...i,
+          tonelada: roundedTon,
+          valor: (i.peso * roundedTon) / 1000
+        };
+      }
+      return i;
+    });
     const tW = itemsList.reduce((acc: number, i: any) => acc + i.peso, 0);
     const tV = itemsList.reduce((acc: number, i: any) => acc + i.valor, 0);
     const dPay = calc.driver_payment || driverPayment;
@@ -1510,12 +1520,19 @@ const CerbrasFreightCalculator = () => {
         return monthMatch && yearMatch && factoryMatch && searchMatch;
       })
       .map(calc => {
-        const totalValue = calc.items.reduce((acc, i) => acc + i.valor, 0);
+        const mappedItems = calc.items.map((i: any) => {
+          if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
+            const roundedTon = Math.round(i.tonelada);
+            return { ...i, tonelada: roundedTon, valor: (i.peso * roundedTon) / 1000 };
+          }
+          return i;
+        });
+        const totalValue = mappedItems.reduce((acc, i) => acc + i.valor, 0);
         const paid = calc.driver_payment;
         const commission = totalValue - paid;
         
         const cityCounts: Record<string, number> = {};
-        calc.items.forEach(i => { cityCounts[i.cidade] = (cityCounts[i.cidade] || 0) + 1; });
+        mappedItems.forEach(i => { cityCounts[i.cidade] = (cityCounts[i.cidade] || 0) + 1; });
         const route = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
  
         return {
@@ -1549,6 +1566,8 @@ const CerbrasFreightCalculator = () => {
             item.cidade.toLowerCase().includes(searchLower);
  
           if (searchMatch) {
+            const roundedTon = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? Math.round(item.tonelada) : item.tonelada;
+            const roundedVal = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? (item.peso * roundedTon) / 1000 : item.valor;
             data.push({
               factory: calc.factory || 'CERBRAS',
               date: calc.billing_date.split('-').reverse().join('/'),
@@ -1558,8 +1577,8 @@ const CerbrasFreightCalculator = () => {
               uf: item.uf,
               type: item.tipo,
               weight: item.peso,
-              ton: item.tonelada,
-              total: item.valor
+              ton: roundedTon,
+              total: roundedVal
             });
           }
         });
