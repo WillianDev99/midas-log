@@ -1465,12 +1465,94 @@ const CerbrasFreightCalculator = () => {
     printWindow.print();
   };
 
-  const exportReportToExcel = (data: any[], fileName: string) => {
-    const ws = XLSX.utils.json_to_sheet(data);
+  const exportReportToExcel = (summaryData: any[], detailedData: any[], fileName: string) => {
+    // 1. Gera aba Resumido
+    const headers = ["Fábrica", "Data", "Rota", "Motorista", "Vlr. Frete", "Vlr. Pago", "Comissão", "%"];
+    const rows = summaryData.map(r => [
+      r.factory,
+      r.date,
+      r.route,
+      r.driver,
+      r.value,
+      r.paid,
+      r.commission,
+      r.value > 0 ? (r.commission / r.value) : 0
+    ]);
+    const aoa = [headers, ...rows];
+    
+    if (rows.length > 0) {
+      const totalRow = [
+        "", // A
+        "", // B
+        "", // C
+        "TOTAL", // D
+        { f: `SUBTOTAL(9,E2:E${rows.length + 1})` }, // E
+        { f: `SUBTOTAL(9,F2:F${rows.length + 1})` }, // F
+        { f: `SUBTOTAL(9,G2:G${rows.length + 1})` }, // G
+        { f: `IF(E${rows.length + 2}>0,G${rows.length + 2}/E${rows.length + 2},0)` } // H
+      ];
+      aoa.push(totalRow);
+    }
+    const wsSummary = XLSX.utils.aoa_to_sheet(aoa);
+    
+    for (let r = 2; r <= rows.length + 2; r++) {
+      ['E', 'F', 'G'].forEach(col => {
+        const cellRef = `${col}${r}`;
+        if (wsSummary[cellRef]) wsSummary[cellRef].z = 'R$ #,##0.00';
+      });
+      const pctCellRef = `H${r}`;
+      if (wsSummary[pctCellRef]) wsSummary[pctCellRef].z = '0.0%';
+    }
+
+    // 2. Gera aba Detalhado
+    const dHeaders = ["Fábrica", "Data", "Motorista", "Cliente", "Cidade", "UF", "Tipo", "Peso (KG)", "Aliq.", "Total (R$)"];
+    const dRows = detailedData.map(r => [
+      r.factory,
+      r.date,
+      r.driver,
+      r.client,
+      r.city,
+      r.uf,
+      r.type,
+      r.weight,
+      r.ton,
+      r.total
+    ]);
+    const daoa = [dHeaders, ...dRows];
+    
+    if (dRows.length > 0) {
+      const dTotalRow = [
+        "", // A
+        "", // B
+        "", // C
+        "", // D
+        "", // E
+        "", // F
+        "TOTAL", // G
+        { f: `SUBTOTAL(9,H2:H${dRows.length + 1})` }, // H
+        "", // I
+        { f: `SUBTOTAL(9,J2:J${dRows.length + 1})` } // J
+      ];
+      daoa.push(dTotalRow);
+    }
+    const wsDetailed = XLSX.utils.aoa_to_sheet(daoa);
+
+    for (let r = 2; r <= dRows.length + 2; r++) {
+      const pesoCell = `H${r}`;
+      if (wsDetailed[pesoCell]) wsDetailed[pesoCell].z = '#,##0';
+      
+      const aliqCell = `I${r}`;
+      if (wsDetailed[aliqCell]) wsDetailed[aliqCell].z = '#,##0.00';
+
+      const totalCell = `J${r}`;
+      if (wsDetailed[totalCell]) wsDetailed[totalCell].z = 'R$ #,##0.00';
+    }
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Relatório Resumido");
+    XLSX.utils.book_append_sheet(wb, wsDetailed, "Relatório Detalhado");
     XLSX.writeFile(wb, `${fileName}.xlsx`);
-    showSuccess("Relatório exportado com sucesso!");
+    showSuccess("Relatório com abas Resumido e Detalhado exportado com sucesso!");
   };
 
   const handlePrintReport = (title: string, columns: string[], rows: any[][]) => {
@@ -2818,8 +2900,7 @@ const CerbrasFreightCalculator = () => {
                   }
                 }}><Printer size={16} /> Imprimir</Button>
                 <Button className="bg-green-600 hover:bg-green-700 text-white gap-2" onClick={() => {
-                  const data = reportType === 'summary' ? filteredReportData : filteredDetailedData;
-                  exportReportToExcel(data, `Relatorio_Midas_${reportMonth}_${reportYear}`);
+                  exportReportToExcel(filteredReportData, filteredDetailedData, `Relatorio_Midas_${reportMonth}_${reportYear}`);
                 }}><Download size={16} /> Exportar Excel</Button>
               </div>
             </div>
