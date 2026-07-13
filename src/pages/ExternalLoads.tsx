@@ -388,7 +388,7 @@ const ExternalLoads = () => {
           peso: mainWeightStr,
           frete: mainFreightType,
           observacoes: String(row[6] || ''),
-          status: String(row[8] || ''),
+          status: String(row[11] || ''),
           parsedDeliveries: parsed,
           totalToPay: totalFreight * 0.7,
           manualDeliveryCount: parsed.length,
