@@ -46,6 +46,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
@@ -66,6 +73,8 @@ interface ExternalLoad {
   totalToPay?: number;
   manualDeliveryCount?: number;
   useEqualizationTable?: boolean;
+  manualVehicleType?: string;
+  complementaryValue?: number;
 }
 
 type SortConfig = {
@@ -89,7 +98,7 @@ const ExternalLoads = () => {
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
-  const TAX_RATE = 0.13; // Imposto de 13%
+  const TAX_RATE = 0.14; // Imposto de 14%
 
   useEffect(() => {
     const init = async () => {
@@ -120,6 +129,46 @@ const ExternalLoads = () => {
       return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
     }
     return parseFloat(str) || 0;
+  };
+
+  const parseWeightNumber = (weight: string | number): number => {
+    if (typeof weight === 'number') return weight;
+    const str = String(weight || '0').trim();
+    if (str.includes(',')) {
+      return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+    }
+    return parseFloat(str.replace(/[^0-9.]/g, '')) || 0;
+  };
+
+  const formatWeight = (weight: string | number): string => {
+    const num = parseWeightNumber(weight);
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+  };
+
+  const VEHICLE_OPTIONS = [
+    'TRUCK',
+    'BITRUCK',
+    'CARRETA',
+    'BITREM',
+    'RODOTREM 3 TAMPAS',
+    'RODOTREM 4 TAMPAS'
+  ];
+
+  const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string } | string | number): string => {
+    if (typeof load === 'object' && load !== null) {
+      if (load.manualVehicleType && load.manualVehicleType !== 'AUTO') {
+        return load.manualVehicleType;
+      }
+      return getVehicleType(load.peso);
+    }
+    const num = parseWeightNumber(load);
+    const ton = num / 1000;
+    if (ton < 18) return 'TRUCK';
+    if (ton <= 22) return 'BITRUCK';
+    if (ton <= 30) return 'CARRETA';
+    if (ton <= 38) return 'BITREM';
+    if (ton <= 40) return 'RODOTREM 3 TAMPAS';
+    return 'RODOTREM 4 TAMPAS';
   };
 
   const loadFreightTables = async () => {
@@ -433,6 +482,7 @@ const ExternalLoads = () => {
         data_original: load.data,
         deliveries: load.parsedDeliveries,
         total_to_pay: load.totalToPay,
+        complementary_value: load.complementaryValue || 0,
         driver_name: driverName.toUpperCase()
       }]);
 
@@ -482,6 +532,12 @@ const ExternalLoads = () => {
           };
           aValue = parseDate(String(aValue));
           bValue = parseDate(String(bValue));
+        } else if (sortConfig.key === 'peso') {
+          aValue = parseWeightNumber(String(aValue));
+          bValue = parseWeightNumber(String(bValue));
+        } else if (sortConfig.key === 'veiculo') {
+          aValue = getVehicleType(a.peso);
+          bValue = getVehicleType(b.peso);
         }
 
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -496,6 +552,15 @@ const ExternalLoads = () => {
     return sortedData.filter(row => {
       const matchesFilters = Object.entries(columnFilters).every(([col, value]) => {
         if (!value) return true;
+        if (col === 'veiculo') {
+          const vehicle = getVehicleType(row.peso);
+          return vehicle.toLowerCase().includes(value.toLowerCase());
+        }
+        if (col === 'peso') {
+          const formatted = formatWeight(row.peso);
+          const rawStr = row.peso?.toString() || '';
+          return formatted.toLowerCase().includes(value.toLowerCase()) || rawStr.toLowerCase().includes(value.toLowerCase());
+        }
         return row[col as keyof ExternalLoad]?.toString().toLowerCase().includes(value.toLowerCase());
       });
       const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
@@ -508,34 +573,56 @@ const ExternalLoads = () => {
     return Array.from(ufs).sort();
   }, [activeData]);
 
-  const handleUpdateLoad = (loadId: string, updates: Partial<ExternalLoad>) => {
-    const updateFn = (loads: ExternalLoad[]) => loads.map(l => {
-      if (l.id === loadId) {
-        const updatedLoad = { ...l, ...updates };
-        
-        if (updates.useEqualizationTable !== undefined || updates.manualDeliveryCount !== undefined) {
-          const newDeliveries = updatedLoad.parsedDeliveries?.map(d => {
-            const newAliquot = getAliquot(
-              d.city, 
-              d.uf, 
-              d.type, 
-              d.weight, 
-              updatedLoad.useEqualizationTable, 
-              updatedLoad.manualDeliveryCount
-            );
-            return { ...d, aliquot: newAliquot, freight: d.weight * newAliquot };
-          });
-          updatedLoad.parsedDeliveries = newDeliveries;
-          const totalReceived = newDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
-          updatedLoad.totalToPay = totalReceived * 0.7;
+  const handleUpdateLoad = async (loadId: string, updates: Partial<ExternalLoad>) => {
+    let updatedLoadsList: ExternalLoad[] = [];
+    const updateFn = (loads: ExternalLoad[]) => {
+      updatedLoadsList = loads.map(l => {
+        if (l.id === loadId) {
+          const updatedLoad = { ...l, ...updates };
+          
+          if (
+            updates.useEqualizationTable !== undefined || 
+            updates.manualDeliveryCount !== undefined ||
+            updates.complementaryValue !== undefined
+          ) {
+            const newDeliveries = updatedLoad.parsedDeliveries?.map(d => {
+              const newAliquot = getAliquot(
+                d.city, 
+                d.uf, 
+                d.type, 
+                d.weight, 
+                updatedLoad.useEqualizationTable, 
+                updatedLoad.manualDeliveryCount
+              );
+              return { ...d, aliquot: newAliquot, freight: d.weight * newAliquot };
+            });
+            updatedLoad.parsedDeliveries = newDeliveries;
+            const baseFreight = newDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+            const totalReceived = baseFreight + (updatedLoad.complementaryValue || 0);
+            updatedLoad.totalToPay = totalReceived * 0.7;
+          }
+          
+          return updatedLoad;
         }
-        
-        return updatedLoad;
-      }
-      return l;
-    });
-    if (viewMode === 'current') setCurrentLoads(updateFn);
-    else setPreviousLoads(updateFn);
+        return l;
+      });
+      return updatedLoadsList;
+    };
+
+    if (viewMode === 'current') {
+      setCurrentLoads(updateFn);
+    } else {
+      setPreviousLoads(updateFn);
+    }
+
+    try {
+      await supabase.from('hidracor_external_loads').update({
+        loads: updatedLoadsList,
+        updated_at: new Date().toISOString()
+      }).eq('version', viewMode);
+    } catch (err) {
+      console.error("Erro ao salvar atualização no Supabase:", err);
+    }
   };
 
   const handleUpdateDelivery = (loadId: string, deliveryIdx: number, updates: any) => {
@@ -546,7 +633,8 @@ const ExternalLoads = () => {
         if (updates.weight !== undefined || updates.aliquot !== undefined) {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
-        const totalReceived = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
+        const baseFreight = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
+        const totalReceived = baseFreight + (l.complementaryValue || 0);
         return { ...l, parsedDeliveries: newDeliveries, totalToPay: totalReceived * 0.7 };
       }
       return l;
@@ -690,6 +778,7 @@ const ExternalLoads = () => {
                 <th>Entregas</th>
                 <th>UF</th>
                 <th>Peso Total</th>
+                <th>Veículo</th>
                 <th>Frete</th>
               </tr>
             </thead>
@@ -699,7 +788,8 @@ const ExternalLoads = () => {
                   <td class="rota-cell"><strong>${load.rota}</strong></td>
                   <td style="text-align: center">${load.entregas}</td>
                   <td style="text-align: center"><strong>${load.uf}</strong></td>
-                  <td style="text-align: right">${load.peso}</td>
+                  <td style="text-align: right">${formatWeight(load.peso)}</td>
+                  <td style="text-align: center"><strong>${getVehicleType(load.peso)}</strong></td>
                   <td style="text-align: center">${load.frete}</td>
                 </tr>
               `).join('')}
@@ -879,13 +969,22 @@ const ExternalLoads = () => {
                         </div>
                       </div>
                     </TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                    <TableHead className="min-w-[130px] py-4 px-4 bg-white">
                       <div className="space-y-2">
                         <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
                           <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
                           {renderSortIcon('peso')}
                         </div>
                         <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('peso', e.target.value)} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="min-w-[140px] py-4 px-4 bg-white">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('veiculo')}>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Veículo</span>
+                          {renderSortIcon('veiculo')}
+                        </div>
+                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('veiculo', e.target.value)} />
                       </div>
                     </TableHead>
                     <TableHead className="min-w-[100px] py-4 px-4 bg-white">
@@ -1041,7 +1140,7 @@ const ExternalLoads = () => {
                                       </div>
                                     </TableCell>
                                     <TableCell colSpan={3} className="text-right uppercase text-[10px]">Total:</TableCell>
-                                    <TableCell className="text-xs">{formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
+                                    <TableCell className="text-xs font-bold">{formatWeight(load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
                                     <TableCell className="text-xs">-</TableCell>
                                     <TableCell className="text-xs text-amber-700">R$ {formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0)}</TableCell>
                                   </TableRow>
@@ -1049,30 +1148,71 @@ const ExternalLoads = () => {
                               </Table>
 
                               {(() => {
-                                const totalReceived = load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+                                const baseFreightToReceive = load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+                                const complementaryValue = load.complementaryValue || 0;
+                                const totalReceived = baseFreightToReceive + complementaryValue;
                                 const totalToPay = load.totalToPay || 0;
-                                const tax = totalReceived * TAX_RATE;
+                                const tax = totalReceived * TAX_RATE; // 14%
                                 const marginBefore = totalReceived - totalToPay;
                                 const marginAfter = totalReceived - totalToPay - tax;
                                 const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
                                 const marginAfterPct = totalReceived > 0 ? (marginAfter / totalReceived) * 100 : 0;
 
                                 return (
-                                  <div className="mt-6 flex flex-col items-end gap-2 border-t pt-4">
+                                  <div className="mt-6 flex flex-col items-end gap-2.5 border-t pt-4">
                                     <div className="flex items-center gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Total a Pagar:</span>
+                                      <span className="text-slate-500 font-bold uppercase">Frete Tabela a Receber:</span>
+                                      <span className="font-bold text-slate-800">R$ {formatCurrency(baseFreightToReceive)}</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-8 text-xs">
+                                      <span className="text-amber-700 font-bold uppercase flex items-center gap-1">
+                                        Valor Complementar (Ajuda de Custo):
+                                      </span>
                                       <div className="flex items-center gap-2">
-                                        <span className="text-slate-400">R$</span>
-                                        <Input type="number" className="h-7 w-32 text-xs font-bold" value={totalToPay} onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })} />
+                                        <span className="text-slate-400 font-semibold">R$</span>
+                                        <Input 
+                                          type="number" 
+                                          step="0.01" 
+                                          className="h-7 w-32 text-xs font-bold border-amber-300 bg-amber-50/60 text-amber-900" 
+                                          value={load.complementaryValue ?? ''} 
+                                          placeholder="0,00"
+                                          onChange={(e) => handleUpdateLoad(load.id, { complementaryValue: parseFloat(e.target.value) || 0 })} 
+                                        />
                                       </div>
                                     </div>
-                                    <div className="flex gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
-                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)</span>
+
+                                    <div className="flex items-center gap-8 text-xs bg-amber-100/60 px-3 py-1.5 rounded border border-amber-200">
+                                      <span className="text-amber-900 font-extrabold uppercase">Valor Total a Receber (Frete + Complemento):</span>
+                                      <span className="font-extrabold text-amber-900 text-sm">R$ {formatCurrency(totalReceived)}</span>
                                     </div>
+
+                                    <div className="flex items-center gap-8 text-xs pt-1">
+                                      <span className="text-slate-500 font-bold uppercase">Total a Pagar (Motorista):</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-slate-400 font-semibold">R$</span>
+                                        <Input 
+                                          type="number" 
+                                          step="0.01" 
+                                          className="h-7 w-32 text-xs font-bold" 
+                                          value={totalToPay} 
+                                          onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })} 
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-8 text-xs pt-1 border-t w-full justify-end">
+                                      <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
+                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)
+                                      </span>
+                                    </div>
+
                                     <div className="flex gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (13%):</span>
-                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)</span>
+                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (14%):</span>
+                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                        R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)
+                                      </span>
                                     </div>
                                   </div>
                                 );
@@ -1085,7 +1225,33 @@ const ExternalLoads = () => {
                       <TableCell className="text-[11px] font-medium max-w-[300px] truncate" title={load.rota}>{load.rota}</TableCell>
                       <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
                       <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
-                      <TableCell className="text-[11px] text-right">{load.peso}</TableCell>
+                      <TableCell className="text-[11px] text-right font-medium whitespace-nowrap">{formatWeight(load.peso)}</TableCell>
+                      <TableCell className="text-[11px] text-center font-semibold">
+                        <Select 
+                          value={getVehicleType(load)} 
+                          onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
+                        >
+                          <SelectTrigger className={`h-7 text-[10px] font-bold border rounded px-2 w-[145px] mx-auto flex justify-between items-center ${
+                            load.manualVehicleType 
+                              ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-sm' 
+                              : 'bg-amber-50/80 text-amber-800 border-amber-200/80 hover:bg-amber-100/60'
+                          }`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VEHICLE_OPTIONS.map(option => (
+                              <SelectItem key={option} value={option} className="text-xs font-bold">
+                                {option}
+                              </SelectItem>
+                            ))}
+                            {load.manualVehicleType && (
+                              <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
+                                ↺ Restaurar Automático
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
                       <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
                       <TableCell className="text-[11px]"><div className={`px-2 py-1 rounded-full text-[10px] font-bold text-center ${load.status.includes('AGENCIANDO') ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{load.status}</div></TableCell>
                     </TableRow>
