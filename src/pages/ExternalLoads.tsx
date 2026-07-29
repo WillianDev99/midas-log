@@ -417,27 +417,27 @@ const ExternalLoads = () => {
 
       if (rows.length < 2) throw new Error("Planilha vazia ou aba CARGAS não encontrada.");
 
-      const dataRows = rows.slice(1).filter(r => r[1] && String(r[1]).trim() !== "");
+      const dataRows = rows.slice(1).filter(r => r[2] && String(r[2]).trim() !== "");
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = String(row[1] || '');
-        const rawUF = String(row[3] || '');
-        const mainWeightStr = String(row[4] || '0');
-        const mainFreightType = String(row[5] || 'CIF').toUpperCase();
+        const rota = String(row[2] || '');
+        const rawUF = String(row[4] || '');
+        const mainWeightStr = String(row[5] || '0');
+        const mainFreightType = String(row[6] || 'CIF').toUpperCase();
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: excelSerialToFormattedDate(row[0]),
+          data: excelSerialToFormattedDate(row[1]),
           rota: rota,
-          entregas: String(row[2] || ''),
+          entregas: String(row[3] || ''),
           uf: cleanUF,
           peso: mainWeightStr,
           frete: mainFreightType,
-          observacoes: String(row[6] || ''),
-          status: String(row[11] || ''),
+          observacoes: String(row[7] || ''),
+          status: String(row[12] || ''),
           parsedDeliveries: parsed,
           totalToPay: totalFreight * 0.7,
           manualDeliveryCount: parsed.length,
