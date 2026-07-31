@@ -51,6 +51,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -102,6 +103,7 @@ interface FreightItem {
   peso: number;
   tonelada: number;
   valor: number;
+  valorComplementar?: number;
   especial: boolean;
   nfe?: string;
   cte?: string;
@@ -141,6 +143,16 @@ interface SpecialClientFreight {
   uf: string;
   valor: number;
 }
+
+const getItemTotalValue = (item: any): number => {
+  if (!item) return 0;
+  let baseVal = item.valor || 0;
+  if (item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF') {
+    const roundedTon = Math.round(item.tonelada || 0);
+    baseVal = ((item.peso || 0) * roundedTon) / 1000;
+  }
+  return baseVal + (item.valorComplementar || 0);
+};
 
 interface DriverData {
   motorista: string;
@@ -265,10 +277,16 @@ const CerbrasFreightCalculator = () => {
   ];
 
   const filteredHistory = useMemo(() => {
-    return savedCalculations.filter(calc => {
-      const dateStr = calc.billing_date || new Date(calc.created_at).toISOString().split('T')[0];
-      const date = new Date(dateStr);
-      const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+    return (savedCalculations || []).filter(calc => {
+      if (!calc) return false;
+      const dateStr = calc.billing_date || (calc.created_at ? new Date(calc.created_at).toISOString().split('T')[0] : '');
+      let utcDate = new Date();
+      if (dateStr) {
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+          utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+        }
+      }
       
       if (historyMonthFilter !== "ALL") {
         const matchMonth = (utcDate.getMonth() + 1).toString() === historyMonthFilter;
@@ -280,7 +298,7 @@ const CerbrasFreightCalculator = () => {
       }
       
       if (historyDriverFilter.trim() !== "") {
-        const matchDriver = calc.driver_name.toLowerCase().includes(historyDriverFilter.toLowerCase());
+        const matchDriver = (calc.driver_name || "").toLowerCase().includes(historyDriverFilter.toLowerCase());
         if (!matchDriver) return false;
       }
       
@@ -289,7 +307,8 @@ const CerbrasFreightCalculator = () => {
   }, [savedCalculations, historyMonthFilter, historyDayFilter, historyDriverFilter]);
 
   const isRomaneio = (calc: SavedCalculation) => {
-    return calc.items.length > 0 && calc.items.every(item => item.nfe?.trim() && item.cte?.trim());
+    if (!calc || !Array.isArray(calc.items) || calc.items.length === 0) return false;
+    return calc.items.every(item => item.nfe?.trim() && item.cte?.trim());
   };
 
   const isCurrentMonthClosed = useMemo(() => isMonthClosed(billingDate, closedMonths), [billingDate, closedMonths]);
@@ -806,6 +825,7 @@ const CerbrasFreightCalculator = () => {
       peso: 0,
       tonelada: 0,
       valor: 0,
+      valorComplementar: 0,
       especial: client?.especial || false,
       nfe: "",
       cte: ""
@@ -891,7 +911,7 @@ const CerbrasFreightCalculator = () => {
   };
 
   const totalWeight = items.reduce((acc, i) => acc + i.peso, 0);
-  const totalValue = items.reduce((acc, i) => acc + i.valor, 0);
+  const totalValue = items.reduce((acc, i) => acc + getItemTotalValue(i), 0);
   const fretePossivel = totalValue * 0.77;
   const weightCE = items.filter(i => i.uf === 'CE').reduce((acc, i) => acc + i.peso, 0);
   const weightOthers = items.filter(i => i.uf !== 'CE').reduce((acc, i) => acc + i.peso, 0);
@@ -1010,16 +1030,16 @@ const CerbrasFreightCalculator = () => {
   };
 
   const handleEdit = (calc: SavedCalculation) => {
-    setDriverName(calc.driver_name); setDriverPlate(calc.driver_plate || ""); setBillingDate(calc.billing_date);
-    setItems(calc.items); setDriverPayment(calc.driver_payment || 0); setTaxPercent(calc.tax_percent || 13);
+    setDriverName(calc.driver_name || ""); setDriverPlate(calc.driver_plate || ""); setBillingDate(calc.billing_date || new Date().toISOString().split('T')[0]);
+    setItems(calc.items || []); setDriverPayment(calc.driver_payment || 0); setTaxPercent(calc.tax_percent || 13);
     setEditingId(calc.id); setSelectedFactory(calc.factory || "CERBRAS");
     if (calc.romaneio_data) setRomaneioData(prev => ({ situacao: 'em_rota', ...prev, ...calc.romaneio_data }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleClone = (calc: SavedCalculation) => {
-    setDriverName(calc.driver_name); setDriverPlate(calc.driver_plate || ""); setBillingDate(new Date().toISOString().split('T')[0]);
-    setItems(calc.items.map(i => ({ ...i, id: Math.random().toString(36).substr(2, 9) })));
+    setDriverName(calc.driver_name || ""); setDriverPlate(calc.driver_plate || ""); setBillingDate(new Date().toISOString().split('T')[0]);
+    setItems((calc.items || []).map(i => ({ ...i, id: Math.random().toString(36).substr(2, 9) })));
     setDriverPayment(calc.driver_payment || 0); setTaxPercent(calc.tax_percent || 13); setEditingId(null);
     setSelectedFactory(calc.factory || "CERBRAS");
     showSuccess("Cálculo clonado!");
@@ -1320,18 +1340,23 @@ const CerbrasFreightCalculator = () => {
     const logoUrl = window.location.origin + "/logo.png";
     const data = calc.romaneio_data || romaneioData;
     const itemsList = (calc.items || items).map((i: any) => {
+      let baseVal = i.valor || 0;
       if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
         const roundedTon = Math.round(i.tonelada);
-        return {
-          ...i,
-          tonelada: roundedTon,
-          valor: (i.peso * roundedTon) / 1000
-        };
+        baseVal = (i.peso * roundedTon) / 1000;
       }
-      return i;
+      const comp = i.valorComplementar || 0;
+      return {
+        ...i,
+        baseValor: baseVal,
+        valorComplementar: comp,
+        valorTotal: baseVal + comp
+      };
     });
     const tW = itemsList.reduce((acc: number, i: any) => acc + i.peso, 0);
-    const tV = itemsList.reduce((acc: number, i: any) => acc + i.valor, 0);
+    const tBase = itemsList.reduce((acc: number, i: any) => acc + i.baseValor, 0);
+    const tComp = itemsList.reduce((acc: number, i: any) => acc + i.valorComplementar, 0);
+    const tV = itemsList.reduce((acc: number, i: any) => acc + i.valorTotal, 0);
     const dPay = calc.driver_payment || driverPayment;
     const tPct = calc.tax_percent || taxPercent;
     const wCE = itemsList.filter((i: any) => i.uf === 'CE').reduce((acc: number, i: any) => acc + i.peso, 0);
@@ -1384,19 +1409,19 @@ const CerbrasFreightCalculator = () => {
             <div style="font-size: 8px">ID: ${calc.id || 'N/A'}</div>
           </div>
           <table>
-            <thead><tr><th>FÁBRICA</th><th>CLIENTE</th><th>CNPJ</th><th>CIDADE</th><th>UF</th><th>NF-e</th><th>TIPO</th><th>CT-e</th><th style="text-align:right">PESO</th><th style="text-align:right">TON</th><th style="text-align:right">VALOR</th><th>ESP</th></tr></thead>
+            <thead><tr><th>FÁBRICA</th><th>CLIENTE</th><th>CNPJ</th><th>CIDADE</th><th>UF</th><th>NF-e</th><th>TIPO</th><th>CT-e</th><th style="text-align:right">PESO</th><th style="text-align:right">TON</th><th style="text-align:right">BASE</th><th style="text-align:right">COMPL.</th><th style="text-align:right">VALOR TOTAL</th><th>ESP</th></tr></thead>
             <tbody>
-              ${itemsList.map((i: any) => `<tr><td>${i.fabrica}</td><td>${i.cliente}</td><td>${i.cnpj}</td><td>${i.cidade}</td><td>${i.uf}</td><td>${i.nfe || ''}</td><td>${i.tipo}</td><td>${i.cte || ''}</td><td style="text-align:right">${i.peso.toLocaleString('pt-BR')}</td><td style="text-align:right">${i.tonelada.toLocaleString('pt-BR')}</td><td style="text-align:right">${i.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td>${i.especial ? 'S' : 'N'}</td></tr>`).join('')}
-              <tr style="font-weight:bold"><td colspan="8" style="text-align:right">TOTAL</td><td style="text-align:right">${tW.toLocaleString('pt-BR')}</td><td></td><td style="text-align:right">R$ ${tV.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td></td></tr>
+              ${itemsList.map((i: any) => `<tr><td>${i.fabrica}</td><td>${i.cliente}</td><td>${i.cnpj}</td><td>${i.cidade}</td><td>${i.uf}</td><td>${i.nfe || ''}</td><td>${i.tipo}</td><td>${i.cte || ''}</td><td style="text-align:right">${i.peso.toLocaleString('pt-BR')}</td><td style="text-align:right">${i.tonelada.toLocaleString('pt-BR')}</td><td style="text-align:right">${i.baseValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td style="text-align:right">${i.valorComplementar.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td style="text-align:right">${i.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td>${i.especial ? 'S' : 'N'}</td></tr>`).join('')}
+              <tr style="font-weight:bold"><td colspan="8" style="text-align:right">TOTAL</td><td style="text-align:right">${tW.toLocaleString('pt-BR')}</td><td></td><td style="text-align:right">R$ ${tBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td style="text-align:right">R$ ${tComp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td style="text-align:right">R$ ${tV.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td></td></tr>
             </tbody>
           </table>
 
           <div class="grid-2">
             <div class="left-panel">
               <table class="info-table">
-                <tr><td>MOTORISTA</td><td>${calc.driver_name}</td></tr>
-                <tr><td>PLACA</td><td>${calc.driver_plate}</td></tr>
-                <tr><td>DATA</td><td>${calc.billing_date.split('-').reverse().join('/')}</td></tr>
+                <tr><td>MOTORISTA</td><td>${calc.driver_name || ''}</td></tr>
+                <tr><td>PLACA</td><td>${calc.driver_plate || ''}</td></tr>
+                <tr><td>DATA</td><td>${calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : '-'}</td></tr>
               </table>
               <table class="info-table">
                 <tr><td>CONTAS A PAGAR MOTORISTA</td><td>${data.contas_pagar_mot_ok ? 'OK' : 'PENDENTE'}</td></tr>
@@ -1505,7 +1530,7 @@ const CerbrasFreightCalculator = () => {
     }
 
     // 2. Gera aba Detalhado
-    const dHeaders = ["Fábrica", "Data", "Motorista", "Cliente", "Cidade", "UF", "Tipo", "Peso (KG)", "Aliq.", "Total (R$)"];
+    const dHeaders = ["Fábrica", "Data", "Motorista", "Cliente", "Cidade", "UF", "Tipo", "Peso (KG)", "Aliq.", "Frete Base (R$)", "Complemento (R$)", "Total (R$)"];
     const dRows = detailedData.map(r => [
       r.factory,
       r.date,
@@ -1516,22 +1541,26 @@ const CerbrasFreightCalculator = () => {
       r.type,
       r.weight,
       r.ton,
+      r.baseValue,
+      r.complement,
       r.total
     ]);
     const daoa = [dHeaders, ...dRows];
     
     if (dRows.length > 0) {
       const dTotalRow = [
-        "", // A
-        "", // B
-        "", // C
-        "", // D
-        "", // E
-        "", // F
-        "TOTAL", // G
-        { f: `SUBTOTAL(9,H2:H${dRows.length + 1})` }, // H
-        "", // I
-        { f: `SUBTOTAL(9,J2:J${dRows.length + 1})` } // J
+        "", // A: Fábrica
+        "", // B: Data
+        "", // C: Motorista
+        "", // D: Cliente
+        "", // E: Cidade
+        "", // F: UF
+        "TOTAL", // G: Tipo
+        { f: `SUBTOTAL(9,H2:H${dRows.length + 1})` }, // H: Peso
+        "", // I: Aliq.
+        { f: `SUBTOTAL(9,J2:J${dRows.length + 1})` }, // J: Frete Base
+        { f: `SUBTOTAL(9,K2:K${dRows.length + 1})` }, // K: Complemento
+        { f: `SUBTOTAL(9,L2:L${dRows.length + 1})` }  // L: Total
       ];
       daoa.push(dTotalRow);
     }
@@ -1544,7 +1573,13 @@ const CerbrasFreightCalculator = () => {
       const aliqCell = `I${r}`;
       if (wsDetailed[aliqCell]) wsDetailed[aliqCell].z = '#,##0.00';
 
-      const totalCell = `J${r}`;
+      const baseCell = `J${r}`;
+      if (wsDetailed[baseCell]) wsDetailed[baseCell].z = 'R$ #,##0.00';
+
+      const compCell = `K${r}`;
+      if (wsDetailed[compCell]) wsDetailed[compCell].z = 'R$ #,##0.00';
+
+      const totalCell = `L${r}`;
       if (wsDetailed[totalCell]) wsDetailed[totalCell].z = 'R$ #,##0.00';
     }
 
@@ -1588,40 +1623,36 @@ const CerbrasFreightCalculator = () => {
   };
 
   const filteredReportData = useMemo(() => {
-    return savedCalculations
+    return (savedCalculations || [])
       .filter(calc => {
-        if (!isRomaneio(calc)) return false;
-        const date = new Date(calc.billing_date);
+        if (!calc || !isRomaneio(calc)) return false;
+        const dateStr = calc.billing_date || (calc.created_at ? new Date(calc.created_at).toISOString().split('T')[0] : '');
+        if (!dateStr) return false;
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return false;
         const monthMatch = (date.getUTCMonth() + 1) === reportMonth;
         const yearMatch = date.getUTCFullYear() === reportYear;
         const factoryMatch = reportFactoryFilter === 'ALL' || calc.factory === reportFactoryFilter;
-        const searchLower = reportSearch.toLowerCase();
+        const searchLower = (reportSearch || "").toLowerCase();
         const searchMatch = !reportSearch || 
-          calc.driver_name.toLowerCase().includes(searchLower) || 
-          calc.items.some(i => i.cidade.toLowerCase().includes(searchLower));
+          (calc.driver_name || "").toLowerCase().includes(searchLower) || 
+          (calc.items || []).some(i => (i.cidade || "").toLowerCase().includes(searchLower));
         return monthMatch && yearMatch && factoryMatch && searchMatch;
       })
       .map(calc => {
-        const mappedItems = calc.items.map((i: any) => {
-          if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
-            const roundedTon = Math.round(i.tonelada);
-            return { ...i, tonelada: roundedTon, valor: (i.peso * roundedTon) / 1000 };
-          }
-          return i;
-        });
-        const totalValue = mappedItems.reduce((acc, i) => acc + i.valor, 0);
-        const paid = calc.driver_payment;
+        const totalValue = (calc.items || []).reduce((acc, i) => acc + getItemTotalValue(i), 0);
+        const paid = calc.driver_payment || 0;
         const commission = totalValue - paid;
         
         const cityCounts: Record<string, number> = {};
-        mappedItems.forEach(i => { cityCounts[i.cidade] = (cityCounts[i.cidade] || 0) + 1; });
+        (calc.items || []).forEach(i => { if (i.cidade) cityCounts[i.cidade] = (cityCounts[i.cidade] || 0) + 1; });
         const route = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
- 
+
         return {
           factory: calc.factory || 'CERBRAS',
-          date: calc.billing_date.split('-').reverse().join('/'),
+          date: calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : '-',
           route,
-          driver: calc.driver_name,
+          driver: calc.driver_name || 'N/A',
           value: totalValue,
           paid,
           commission,
@@ -1629,38 +1660,45 @@ const CerbrasFreightCalculator = () => {
         };
       });
   }, [savedCalculations, reportMonth, reportYear, reportFactoryFilter, reportSearch]);
- 
+
   const filteredDetailedData = useMemo(() => {
     const data: any[] = [];
-    savedCalculations.forEach(calc => {
-      if (!isRomaneio(calc)) return;
-      const date = new Date(calc.billing_date);
+    (savedCalculations || []).forEach(calc => {
+      if (!calc || !isRomaneio(calc)) return;
+      const dateStr = calc.billing_date || (calc.created_at ? new Date(calc.created_at).toISOString().split('T')[0] : '');
+      if (!dateStr) return;
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
       const monthMatch = (date.getUTCMonth() + 1) === reportMonth;
       const yearMatch = date.getUTCFullYear() === reportYear;
       const factoryMatch = reportFactoryFilter === 'ALL' || calc.factory === reportFactoryFilter;
-      
+      const searchLower = (reportSearch || "").toLowerCase();
+
       if (monthMatch && yearMatch && factoryMatch) {
-        calc.items.forEach(item => {
-          const searchLower = reportSearch.toLowerCase();
+        (calc.items || []).forEach(item => {
           const searchMatch = !reportSearch || 
-            calc.driver_name.toLowerCase().includes(searchLower) || 
-            item.cliente.toLowerCase().includes(searchLower) ||
-            item.cidade.toLowerCase().includes(searchLower);
- 
+            (calc.driver_name || "").toLowerCase().includes(searchLower) || 
+            (item.cliente || "").toLowerCase().includes(searchLower) || 
+            (item.cidade || "").toLowerCase().includes(searchLower);
+
           if (searchMatch) {
-            const roundedTon = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? Math.round(item.tonelada) : item.tonelada;
-            const roundedVal = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? (item.peso * roundedTon) / 1000 : item.valor;
+            const roundedTon = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? Math.round(item.tonelada || 0) : (item.tonelada || 0);
+            const baseVal = item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF' ? ((item.peso || 0) * roundedTon) / 1000 : (item.valor || 0);
+            const comp = item.valorComplementar || 0;
+            const totalVal = baseVal + comp;
             data.push({
               factory: calc.factory || 'CERBRAS',
-              date: calc.billing_date.split('-').reverse().join('/'),
-              driver: calc.driver_name,
-              client: item.cliente,
-              city: item.cidade,
-              uf: item.uf,
-              type: item.tipo,
-              weight: item.peso,
+              date: calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : '-',
+              driver: calc.driver_name || 'N/A',
+              client: item.cliente || 'N/A',
+              city: item.cidade || 'N/A',
+              uf: item.uf || 'CE',
+              type: item.tipo || 'FOB',
+              weight: item.peso || 0,
               ton: roundedTon,
-              total: roundedVal
+              baseValue: baseVal,
+              complement: comp,
+              total: totalVal
             });
           }
         });
@@ -1697,6 +1735,157 @@ const CerbrasFreightCalculator = () => {
             </div>
           </div>
           <div className="flex gap-2">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+                  <History size={16} /> Histórico
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-full sm:max-w-xl flex flex-col h-full p-0">
+                <SheetHeader className="p-6 pb-2 bg-slate-50 border-b">
+                  <SheetTitle className="flex items-center gap-2 text-xl font-bold">
+                    <History className="text-amber-600" size={24} /> Histórico de Cálculos
+                  </SheetTitle>
+                  <SheetDescription>
+                    Consulte e gerencie simulações e romaneios salvos.
+                  </SheetDescription>
+                </SheetHeader>
+
+                <div className="p-4 bg-white border-b space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Mês de Faturamento</label>
+                      <Select value={historyMonthFilter} onValueChange={setHistoryMonthFilter}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Todos os meses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">Todos os meses</SelectItem>
+                          {monthsMap.map((m, idx) => (
+                            <SelectItem key={idx} value={(idx + 1).toString()}>{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Data Específica</label>
+                      <Input 
+                        type="date" 
+                        className="h-8 text-xs" 
+                        value={historyDayFilter} 
+                        onChange={(e) => setHistoryDayFilter(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Motorista</label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2 text-slate-400" size={14} />
+                      <Input 
+                        placeholder="Pesquisar por nome do motorista..." 
+                        className="pl-8 h-8 text-xs" 
+                        value={historyDriverFilter} 
+                        onChange={(e) => setHistoryDriverFilter(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                  {(historyMonthFilter !== "ALL" || historyDayFilter || historyDriverFilter) && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-7"
+                      onClick={() => {
+                        setHistoryMonthFilter("ALL");
+                        setHistoryDayFilter("");
+                        setHistoryDriverFilter("");
+                      }}
+                    >
+                      Limpar Filtros
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {isLoadingHistory ? (
+                    <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>
+                  ) : savedCalculations.length === 0 ? (
+                    <div className="py-10 text-center text-slate-400 text-xs">Nenhum histórico encontrado.</div>
+                  ) : filteredHistory.length === 0 ? (
+                    <div className="py-10 text-center text-slate-400 text-xs">Nenhum cálculo corresponde aos filtros selecionados.</div>
+                  ) : (
+                    (() => {
+                      const grouped: Record<string, SavedCalculation[]> = {};
+                      filteredHistory.forEach(calc => {
+                        const date = calc.billing_date || (calc.created_at ? new Date(calc.created_at).toISOString().split('T')[0] : '2026-01-01');
+                        if (!grouped[date]) grouped[date] = [];
+                        grouped[date].push(calc);
+                      });
+
+                      return Object.entries(grouped).map(([date, calcs]) => (
+                        <div key={date} className="space-y-3">
+                          <div className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm py-1 border-b border-slate-200 mb-2">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                              {date.split('-').reverse().join('/')}
+                            </span>
+                          </div>
+                          {calcs.map(calc => (
+                            <div key={calc.id} className="p-3 rounded-lg border border-slate-100 bg-white shadow-sm hover:border-amber-200 hover:shadow-md hover:bg-amber-50/30 transition-all group relative">
+                              <div className="flex justify-between items-start mb-1">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[10px] font-bold text-amber-600 uppercase flex items-center gap-1">
+                                    <Calendar size={10} /> 
+                                    {calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : (calc.created_at ? new Date(calc.created_at).toLocaleDateString('pt-BR') : '-')}
+                                  </span>
+                                  {isRomaneio(calc) ? (
+                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 text-[9px] h-4 w-fit px-1">ROMANEIO</Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-slate-400 border-slate-200 text-[9px] h-4 w-fit px-1">COTAÇÃO</Badge>
+                                  )}
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}><MoreVertical size={14} /></Button></DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleEdit(calc)} className="gap-2"><Edit3 size={14} /> Editar</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => { 
+                                      setEditingId(calc.id); 
+                                      setItems(calc.items || []); 
+                                      setDriverName(calc.driver_name || "");
+                                      setDriverPlate(calc.driver_plate || "");
+                                      setBillingDate(calc.billing_date || new Date().toISOString().split('T')[0]);
+                                      setSelectedFactory(calc.factory || 'CERBRAS');
+                                      setDriverPayment(calc.driver_payment || 0); 
+                                      setRomaneioData(prev => ({ ...prev, ...(calc.romaneio_data || {}) })); 
+                                      showSuccess("Dados carregados. Verifique a seção de Romaneio abaixo.");
+                                      setTimeout(() => {
+                                        const el = document.getElementById('romaneio-section');
+                                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                                      }, 100);
+                                    }} className="gap-2"><FileSpreadsheet size={14} /> Carregar Romaneio</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleClone(calc)} className="gap-2"><Copy size={14} /> Clonar</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDelete(calc.id)} className={`gap-2 text-red-600 ${isMonthClosed(calc.billing_date, closedMonths) ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={isMonthClosed(calc.billing_date, closedMonths)}><Trash2 size={14} /> Excluir</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              <div className="flex justify-between items-center pr-6">
+                                <h4 className="text-xs font-bold text-slate-900 uppercase truncate">{calc.driver_name || "Sem Motorista"}</h4>
+                                <Badge variant="outline" className="text-[8px] h-3 px-1 border-slate-300 text-slate-500">{calc.factory || 'CERBRAS'}</Badge>
+                              </div>
+                              <p className="text-[10px] text-slate-400 -mt-1 font-medium">{calc.driver_plate || ""}</p>
+                              <div className="flex justify-between items-end mt-2">
+                                <div className="text-[10px] text-slate-500"><p>{(calc.items || []).length} clientes</p><p>{(calc.items || []).reduce((acc, i) => acc + (i.peso || 0), 0).toLocaleString('pt-BR')} KG</p></div>
+                                <p className="text-xs font-bold text-amber-700">R$ {
+                                  (calc.items || []).reduce((acc, i) => acc + getItemTotalValue(i), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                                }</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ));
+                    })()
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowRomaneioListModal(true)}><FileText size={16} /> Romaneios</Button>
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowReportModal(true)}><TrendingUp size={16} /> Relatórios</Button>
             <Button variant="outline" className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setShowDatabaseModal(true)}><Database size={16} /> Base</Button>
@@ -1776,80 +1965,130 @@ const CerbrasFreightCalculator = () => {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
-
-
                   <div className="rounded-lg border border-slate-200 overflow-hidden">
                     <Table>
                       <TableHeader className="bg-slate-50">
                         <TableRow>
                           <TableHead className="w-[120px]">Cliente</TableHead>
-                          <TableHead className="w-[100px]">NF-e / CT-e</TableHead>
-                          <TableHead className="w-[100px] text-right">Peso (KG)</TableHead>
-                          <TableHead className="w-[150px] text-right">R$/Ton</TableHead>
-                          <TableHead className="w-[150px] text-right">Valor</TableHead>
-                          <TableHead className="w-[80px]">TIPO</TableHead>
+                          <TableHead className="w-[90px]">NF-e / CT-e</TableHead>
+                          <TableHead className="w-[90px] text-right">Peso (KG)</TableHead>
+                          <TableHead className="w-[110px] text-right">R$/Ton</TableHead>
+                          <TableHead className="w-[110px] text-right">Frete Base</TableHead>
+                          <TableHead className="w-[120px] text-right">Vlr. Complementar</TableHead>
+                          <TableHead className="w-[120px] text-right">Valor Total</TableHead>
+                          <TableHead className="w-[70px]">TIPO</TableHead>
                           <TableHead className="w-[40px]"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {items.length === 0 ? (
-                          <TableRow><TableCell colSpan={7} className="h-32 text-center text-slate-400">Nenhum cliente adicionado.</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={9} className="h-32 text-center text-slate-400">Nenhum cliente adicionado.</TableCell></TableRow>
                         ) : (
-                          items.map((item) => (
-                            <TableRow key={item.id} className="group hover:bg-slate-50/50">
-                              <TableCell>
-                                <div>
-                                  <p className="text-xs font-bold uppercase truncate max-w-[200px]">{item.cliente}</p>
-                                  <p className="text-[10px] text-slate-400">{item.cidade} - {item.uf}</p>
-                                </div>
-                                {item.especial && <Badge className="bg-amber-100 text-amber-700 text-[9px] h-4 mt-0.5">ESPECIAL</Badge>}
-                              </TableCell>
-                              <TableCell>
-                                <div className="space-y-1">
-                                  <Input placeholder="NF-e" className="h-6 text-[10px] px-1" value={item.nfe} onChange={(e) => updateItem(item.id, { nfe: e.target.value })} disabled={isLocked} />
-                                  <Input placeholder="CT-e" className="h-6 text-[10px] px-1" value={item.cte} onChange={(e) => updateItem(item.id, { cte: e.target.value })} disabled={isLocked} />
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right"><Input type="number" className="h-8 text-right text-xs font-bold border-slate-200" value={item.peso || ''} onChange={(e) => updateItem(item.id, { peso: Number(e.target.value) })} disabled={isLocked} /></TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <span className="text-[10px] text-slate-400">R$</span>
-                                  <Input 
-                                    type="number" 
-                                    className={`h-8 w-32 text-right text-xs font-bold border-slate-200 ${
-                                      item.fabrica === 'HIDRACOR' && item.tipo === 'CIF' && !isLocked
-                                        ? 'bg-white cursor-text border-slate-300' 
-                                        : 'bg-slate-50 cursor-not-allowed text-slate-500'
-                                    }`} 
-                                    value={item.tonelada || ''} 
-                                    onChange={(e) => updateItem(item.id, { tonelada: Number(e.target.value) })} 
-                                    disabled={isLocked || !(item.fabrica === 'HIDRACOR' && item.tipo === 'CIF')}
-                                  />
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right"><span className="text-xs font-bold text-amber-700">R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></TableCell>
-                              <TableCell>
-                                <Select value={item.tipo} onValueChange={(v) => updateItem(item.id, { tipo: v })} disabled={isLocked}>
-                                  <SelectTrigger className="h-8 text-[10px] w-20 bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="FOB">FOB</SelectItem>
-                                    <SelectItem value="CIF">CIF</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell><Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100" onClick={() => removeItem(item.id)} disabled={isLocked}><Trash2 size={14} /></Button></TableCell>
-                            </TableRow>
-                          ))
+                          items.map((item) => {
+                            const itemTotal = getItemTotalValue(item);
+                            return (
+                              <TableRow key={item.id} className="group hover:bg-slate-50/50">
+                                <TableCell>
+                                  <div>
+                                    <p className="text-xs font-bold uppercase truncate max-w-[180px]">{item.cliente}</p>
+                                    <p className="text-[10px] text-slate-400">{item.cidade} - {item.uf}</p>
+                                  </div>
+                                  {item.especial && <Badge className="bg-amber-100 text-amber-700 text-[9px] h-4 mt-0.5">ESPECIAL</Badge>}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="space-y-1">
+                                    <Input placeholder="NF-e" className="h-6 text-[10px] px-1" value={item.nfe} onChange={(e) => updateItem(item.id, { nfe: e.target.value })} disabled={isLocked} />
+                                    <Input placeholder="CT-e" className="h-6 text-[10px] px-1" value={item.cte} onChange={(e) => updateItem(item.id, { cte: e.target.value })} disabled={isLocked} />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Input type="number" className="h-8 text-right text-xs font-bold border-slate-200" value={item.peso || ''} onChange={(e) => updateItem(item.id, { peso: Number(e.target.value) })} disabled={isLocked} />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-[10px] text-slate-400">R$</span>
+                                    <Input 
+                                      type="number" 
+                                      className={`h-8 w-28 text-right text-xs font-bold border-slate-200 ${
+                                        item.fabrica === 'HIDRACOR' && item.tipo === 'CIF' && !isLocked
+                                          ? 'bg-white cursor-text border-slate-300' 
+                                          : 'bg-slate-50 cursor-not-allowed text-slate-500'
+                                      }`} 
+                                      value={item.tonelada || ''} 
+                                      onChange={(e) => updateItem(item.id, { tonelada: Number(e.target.value) })} 
+                                      disabled={isLocked || !(item.fabrica === 'HIDRACOR' && item.tipo === 'CIF')}
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <span className="text-xs font-medium text-slate-600">
+                                    R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="text-[10px] text-slate-400">R$</span>
+                                    <Input 
+                                      type="number" 
+                                      step="0.01" 
+                                      placeholder="0,00"
+                                      className="h-8 w-28 text-right text-xs font-bold border-slate-200 bg-amber-50/50 text-amber-900 focus:bg-white"
+                                      value={item.valorComplementar || ''} 
+                                      onChange={(e) => updateItem(item.id, { valorComplementar: Number(e.target.value) || 0 })} 
+                                      disabled={isLocked}
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <span className="text-xs font-bold text-amber-700">
+                                    R$ {itemTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <Select value={item.tipo} onValueChange={(v) => updateItem(item.id, { tipo: v })} disabled={isLocked}>
+                                    <SelectTrigger className="h-8 text-[10px] w-20 bg-white">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="FOB">FOB</SelectItem>
+                                      <SelectItem value="CIF">CIF</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100" onClick={() => removeItem(item.id)} disabled={isLocked}>
+                                    <Trash2 size={14} />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
                         )}
-                        {items.length > 0 && <TableRow className="bg-slate-50 font-bold"><TableCell colSpan={2} className="text-right text-slate-600">TOTAIS</TableCell><TableCell className="text-right">{totalWeight.toLocaleString('pt-BR')} KG</TableCell><TableCell></TableCell><TableCell className="text-right text-amber-600">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell><TableCell colSpan={2}></TableCell></TableRow>}
+                        {items.length > 0 && (
+                          <TableRow className="bg-slate-50 font-bold">
+                            <TableCell colSpan={2} className="text-right text-slate-600">TOTAIS</TableCell>
+                            <TableCell className="text-right">{totalWeight.toLocaleString('pt-BR')} KG</TableCell>
+                            <TableCell></TableCell>
+                            <TableCell className="text-right text-slate-600">
+                              R$ {items.reduce((acc, i) => acc + i.valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell className="text-right text-amber-700">
+                              R$ {items.reduce((acc, i) => acc + (i.valorComplementar || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell className="text-right text-amber-600 font-extrabold text-sm">
+                              R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell colSpan={2}></TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
 
                   <div className="flex flex-col md:flex-row justify-between items-center mt-4 gap-4 p-4 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                    <h3 className="font-bold text-slate-900 flex items-center gap-2"><Building2 className="text-amber-600" size={18} /> Clientes na Carga</h3>
+                    <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                      <Building2 className="text-amber-600" size={18} /> Clientes na Carga
+                    </h3>
                     <div className="relative w-full sm:w-auto flex flex-col sm:flex-row gap-2 flex-1 max-w-2xl">
                       {selectedFactory === "HIDRACOR_EXTERNA" && (
                         <div className="flex items-center gap-2 bg-white border rounded-md px-3 h-9">
@@ -1899,7 +2138,13 @@ const CerbrasFreightCalculator = () => {
                       )}
                       <div className="relative flex-1">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
-                        <Input placeholder="Pesquisar cliente para adicionar..." className="pl-10 h-9 text-xs bg-white" value={searchClient} onChange={(e) => setSearchClient(e.target.value)} disabled={isLocked} />
+                        <Input 
+                          placeholder="Pesquisar cliente para adicionar..." 
+                          className="pl-10 h-9 text-xs bg-white" 
+                          value={searchClient} 
+                          onChange={(e) => setSearchClient(e.target.value)} 
+                          disabled={isLocked} 
+                        />
                         {filteredClients.length > 0 && !showClientModal && !showDriverModal && (
                           <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-md shadow-lg z-[60] overflow-hidden">
                             {filteredClients.map(c => (
@@ -1923,10 +2168,8 @@ const CerbrasFreightCalculator = () => {
                     </div>
                   </div>
                 </div>
-
-            </CardContent>
-          </Card>
-
+              </CardContent>
+            </Card>
             <div className="grid md:grid-cols-2 gap-6">
               <Card className="border-none shadow-md overflow-hidden bg-white">
                 <div className="bg-amber-600 p-1 h-1.5" />
@@ -1964,535 +2207,10 @@ const CerbrasFreightCalculator = () => {
                 </CardContent>
               </Card>
             </div>
-            </div>
-
-            {/* Seção de Romaneio - Ativada apenas após NF e CTE preenchidos */}
-            <Card id="romaneio-section" className={`border-none shadow-lg overflow-hidden transition-all duration-500 ${allDocsFilled ? 'opacity-100 translate-y-0' : 'opacity-40 grayscale pointer-events-none'}`}>
-              <div className="bg-amber-500 p-1 h-1.5" />
-              <CardHeader className="pb-4 border-b bg-slate-50/50">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <FileSpreadsheet className="text-amber-600" size={24} /> 
-                    Gerar Romaneio de Carga
-                  </CardTitle>
-                  {!allDocsFilled && (
-                    <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 border-slate-300">
-                      Aguardando NF-e / CT-e
-                    </Badge>
-                  )}
-                  {allDocsFilled && (
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="h-8 gap-2" onClick={() => handlePrintRomaneio({ driver_name: driverName, driver_plate: driverPlate, billing_date: billingDate, items, driver_payment: driverPayment, tax_percent: taxPercent, romaneio_data: romaneioData })}>
-                        <Printer size={14} /> Imprimir Romaneio
-                      </Button>
-                      <Button className="h-8 bg-slate-900 hover:bg-black text-white gap-2 shadow-md" onClick={() => handleSave(romaneioData)} disabled={isSaving || (isLocked && !editingId)}>
-                        <Save size={14} /> Salvar Tudo
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Documentação</h4>
-                    <div className="space-y-3">
-                      {/* CIOT */}
-                      <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">CIOT</label>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[9px] font-black uppercase ${romaneioData.ciot_ok ? 'text-green-600' : 'text-slate-400'}`}>
-                              {romaneioData.ciot_ok ? 'OK' : 'PENDENTE'}
-                            </span>
-                            <Switch 
-                              checked={romaneioData.ciot_ok} 
-                              onCheckedChange={(v) => setRomaneioData({...romaneioData, ciot_ok: v})} 
-                              disabled={isSaving}
-                            />
-                          </div>
-                        </div>
-                        <Input 
-                           value={romaneioData.ciot_number} 
-                           onChange={(e) => setRomaneioData({...romaneioData, ciot_number: e.target.value})} 
-                           placeholder="Digite o número do CIOT..." 
-                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
-                           disabled={isSaving}
-                        />
-                      </div>
-
-                      {/* Manifesto */}
-                      <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">MANIFESTO</label>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[9px] font-black uppercase ${romaneioData.manifesto_ok ? 'text-green-600' : 'text-slate-400'}`}>
-                              {romaneioData.manifesto_ok ? 'OK' : 'PENDENTE'}
-                            </span>
-                            <Switch 
-                              checked={romaneioData.manifesto_ok} 
-                              onCheckedChange={(v) => setRomaneioData({...romaneioData, manifesto_ok: v})} 
-                              disabled={isSaving}
-                            />
-                          </div>
-                        </div>
-                        <Input 
-                           value={romaneioData.manifesto_number} 
-                           onChange={(e) => setRomaneioData({...romaneioData, manifesto_number: e.target.value})} 
-                           placeholder="Digite o número do Manifesto..." 
-                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
-                           disabled={isSaving}
-                        />
-                      </div>
-
-                      {/* Outros Status */}
-                      {[
-                        { label: 'CONTAS A PAGAR MOTORISTA', key: 'contas_pagar_mot_ok' as const },
-                        { label: 'CONTAS A RECEBER FOB DIRIGIDO', key: 'contas_receber_fob_ok' as const },
-                        { label: 'DUPLICATAS / BOLETOS GERADOS', key: 'duplicatas_boletos_ok' as const }
-                      ].map(item => (
-                        <div key={item.key} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{item.label}</label>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[9px] font-black uppercase ${romaneioData[item.key] ? 'text-green-600' : 'text-slate-400'}`}>
-                              {romaneioData[item.key] ? 'OK' : 'PENDENTE'}
-                            </span>
-                            <Switch 
-                              checked={romaneioData[item.key]} 
-                              onCheckedChange={(v) => setRomaneioData({...romaneioData, [item.key]: v})} 
-                              disabled={isSaving}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Acerto do Motorista</h4>
-                    <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-amber-800 uppercase">Adiantamentos</label>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="h-6 px-2 text-[9px] font-bold bg-white text-amber-600 border-amber-200 hover:bg-amber-50 gap-1"
-                            onClick={handleAddAdiantamento}
-                            disabled={isSaving}
-                          >
-                            <Plus size={10} /> Adicionar Pagamento
-                          </Button>
-                        </div>
-                        
-                        {(romaneioData.adiantamentos || []).length === 0 ? (
-                          <div className="text-[10px] text-amber-600/50 italic py-2 text-center border border-dashed border-amber-200 rounded-lg bg-white/50">Nenhum adiantamento registrado.</div>
-                        ) : (
-                          <div className="space-y-2">
-                            {romaneioData.adiantamentos.map((adv, idx) => (
-                              <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-lg border border-amber-100 shadow-sm">
-                                <div className="relative flex-1">
-                                  <span className="absolute left-2 top-2 text-[10px] text-amber-600 font-bold">R$</span>
-                                  <Input 
-                                    type="number" 
-                                    className="h-8 pl-7 text-[11px] font-bold border-amber-100 focus:ring-amber-500" 
-                                    value={adv.amount || ''} 
-                                    onChange={(e) => {
-                                      const newAdv = [...romaneioData.adiantamentos];
-                                      newAdv[idx].amount = Number(e.target.value);
-                                      setRomaneioData({...romaneioData, adiantamentos: newAdv});
-                                    }} 
-                                    disabled={isSaving}
-                                  />
-                                </div>
-                                <Input 
-                                  type="date" 
-                                  className="h-8 w-28 text-[10px] border-amber-100" 
-                                  value={adv.date} 
-                                  onChange={(e) => {
-                                    const newAdv = [...romaneioData.adiantamentos];
-                                    newAdv[idx].date = e.target.value;
-                                    setRomaneioData({...romaneioData, adiantamentos: newAdv});
-                                  }} 
-                                  disabled={isSaving}
-                                />
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
-                                  onClick={() => handleRemoveAdiantamento(idx)}
-                                  disabled={isSaving}
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-4 border-t border-amber-100 flex justify-between items-center">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-bold text-amber-800 uppercase">Total Adiantamentos</span>
-                        </div>
-                        <span className="text-sm font-bold text-amber-700">
-                          R$ {totalAdiantamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-
-                      <div className="pt-2 border-t border-amber-100 flex justify-between items-center">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-bold text-amber-800 uppercase">Saldo Final Mot.</span>
-                          <span className="text-[9px] text-amber-600">Considerando deduções</span>
-                        </div>
-                        <span className="text-xl font-black text-amber-700">
-                          R$ {saldoFinalMotorista.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-2 border-t border-amber-100">
-                        <Checkbox id="main-quitada" checked={romaneioData.carga_quitada} onCheckedChange={(v) => setRomaneioData({...romaneioData, carga_quitada: !!v})} disabled={isSaving} />
-                        <label htmlFor="main-quitada" className="text-[10px] font-black uppercase text-amber-900 cursor-pointer">Marcar Carga como Quitada</label>
-                      </div>
-                      <div className="flex flex-col gap-1 pt-2 border-t border-amber-100">
-                        <label htmlFor="main-situacao" className="text-[10px] font-black uppercase text-amber-900">Situação da Carga</label>
-                        <Select 
-                          value={romaneioData.situacao || 'em_rota'} 
-                          onValueChange={(v) => setRomaneioData({...romaneioData, situacao: v})}
-                          disabled={isSaving}
-                        >
-                          <SelectTrigger id="main-situacao" className="h-8 text-xs bg-white border-amber-200 text-amber-900">
-                            <SelectValue placeholder="Situação" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="em_rota">EM ROTA</SelectItem>
-                            <SelectItem value="finalizada">FINALIZADA</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Ocorrências</h4>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[9px] font-bold text-slate-500 uppercase">Teve Avaria?</label>
-                        <Switch 
-                          checked={romaneioData.tem_avaria} 
-                          onCheckedChange={(v) => setRomaneioData({...romaneioData, tem_avaria: v})} 
-                          disabled={isSaving}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      {romaneioData.tem_avaria && (
-                        <div className="bg-red-50/50 p-4 rounded-xl border border-red-100 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-red-800 uppercase">Detalhamento de Avarias</label>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="h-6 px-2 text-[9px] font-bold bg-white text-red-600 border-red-200 hover:bg-red-50 gap-1"
-                              onClick={handleAddAvaria}
-                              disabled={isSaving}
-                            >
-                              <Plus size={10} /> Adicionar Avaria
-                            </Button>
-                          </div>
-
-                          {(romaneioData.avarias || []).length === 0 ? (
-                            <div className="text-[10px] text-red-600/50 italic py-2 text-center border border-dashed border-red-200 rounded-lg bg-white/50">Nenhuma avaria registrada.</div>
-                          ) : (
-                            <div className="space-y-3">
-                              {romaneioData.avarias.map((av, idx) => (
-                                <div key={idx} className="bg-white p-3 rounded-lg border border-red-100 shadow-sm space-y-3 relative">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                    <div className="space-y-1">
-                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Fábrica</label>
-                                      <Select value={av.fabrica} onValueChange={(v) => {
-                                        const newAv = [...romaneioData.avarias];
-                                        newAv[idx].fabrica = v;
-                                        setRomaneioData({...romaneioData, avarias: newAv});
-                                      }} disabled={isSaving}>
-                                        <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="CERBRAS">CERBRAS</SelectItem>
-                                          <SelectItem value="HIDRACOR">HIDRACOR</SelectItem>
-                                          <SelectItem value="OUTRA">OUTRA</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Valor</label>
-                                      <div className="relative">
-                                        <span className="absolute left-2 top-1.5 text-[10px] text-slate-400">R$</span>
-                                        <Input 
-                                          type="number" 
-                                          className="h-7 pl-6 text-[10px] font-bold" 
-                                          value={av.valor || ''} 
-                                          onChange={(e) => {
-                                            const newAv = [...romaneioData.avarias];
-                                            newAv[idx].valor = Number(e.target.value);
-                                            setRomaneioData({...romaneioData, avarias: newAv});
-                                          }} 
-                                          disabled={isSaving}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Cliente</label>
-                                      <Select value={av.cliente} onValueChange={(v) => {
-                                        const newAv = [...romaneioData.avarias];
-                                        newAv[idx].cliente = v;
-                                        setRomaneioData({...romaneioData, avarias: newAv});
-                                      }} disabled={isSaving}>
-                                        <SelectTrigger className="h-7 text-[10px]"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                                        <SelectContent>
-                                          {items.map(i => (
-                                            <SelectItem key={i.id} value={i.cliente}>{i.cliente}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[8px] font-bold text-slate-500 uppercase">NF</label>
-                                      <Input 
-                                        className="h-7 text-[10px]" 
-                                        value={av.nfe} 
-                                        onChange={(e) => {
-                                          const newAv = [...romaneioData.avarias];
-                                          newAv[idx].nfe = e.target.value;
-                                          setRomaneioData({...romaneioData, avarias: newAv});
-                                        }} 
-                                        disabled={isSaving}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="space-y-1">
-                                    <label className="text-[8px] font-bold text-slate-500 uppercase">Observações</label>
-                                    <Textarea 
-                                      className="min-h-[40px] text-[10px] p-2" 
-                                      value={av.observacao} 
-                                      onChange={(e) => {
-                                        const newAv = [...romaneioData.avarias];
-                                        newAv[idx].observacao = e.target.value;
-                                        setRomaneioData({...romaneioData, avarias: newAv});
-                                      }}
-                                      placeholder="Descreva a avaria..."
-                                      disabled={isSaving}
-                                    />
-                                  </div>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-6 w-6 text-red-300 hover:text-red-600 absolute top-0 right-0"
-                                    onClick={() => handleRemoveAvaria(idx)}
-                                    disabled={isSaving}
-                                  >
-                                    <X size={12} />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className="pt-2 border-t border-red-100 flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-red-800 uppercase">Total Avarias</span>
-                            <span className="text-sm font-bold text-red-700">
-                              R$ {totalAvariasVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Observações Gerais</label>
-                        <Textarea 
-                          className="min-h-[80px] text-xs border-slate-200 focus:ring-amber-500" 
-                          value={romaneioData.ocorrencias} 
-                          onChange={(e) => setRomaneioData({...romaneioData, ocorrencias: e.target.value})}
-                          placeholder="Relate aqui qualquer imprevisto ou observação especial sobre esta carga..."
-                          disabled={isSaving}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                </CardContent>
-              </Card>
-
-        {/* Botão Flutuante do Histórico */}
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button 
-              className="fixed right-0 top-1/2 -translate-y-1/2 rounded-l-full h-16 w-10 bg-amber-600 hover:bg-amber-700 text-white shadow-xl flex flex-col items-center justify-center gap-1 z-40 transition-all hover:w-12"
-              title="Ver Cálculos Recentes"
-            >
-              <History size={20} />
-              <span className="[writing-mode:vertical-lr] text-[8px] font-bold uppercase tracking-tighter">Histórico</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent className="sm:max-w-md p-0 overflow-hidden flex flex-col">
-            <SheetHeader className="p-6 bg-slate-50 border-b">
-              <SheetTitle className="flex items-center gap-2"><History className="text-amber-600" size={20} /> Cálculos Recentes</SheetTitle>
-            </SheetHeader>
-
-            {/* Filtros do Histórico */}
-            <div className="p-4 border-b bg-slate-50/50 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase">Mês</label>
-                  <Select value={historyMonthFilter} onValueChange={setHistoryMonthFilter}>
-                    <SelectTrigger className="h-8 text-xs bg-white border-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border border-slate-200">
-                      <SelectItem value="ALL" className="text-xs">TODOS</SelectItem>
-                      {monthsMap.map((name, i) => (
-                        <SelectItem key={i+1} value={(i+1).toString()} className="text-xs">
-                          {name.toUpperCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase">Dia Especifico</label>
-                  <Input 
-                    type="date" 
-                    className="h-8 text-xs bg-white border-slate-200" 
-                    value={historyDayFilter}
-                    onChange={(e) => setHistoryDayFilter(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-500 uppercase">Motorista</label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 text-slate-400" size={12} />
-                  <Input 
-                    placeholder="Buscar motorista..." 
-                    className="h-8 pl-7 pr-7 text-xs bg-white border-slate-200" 
-                    value={historyDriverFilter}
-                    onChange={(e) => setHistoryDriverFilter(e.target.value)}
-                  />
-                  {historyDriverFilter && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="absolute right-1 top-1 h-6 w-6 text-slate-400 hover:text-slate-600" 
-                      onClick={() => setHistoryDriverFilter("")}
-                    >
-                      <X size={12} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {(historyMonthFilter !== "ALL" || historyDayFilter || historyDriverFilter) && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 w-full text-[10px] text-amber-700 hover:text-amber-800 hover:bg-amber-50 font-bold" 
-                  onClick={() => {
-                    setHistoryMonthFilter("ALL");
-                    setHistoryDayFilter("");
-                    setHistoryDriverFilter("");
-                  }}
-                >
-                  Limpar Filtros
-                </Button>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {isLoadingHistory ? (
-                <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>
-              ) : savedCalculations.length === 0 ? (
-                <div className="py-10 text-center text-slate-400 text-xs">Nenhum histórico encontrado.</div>
-              ) : filteredHistory.length === 0 ? (
-                <div className="py-10 text-center text-slate-400 text-xs">Nenhum cálculo corresponde aos filtros selecionados.</div>
-              ) : (
-                (() => {
-                  const grouped: Record<string, SavedCalculation[]> = {};
-                  filteredHistory.forEach(calc => {
-                    const date = calc.billing_date || new Date(calc.created_at).toISOString().split('T')[0];
-                    if (!grouped[date]) grouped[date] = [];
-                    grouped[date].push(calc);
-                  });
-
-                  return Object.entries(grouped).map(([date, calcs]) => (
-                    <div key={date} className="space-y-3">
-                      <div className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm py-1 border-b border-slate-200 mb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                          {date.split('-').reverse().join('/')}
-                        </span>
-                      </div>
-                      {calcs.map(calc => (
-                        <div key={calc.id} className="p-3 rounded-lg border border-slate-100 bg-white shadow-sm hover:border-amber-200 hover:shadow-md hover:bg-amber-50/30 transition-all group relative">
-                          <div className="flex justify-between items-start mb-1">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[10px] font-bold text-amber-600 uppercase flex items-center gap-1">
-                                <Calendar size={10} /> 
-                                {calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : new Date(calc.created_at).toLocaleDateString('pt-BR')}
-                              </span>
-                              {isRomaneio(calc) ? (
-                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 text-[9px] h-4 w-fit px-1">ROMANEIO</Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-slate-400 border-slate-200 text-[9px] h-4 w-fit px-1">COTAÇÃO</Badge>
-                              )}
-                            </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}><MoreVertical size={14} /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEdit(calc)} className="gap-2"><Edit3 size={14} /> Editar</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => { 
-                                    setEditingId(calc.id); 
-                                    setItems(calc.items); 
-                                    setDriverName(calc.driver_name);
-                                    setDriverPlate(calc.driver_plate);
-                                    setBillingDate(calc.billing_date);
-                                    setSelectedFactory(calc.factory || 'CERBRAS');
-                                    setDriverPayment(calc.driver_payment); 
-                                    setRomaneioData(prev => ({ ...prev, ...(calc.romaneio_data || {}) })); 
-                                    showSuccess("Dados carregados. Verifique a seção de Romaneio abaixo.");
-                                    setTimeout(() => {
-                                      const el = document.getElementById('romaneio-section');
-                                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                                    }, 100);
-                                  }} className="gap-2"><FileSpreadsheet size={14} /> Carregar Romaneio</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleClone(calc)} className="gap-2"><Copy size={14} /> Clonar</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDelete(calc.id)} className={`gap-2 text-red-600 ${isMonthClosed(calc.billing_date, closedMonths) ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={isMonthClosed(calc.billing_date, closedMonths)}><Trash2 size={14} /> Excluir</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <div className="flex justify-between items-center pr-6">
-                            <h4 className="text-xs font-bold text-slate-900 uppercase truncate">{calc.driver_name}</h4>
-                            <Badge variant="outline" className="text-[8px] h-3 px-1 border-slate-300 text-slate-500">{calc.factory || 'CERBRAS'}</Badge>
-                          </div>
-                          <p className="text-[10px] text-slate-400 -mt-1 font-medium">{calc.driver_plate}</p>
-                          <div className="flex justify-between items-end mt-2">
-                            <div className="text-[10px] text-slate-500"><p>{calc.items.length} clientes</p><p>{calc.items.reduce((acc, i) => acc + i.peso, 0).toLocaleString('pt-BR')} KG</p></div>
-                            <p className="text-xs font-bold text-amber-700">R$ {
-                              calc.items.reduce((acc, i) => {
-                                if (i.fabrica === 'HIDRACOR' && !i.especial && i.tipo !== 'CIF') {
-                                  const roundedTon = Math.round(i.tonelada);
-                                  return acc + (i.peso * roundedTon) / 1000;
-                                }
-                                return acc + i.valor;
-                              }, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-                            }</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ));
-                })()
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
-      </div>
+          </div>
+        </div>
       </main>
+    </div>
 
       <Dialog open={showClientModal} onOpenChange={setShowClientModal}>
         <DialogContent className="sm:max-w-[425px]">
@@ -2848,13 +2566,13 @@ const CerbrasFreightCalculator = () => {
                           if (el) el.scrollIntoView({ behavior: 'smooth' });
                         }, 100);
                       }}>
-                        <TableCell className="text-xs font-medium">{calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : new Date(calc.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell className="text-xs font-medium">{calc.billing_date ? calc.billing_date.split('-').reverse().join('/') : (calc.created_at ? new Date(calc.created_at).toLocaleDateString('pt-BR') : '-')}</TableCell>
                         <TableCell>
-                          <p className="font-bold text-xs uppercase text-slate-900">{calc.driver_name}</p>
-                          <p className="text-[10px] text-slate-500 font-mono">{calc.driver_plate}</p>
+                          <p className="font-bold text-xs uppercase text-slate-900">{calc.driver_name || 'N/A'}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">{calc.driver_plate || ''}</p>
                         </TableCell>
-                        <TableCell className="text-right text-xs">{calc.items.reduce((acc, i) => acc + i.peso, 0).toLocaleString('pt-BR')} KG</TableCell>
-                        <TableCell className="text-right font-bold text-amber-700 text-xs">R$ {calc.items.reduce((acc, i) => acc + i.valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right text-xs">{(calc.items || []).reduce((acc, i) => acc + (i.peso || 0), 0).toLocaleString('pt-BR')} KG</TableCell>
+                        <TableCell className="text-right font-bold text-amber-700 text-xs">R$ {(calc.items || []).reduce((acc, i) => acc + getItemTotalValue(i), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
                         <TableCell className="text-center">
                           <Badge className="bg-green-100 text-green-700 border-green-200 text-[9px] h-5">FINALIZADO</Badge>
                         </TableCell>
@@ -3059,7 +2777,6 @@ const CerbrasFreightCalculator = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
     </>
   );
 };
