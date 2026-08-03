@@ -2207,6 +2207,361 @@ const CerbrasFreightCalculator = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Seção de Romaneio - Ativada apenas após NF e CTE preenchidos */}
+            <Card id="romaneio-section" className={`border-none shadow-lg overflow-hidden transition-all duration-500 ${allDocsFilled ? 'opacity-100 translate-y-0' : 'opacity-40 grayscale pointer-events-none'}`}>
+              <div className="bg-amber-500 p-1 h-1.5" />
+              <CardHeader className="pb-4 border-b bg-slate-50/50">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <FileSpreadsheet className="text-amber-600" size={24} /> 
+                    Gerar Romaneio de Carga
+                  </CardTitle>
+                  {!allDocsFilled && (
+                    <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 border-slate-300">
+                      Aguardando NF-e / CT-e
+                    </Badge>
+                  )}
+                  {allDocsFilled && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="h-8 gap-2" onClick={() => handlePrintRomaneio({ driver_name: driverName, driver_plate: driverPlate, billing_date: billingDate, items, driver_payment: driverPayment, tax_percent: taxPercent, romaneio_data: romaneioData })}>
+                        <Printer size={14} /> Imprimir Romaneio
+                      </Button>
+                      <Button className="h-8 bg-slate-900 hover:bg-black text-white gap-2 shadow-md" onClick={() => handleSave(romaneioData)} disabled={isSaving || (isLocked && !editingId)}>
+                        <Save size={14} /> Salvar Tudo
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Documentação</h4>
+                    <div className="space-y-3">
+                      {/* CIOT */}
+                      <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">CIOT</label>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-black uppercase ${romaneioData.ciot_ok ? 'text-green-600' : 'text-slate-400'}`}>
+                              {romaneioData.ciot_ok ? 'OK' : 'PENDENTE'}
+                            </span>
+                            <Switch 
+                              checked={romaneioData.ciot_ok} 
+                              onCheckedChange={(v) => setRomaneioData({...romaneioData, ciot_ok: v})} 
+                              disabled={isSaving}
+                            />
+                          </div>
+                        </div>
+                        <Input 
+                           value={romaneioData.ciot_number} 
+                           onChange={(e) => setRomaneioData({...romaneioData, ciot_number: e.target.value})} 
+                           placeholder="Digite o número do CIOT..." 
+                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
+                           disabled={isSaving}
+                        />
+                      </div>
+
+                      {/* Manifesto */}
+                      <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">MANIFESTO</label>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-black uppercase ${romaneioData.manifesto_ok ? 'text-green-600' : 'text-slate-400'}`}>
+                              {romaneioData.manifesto_ok ? 'OK' : 'PENDENTE'}
+                            </span>
+                            <Switch 
+                              checked={romaneioData.manifesto_ok} 
+                              onCheckedChange={(v) => setRomaneioData({...romaneioData, manifesto_ok: v})} 
+                              disabled={isSaving}
+                            />
+                          </div>
+                        </div>
+                        <Input 
+                           value={romaneioData.manifesto_number} 
+                           onChange={(e) => setRomaneioData({...romaneioData, manifesto_number: e.target.value})} 
+                           placeholder="Digite o número do Manifesto..." 
+                           className="h-8 text-[10px] border-slate-200 focus:border-amber-400 focus:ring-amber-400" 
+                           disabled={isSaving}
+                        />
+                      </div>
+
+                      {/* Outros Status */}
+                      {[
+                        { label: 'CONTAS A PAGAR MOTORISTA', key: 'contas_pagar_mot_ok' as const },
+                        { label: 'CONTAS A RECEBER FOB DIRIGIDO', key: 'contas_receber_fob_ok' as const },
+                        { label: 'DUPLICATAS / BOLETOS GERADOS', key: 'duplicatas_boletos_ok' as const }
+                      ].map(item => (
+                        <div key={item.key} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all hover:border-amber-200">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{item.label}</label>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-black uppercase ${romaneioData[item.key] ? 'text-green-600' : 'text-slate-400'}`}>
+                              {romaneioData[item.key] ? 'OK' : 'PENDENTE'}
+                            </span>
+                            <Switch 
+                              checked={romaneioData[item.key]} 
+                              onCheckedChange={(v) => setRomaneioData({...romaneioData, [item.key]: v})} 
+                              disabled={isSaving}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Acerto do Motorista</h4>
+                    <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 space-y-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-amber-800 uppercase">Adiantamentos</label>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-6 px-2 text-[9px] font-bold bg-white text-amber-600 border-amber-200 hover:bg-amber-50 gap-1"
+                            onClick={handleAddAdiantamento}
+                            disabled={isSaving}
+                          >
+                            <Plus size={10} /> Adicionar Pagamento
+                          </Button>
+                        </div>
+                        
+                        {(romaneioData.adiantamentos || []).length === 0 ? (
+                          <div className="text-[10px] text-amber-600/50 italic py-2 text-center border border-dashed border-amber-200 rounded-lg bg-white/50">Nenhum adiantamento registrado.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {romaneioData.adiantamentos.map((adv, idx) => (
+                              <div key={idx} className="flex gap-2 items-center bg-white p-2 rounded-lg border border-amber-100 shadow-sm">
+                                <div className="relative flex-1">
+                                  <span className="absolute left-2 top-2 text-[10px] text-amber-600 font-bold">R$</span>
+                                  <Input 
+                                    type="number" 
+                                    className="h-8 pl-7 text-[11px] font-bold border-amber-100 focus:ring-amber-500" 
+                                    value={adv.amount || ''} 
+                                    onChange={(e) => {
+                                      const newAdv = [...romaneioData.adiantamentos];
+                                      newAdv[idx].amount = Number(e.target.value);
+                                      setRomaneioData({...romaneioData, adiantamentos: newAdv});
+                                    }} 
+                                    disabled={isSaving}
+                                  />
+                                </div>
+                                <Input 
+                                  type="date" 
+                                  className="h-8 w-28 text-[10px] border-amber-100" 
+                                  value={adv.date} 
+                                  onChange={(e) => {
+                                    const newAdv = [...romaneioData.adiantamentos];
+                                    newAdv[idx].date = e.target.value;
+                                    setRomaneioData({...romaneioData, adiantamentos: newAdv});
+                                  }} 
+                                  disabled={isSaving}
+                                />
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => handleRemoveAdiantamento(idx)}
+                                  disabled={isSaving}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-4 border-t border-amber-100 flex justify-between items-center">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-amber-800 uppercase">Total Adiantamentos</span>
+                        </div>
+                        <span className="text-sm font-bold text-amber-700">
+                          R$ {totalAdiantamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-amber-100 flex justify-between items-center">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-amber-800 uppercase">Saldo Final Mot.</span>
+                          <span className="text-[9px] text-amber-600">Considerando deduções</span>
+                        </div>
+                        <span className="text-xl font-black text-amber-700">
+                          R$ {saldoFinalMotorista.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2 border-t border-amber-100">
+                        <Checkbox id="main-quitada" checked={romaneioData.carga_quitada} onCheckedChange={(v) => setRomaneioData({...romaneioData, carga_quitada: !!v})} disabled={isSaving} />
+                        <label htmlFor="main-quitada" className="text-[10px] font-black uppercase text-amber-900 cursor-pointer">Marcar Carga como Quitada</label>
+                      </div>
+                      <div className="flex flex-col gap-1 pt-2 border-t border-amber-100">
+                        <label htmlFor="main-situacao" className="text-[10px] font-black uppercase text-amber-900">Situação da Carga</label>
+                        <Select 
+                          value={romaneioData.situacao || 'em_rota'} 
+                          onValueChange={(v) => setRomaneioData({...romaneioData, situacao: v})}
+                          disabled={isSaving}
+                        >
+                          <SelectTrigger id="main-situacao" className="h-8 text-xs bg-white border-amber-200 text-amber-900">
+                            <SelectValue placeholder="Situação" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="em_rota">EM ROTA</SelectItem>
+                            <SelectItem value="finalizada">FINALIZADA</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Ocorrências</h4>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Teve Avaria?</label>
+                        <Switch 
+                          checked={romaneioData.tem_avaria} 
+                          onCheckedChange={(v) => setRomaneioData({...romaneioData, tem_avaria: v})} 
+                          disabled={isSaving}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {romaneioData.tem_avaria && (
+                        <div className="bg-red-50/50 p-4 rounded-xl border border-red-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-red-800 uppercase">Detalhamento de Avarias</label>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-6 px-2 text-[9px] font-bold bg-white text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                              onClick={handleAddAvaria}
+                              disabled={isSaving}
+                            >
+                              <Plus size={10} /> Adicionar Avaria
+                            </Button>
+                          </div>
+
+                          {(romaneioData.avarias || []).length === 0 ? (
+                            <div className="text-[10px] text-red-600/50 italic py-2 text-center border border-dashed border-red-200 rounded-lg bg-white/50">Nenhuma avaria registrada.</div>
+                          ) : (
+                            <div className="space-y-3">
+                              {romaneioData.avarias.map((av, idx) => (
+                                <div key={idx} className="bg-white p-3 rounded-lg border border-red-100 shadow-sm space-y-3 relative">
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Fábrica</label>
+                                      <Select value={av.fabrica} onValueChange={(v) => {
+                                        const newAv = [...romaneioData.avarias];
+                                        newAv[idx].fabrica = v;
+                                        setRomaneioData({...romaneioData, avarias: newAv});
+                                      }} disabled={isSaving}>
+                                        <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="CERBRAS">CERBRAS</SelectItem>
+                                          <SelectItem value="HIDRACOR">HIDRACOR</SelectItem>
+                                          <SelectItem value="OUTRA">OUTRA</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Valor</label>
+                                      <div className="relative">
+                                        <span className="absolute left-2 top-1.5 text-[10px] text-slate-400">R$</span>
+                                        <Input 
+                                          type="number" 
+                                          className="h-7 pl-6 text-[10px] font-bold" 
+                                          value={av.valor || ''} 
+                                          onChange={(e) => {
+                                            const newAv = [...romaneioData.avarias];
+                                            newAv[idx].valor = Number(e.target.value);
+                                            setRomaneioData({...romaneioData, avarias: newAv});
+                                          }} 
+                                          disabled={isSaving}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[8px] font-bold text-slate-500 uppercase">Cliente</label>
+                                      <Select value={av.cliente} onValueChange={(v) => {
+                                        const newAv = [...romaneioData.avarias];
+                                        newAv[idx].cliente = v;
+                                        setRomaneioData({...romaneioData, avarias: newAv});
+                                      }} disabled={isSaving}>
+                                        <SelectTrigger className="h-7 text-[10px]"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                                        <SelectContent>
+                                          {items.map(i => (
+                                            <SelectItem key={i.id} value={i.cliente}>{i.cliente}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[8px] font-bold text-slate-500 uppercase">NF</label>
+                                      <Input 
+                                        className="h-7 text-[10px]" 
+                                        value={av.nfe} 
+                                        onChange={(e) => {
+                                          const newAv = [...romaneioData.avarias];
+                                          newAv[idx].nfe = e.target.value;
+                                          setRomaneioData({...romaneioData, avarias: newAv});
+                                        }} 
+                                        disabled={isSaving}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[8px] font-bold text-slate-500 uppercase">Observações</label>
+                                    <Textarea 
+                                      className="min-h-[40px] text-[10px] p-2" 
+                                      value={av.observacao} 
+                                      onChange={(e) => {
+                                        const newAv = [...romaneioData.avarias];
+                                        newAv[idx].observacao = e.target.value;
+                                        setRomaneioData({...romaneioData, avarias: newAv});
+                                      }}
+                                      placeholder="Descreva a avaria..."
+                                      disabled={isSaving}
+                                    />
+                                  </div>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-red-300 hover:text-red-600 absolute top-0 right-0"
+                                    onClick={() => handleRemoveAvaria(idx)}
+                                    disabled={isSaving}
+                                  >
+                                    <X size={12} />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="pt-2 border-t border-red-100 flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-red-800 uppercase">Total Avarias</span>
+                            <span className="text-sm font-bold text-red-700">
+                              R$ {totalAvariasVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Observações Gerais</label>
+                        <Textarea 
+                          className="min-h-[80px] text-xs border-slate-200 focus:ring-amber-500" 
+                          value={romaneioData.ocorrencias} 
+                          onChange={(e) => setRomaneioData({...romaneioData, ocorrencias: e.target.value})}
+                          placeholder="Relate aqui qualquer imprevisto ou observação especial sobre esta carga..."
+                          disabled={isSaving}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
