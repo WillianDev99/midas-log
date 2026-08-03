@@ -476,13 +476,18 @@ const ExternalLoads = () => {
 
     setSaving(true);
     try {
+      const complementaryVal = load.complementaryValue || 0;
+      const deliveriesToSave = (load.parsedDeliveries || []).map((d, idx) => ({
+        ...d,
+        complementary_value: idx === 0 ? complementaryVal : 0
+      }));
+
       const { error } = await supabase.from('hidracor_saved_external_loads').insert([{
         user_id: user?.id,
         rota: load.rota,
         data_original: load.data,
-        deliveries: load.parsedDeliveries,
+        deliveries: deliveriesToSave,
         total_to_pay: load.totalToPay,
-        complementary_value: load.complementaryValue || 0,
         driver_name: driverName.toUpperCase()
       }]);
 

@@ -166,7 +166,9 @@ const SavedExternalLoads = () => {
     if (!printWindow) return;
     const logoUrl = window.location.origin + "/logo.png";
     const totalWeight = load.deliveries?.reduce((acc: number, d: any) => acc + d.weight, 0) || 0;
-    const totalFreight = load.deliveries?.reduce((acc: number, d: any) => acc + d.freight, 0) || 0;
+    const baseFreight = load.deliveries?.reduce((acc: number, d: any) => acc + d.freight, 0) || 0;
+    const complementaryVal = load.complementary_value || load.deliveries?.[0]?.complementary_value || 0;
+    const totalFreight = baseFreight + complementaryVal;
     const totalToPay = load.total_to_pay || 0;
     const taxRate = load.deliveries?.[0]?.tax_rate ?? 0.0998;
     const tax = totalFreight * taxRate;
