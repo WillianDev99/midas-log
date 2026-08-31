@@ -1394,18 +1394,7 @@ const CerbrasFreightCalculator = () => {
     showSuccess("Motorista clonado.");
   };
 
-  const handleDeleteCityFreightDB = (index: number) => {
-    if (confirm("Excluir frete por cidade?")) {
-      setCityFreights(cityFreights.filter((_, i) => i !== index));
-      showSuccess("Removido.");
-    }
-  };
 
-  const handleCloneCityFreightDB = (cf: CityFreight) => {
-    const clone = { ...cf, cidade: `${cf.cidade} (CLONE)` };
-    setCityFreights([clone, ...cityFreights]);
-    showSuccess("Clonado.");
-  };
 
   const handleDeleteSpecialFreightDB = (index: number) => {
     if (confirm("Excluir frete especial?")) {
