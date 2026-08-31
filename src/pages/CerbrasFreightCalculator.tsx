@@ -133,7 +133,13 @@ interface ClientData {
 interface CityFreight {
   cidade: string;
   uf: string;
-  valor: number;
+  valor?: number;
+  t17?: number;
+  t14?: number;
+  t11?: number;
+  t6?: number;
+  t3?: number;
+  tLess3?: number;
 }
 
 interface SpecialClientFreight {
@@ -245,7 +251,13 @@ const CerbrasFreightCalculator = () => {
   const [newCityFreight, setNewCityFreight] = useState<CityFreight>({
     cidade: "",
     uf: "CE",
-    valor: 0
+    valor: 0,
+    t17: 0,
+    t14: 0,
+    t11: 0,
+    t6: 0,
+    t3: 0,
+    tLess3: 0
   });
 
   const [showSpecialFreightModal, setShowSpecialFreightModal] = useState(false);
@@ -597,20 +609,19 @@ const CerbrasFreightCalculator = () => {
           const dbKeys = new Set(formattedDbCityFreights.map(c => `${c.cidade}-${c.uf}`));
           const filteredPrev = finalCityFreights.filter(p => !dbKeys.has(`${p.cidade}-${p.uf}`));
           finalCityFreights = [...formattedDbCityFreights, ...filteredPrev];
+        }
 
-          const formattedDbHidracor: any[] = dbCityFreights.map(c => ({
-            cidade: c.cidade,
-            uf: c.uf,
-            t17: Number(c.valor),
-            t14: Number(c.valor),
-            t11: Number(c.valor),
-            t6: Number(c.valor),
-            t3: Number(c.valor),
-            tLess3: Number(c.valor)
-          }));
-          const dbHKeys = new Set(formattedDbHidracor.map(c => `${c.cidade}-${c.uf}`));
-          const filteredHPrev = finalHidracorCityFreights.filter(p => !dbHKeys.has(`${p.cidade}-${p.uf}`));
-          finalHidracorCityFreights = [...formattedDbHidracor, ...filteredHPrev];
+        // Carregar customizações de fretes Hidracor salvos no localStorage
+        try {
+          const storedCustomH = localStorage.getItem('midas_hidracor_city_freights_custom');
+          if (storedCustomH) {
+            const customH: any[] = JSON.parse(storedCustomH);
+            const customKeys = new Set(customH.map(c => `${c.cidade}-${c.uf}`));
+            const filteredHPrev = finalHidracorCityFreights.filter(p => !customKeys.has(`${p.cidade}-${p.uf}`));
+            finalHidracorCityFreights = [...customH, ...filteredHPrev];
+          }
+        } catch (e) {
+          console.error("Erro ao carregar customizações de fretes Hidracor:", e);
         }
       } catch (e) {
         console.error("Erro ao carregar dados do banco:", e);
@@ -1224,47 +1235,122 @@ const CerbrasFreightCalculator = () => {
   };
 
   const handleSaveCityFreight = async () => {
-    if (!newCityFreight.cidade || !newCityFreight.valor) return showError("Cidade e Valor.");
-    const cf = { ...newCityFreight, cidade: newCityFreight.cidade.toUpperCase() };
+    if (!newCityFreight.cidade) return showError("Por favor, preencha o nome da Cidade.");
 
-    try {
-      const { error } = await supabase.from('midas_city_freights').upsert([{
-        cidade: cf.cidade,
-        uf: cf.uf,
-        valor: cf.valor
-      }], { onConflict: 'cidade,uf' });
-      
-      if (error) throw error;
-      
-      if (isEditingCityFreight && editingCityFreightIndex !== null) {
-        const updated = [...cityFreights];
-        updated[editingCityFreightIndex] = cf;
-        setCityFreights(updated);
-      } else {
-        setCityFreights([cf, ...cityFreights]);
+    if (dbFactoryFilter === 'CERBRAS') {
+      if (newCityFreight.valor === undefined || newCityFreight.valor === null) {
+        return showError("Por favor, preencha o Valor (R$/Ton).");
       }
-
-      // Espelhar também para o estado da Hidracor
-      const hcf = {
-        cidade: cf.cidade,
-        uf: cf.uf,
-        t17: Number(cf.valor),
-        t14: Number(cf.valor),
-        t11: Number(cf.valor),
-        t6: Number(cf.valor),
-        t3: Number(cf.valor),
-        tLess3: Number(cf.valor)
+      const cf: CityFreight = {
+        cidade: newCityFreight.cidade.trim().toUpperCase(),
+        uf: newCityFreight.uf,
+        valor: Number(newCityFreight.valor)
       };
+
+      try {
+        const { error } = await supabase.from('midas_city_freights').upsert([{
+          cidade: cf.cidade,
+          uf: cf.uf,
+          valor: cf.valor
+        }], { onConflict: 'cidade,uf' });
+
+        if (error) throw error;
+
+        if (isEditingCityFreight && editingCityFreightIndex !== null) {
+          const target = filteredDbCityFreights[editingCityFreightIndex];
+          if (target) {
+            setCityFreights(prev => prev.map(item => 
+              (item.cidade === target.cidade && item.uf === target.uf) ? cf : item
+            ));
+          }
+        } else {
+          setCityFreights(prev => [cf, ...prev]);
+        }
+
+        setShowCityFreightModal(false);
+        showSuccess("Frete por cidade Cerbras salvo no banco de dados!");
+      } catch (error: any) {
+        showError("Erro ao salvar frete por cidade: " + error.message);
+      }
+    } else {
+      // HIDRACOR (6 Faixas de Peso)
+      const hcf = {
+        cidade: newCityFreight.cidade.trim().toUpperCase(),
+        uf: newCityFreight.uf,
+        t17: Number(newCityFreight.t17 || 0),
+        t14: Number(newCityFreight.t14 || 0),
+        t11: Number(newCityFreight.t11 || 0),
+        t6: Number(newCityFreight.t6 || 0),
+        t3: Number(newCityFreight.t3 || 0),
+        tLess3: Number(newCityFreight.tLess3 || 0)
+      };
+
       setHidracorCityFreights(prev => {
-        const dbKeys = new Set([`${hcf.cidade}-${hcf.uf}`]);
-        const filteredPrev = prev.filter(p => !dbKeys.has(`${p.cidade}-${p.uf}`));
-        return [hcf, ...filteredPrev];
+        const filtered = prev.filter(p => !(p.cidade === hcf.cidade && p.uf === hcf.uf));
+        const updated = [hcf, ...filtered];
+        try {
+          localStorage.setItem('midas_hidracor_city_freights_custom', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
       });
 
+      // Também sincroniza com o banco no Supabase
+      try {
+        await supabase.from('midas_city_freights').upsert([{
+          cidade: hcf.cidade,
+          uf: hcf.uf,
+          valor: hcf.t17 || hcf.tLess3 || 0
+        }], { onConflict: 'cidade,uf' });
+      } catch (e) {}
+
       setShowCityFreightModal(false);
-      showSuccess("Frete por cidade salvo no banco de dados!");
-    } catch (error: any) {
-      showError("Erro ao salvar frete por cidade: " + error.message);
+      showSuccess("Frete por cidade Hidracor (6 faixas) salvo com sucesso!");
+    }
+  };
+
+  const handleDeleteCityFreightDB = async (index: number) => {
+    if (!confirm("Deseja realmente excluir este frete por cidade?")) return;
+    
+    const targetItem = filteredDbCityFreights[index];
+    if (!targetItem) return;
+
+    if (dbFactoryFilter === 'CERBRAS') {
+      setCityFreights(prev => prev.filter(c => !(c.cidade === targetItem.cidade && c.uf === targetItem.uf)));
+      try {
+        await supabase.from('midas_city_freights').delete().eq('cidade', targetItem.cidade).eq('uf', targetItem.uf);
+      } catch (e) {}
+      showSuccess("Frete por cidade Cerbras removido.");
+    } else {
+      setHidracorCityFreights(prev => {
+        const updated = prev.filter(c => !(c.cidade === targetItem.cidade && c.uf === targetItem.uf));
+        try {
+          localStorage.setItem('midas_hidracor_city_freights_custom', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+      try {
+        await supabase.from('midas_city_freights').delete().eq('cidade', targetItem.cidade).eq('uf', targetItem.uf);
+      } catch (e) {}
+      showSuccess("Frete por cidade Hidracor removido.");
+    }
+  };
+
+  const handleCloneCityFreightDB = (cf: any) => {
+    const cloneName = `${cf.cidade} (CLONE)`;
+    if (dbFactoryFilter === 'CERBRAS') {
+      const clone = { ...cf, cidade: cloneName };
+      setCityFreights(prev => [clone, ...prev]);
+      showSuccess("Frete por cidade Cerbras clonado.");
+    } else {
+      const clone = { ...cf, cidade: cloneName };
+      setHidracorCityFreights(prev => {
+        const updated = [clone, ...prev];
+        try {
+          localStorage.setItem('midas_hidracor_city_freights_custom', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+      showSuccess("Frete por cidade Hidracor clonado.");
     }
   };
 
@@ -2632,7 +2718,21 @@ const CerbrasFreightCalculator = () => {
                   onClick={() => {
                     if (activeDbTab === "clients") { setIsEditingClient(false); setNewClient({ cliente: "", cnpj: "", cidade: "", uf: "CE", especial: false }); setShowClientModal(true); }
                     else if (activeDbTab === "drivers") { setIsEditingDriver(false); setNewDriver({ motorista: "", placa: "", veiculo: "Truck", capacidade: "", antt: "" }); setShowDriverModal(true); }
-                    else if (activeDbTab === "cities") { setIsEditingCityFreight(false); setNewCityFreight({ cidade: "", uf: "CE", valor: 0 }); setShowCityFreightModal(true); }
+                    else if (activeDbTab === "cities") { 
+                      setIsEditingCityFreight(false); 
+                      setNewCityFreight({ 
+                        cidade: "", 
+                        uf: "CE", 
+                        valor: 0,
+                        t17: 0,
+                        t14: 0,
+                        t11: 0,
+                        t6: 0,
+                        t3: 0,
+                        tLess3: 0
+                      }); 
+                      setShowCityFreightModal(true); 
+                    }
                     else if (activeDbTab === "special") { setIsEditingSpecialFreight(false); setNewSpecialFreight({ cliente: "", cnpj: "", cidade: "", uf: "CE", valor: 0 }); setShowSpecialFreightModal(true); }
                   }}
                   className="bg-amber-600 hover:bg-amber-700 text-white gap-2 shadow-md"
@@ -2792,7 +2892,23 @@ const CerbrasFreightCalculator = () => {
                             )}
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 hover:bg-amber-50" onClick={() => { setIsEditingCityFreight(true); setEditingCityFreightIndex(idx); setNewCityFreight(f as any); setShowCityFreightModal(true); }}><Pencil size={14} /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 hover:bg-amber-50" onClick={() => { 
+                                  setIsEditingCityFreight(true); 
+                                  setEditingCityFreightIndex(idx); 
+                                  const item = filteredDbCityFreights[idx];
+                                  setNewCityFreight({
+                                    cidade: item.cidade || "",
+                                    uf: item.uf || "CE",
+                                    valor: item.valor || item.t17 || 0,
+                                    t17: item.t17 || item.valor || 0,
+                                    t14: item.t14 || item.valor || 0,
+                                    t11: item.t11 || item.valor || 0,
+                                    t6: item.t6 || item.valor || 0,
+                                    t3: item.t3 || item.valor || 0,
+                                    tLess3: item.tLess3 || item.valor || 0
+                                  }); 
+                                  setShowCityFreightModal(true); 
+                                }}><Pencil size={14} /></Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={() => handleCloneCityFreightDB(f as any)}><Copy size={14} /></Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => handleDeleteCityFreightDB(idx)}><Trash2 size={14} /></Button>
                               </div>
@@ -2846,14 +2962,91 @@ const CerbrasFreightCalculator = () => {
       </Dialog>
 
       <Dialog open={showCityFreightModal} onOpenChange={setShowCityFreightModal}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><MapPin className="text-amber-600" /> {isEditingCityFreight ? "Editar Frete por Cidade" : "Novo Frete por Cidade"}</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Cidade</label><Input value={newCityFreight.cidade} onChange={(e) => setNewCityFreight({...newCityFreight, cidade: e.target.value})} /></div>
-            <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">UF</label><Select value={newCityFreight.uf} onValueChange={(v) => setNewCityFreight({...newCityFreight, uf: v})}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['CE', 'PI', 'MA', 'RN', 'PB', 'PE', 'RN', 'SE', 'AL', 'BA'].map(uf => (<SelectItem key={uf} value={uf}>{uf}</SelectItem>))}</SelectContent></Select></div>
-            <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Valor (R$/Ton)</label><Input type="number" value={newCityFreight.valor || ''} onChange={(e) => setNewCityFreight({...newCityFreight, valor: Number(e.target.value)})} /></div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setShowCityFreightModal(false)}>Cancelar</Button><Button className="bg-amber-600 text-white" onClick={handleSaveCityFreight}>Salvar</Button></DialogFooter>
+        <DialogContent className={dbFactoryFilter === 'HIDRACOR' ? "sm:max-w-[550px]" : "sm:max-w-[425px]"}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="text-amber-600" /> 
+              {isEditingCityFreight 
+                ? `Editar Frete por Cidade (${dbFactoryFilter})` 
+                : `Novo Frete por Cidade (${dbFactoryFilter})`}
+            </DialogTitle>
+            {dbFactoryFilter === 'HIDRACOR' && (
+              <DialogDescription className="text-xs">
+                Informe o valor do frete (R$/Ton) para cada uma das 6 faixas de peso de entrega da Hidracor.
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          {dbFactoryFilter === 'CERBRAS' ? (
+            <div className="grid gap-4 py-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Cidade</label>
+                <Input value={newCityFreight.cidade} onChange={(e) => setNewCityFreight({...newCityFreight, cidade: e.target.value})} placeholder="Nome da Cidade" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">UF</label>
+                <Select value={newCityFreight.uf} onValueChange={(v) => setNewCityFreight({...newCityFreight, uf: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{['CE', 'PI', 'MA', 'RN', 'PB', 'PE', 'SE', 'AL', 'BA', 'PA', 'TO'].map(uf => (<SelectItem key={uf} value={uf}>{uf}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Valor (R$/Ton)</label>
+                <Input type="number" value={newCityFreight.valor || ''} onChange={(e) => setNewCityFreight({...newCityFreight, valor: Number(e.target.value)})} placeholder="0.00" />
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 py-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Cidade</label>
+                  <Input value={newCityFreight.cidade} onChange={(e) => setNewCityFreight({...newCityFreight, cidade: e.target.value})} placeholder="Ex: VIÇOSA DO CEARÁ" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase">UF</label>
+                  <Select value={newCityFreight.uf} onValueChange={(v) => setNewCityFreight({...newCityFreight, uf: v})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{['CE', 'PI', 'MA', 'RN', 'PB', 'PE', 'SE', 'AL', 'BA', 'PA', 'TO'].map(uf => (<SelectItem key={uf} value={uf}>{uf}</SelectItem>))}</SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3">
+                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Faixas de Valor de Frete (R$/Ton)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">&lt; 3.0 Ton</label>
+                    <Input type="number" className="h-8 text-xs font-bold" value={newCityFreight.tLess3 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, tLess3: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">3.0 à 5.9 Ton</label>
+                    <Input type="number" className="h-8 text-xs font-bold" value={newCityFreight.t3 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, t3: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">6.0 à 10.9 Ton</label>
+                    <Input type="number" className="h-8 text-xs font-bold" value={newCityFreight.t6 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, t6: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">11.0 à 13.9 Ton</label>
+                    <Input type="number" className="h-8 text-xs font-bold" value={newCityFreight.t11 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, t11: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">14.0 à 16.9 Ton</label>
+                    <Input type="number" className="h-8 text-xs font-bold" value={newCityFreight.t14 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, t14: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-amber-700 uppercase">≥ 17.0 Ton (Carga Fechada)</label>
+                    <Input type="number" className="h-8 text-xs font-bold border-amber-300 focus:ring-amber-500" value={newCityFreight.t17 || ''} onChange={(e) => setNewCityFreight({...newCityFreight, t17: Number(e.target.value)})} placeholder="0.00" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCityFreightModal(false)}>Cancelar</Button>
+            <Button className="bg-amber-600 text-white" onClick={handleSaveCityFreight}>Salvar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
