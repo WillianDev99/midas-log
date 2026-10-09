@@ -44,10 +44,25 @@ interface FreightItem {
   peso: number;
   tonelada: number;
   valor: number;
+  valorComplementar?: number;
+  valorTotal?: number;
   especial: boolean;
   nfe?: string;
   cte?: string;
 }
+
+const getItemTotalValue = (item: any): number => {
+  if (!item) return 0;
+  if (typeof item.valorTotal === 'number' && item.valorTotal > 0) {
+    return item.valorTotal;
+  }
+  let baseVal = item.valor || 0;
+  if (item.fabrica === 'HIDRACOR' && !item.especial && item.tipo !== 'CIF') {
+    const roundedTon = Math.round(item.tonelada || 0);
+    baseVal = ((item.peso || 0) * roundedTon) / 1000;
+  }
+  return baseVal + (item.valorComplementar || 0);
+};
 
 interface SavedCalculation {
   id: string;
@@ -140,7 +155,7 @@ const TaxSimulator = () => {
       const items = calc.items || [];
       
       if (calc.factory === 'HIDRACOR_EXTERNA') {
-        const totalVal = items.reduce((acc, i) => acc + (i.valor || 0), 0);
+        const totalVal = items.reduce((acc, i) => acc + getItemTotalValue(i), 0);
         if (totalVal > 0) {
           hidracorExternaBase += totalVal;
           extCalculations.push({
