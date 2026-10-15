@@ -284,6 +284,15 @@ const ExternalLoads = () => {
       const current = data?.find(d => d.version === 'current');
       const previous = data?.find(d => d.version === 'previous');
 
+      const isDataCorrupted = current?.loads && current.loads.length > 0 && (
+        current.loads.some((l: ExternalLoad) => (l.data && l.data.includes('(')) || l.peso === 'CIF' || l.peso === 'FOB' || l.peso === 'CIF/FOB')
+      );
+
+      if (isDataCorrupted || !current) {
+        await updateFromGoogleSheets();
+        return;
+      }
+
       if (current) setCurrentLoads(current.loads);
       if (previous) setPreviousLoads(previous.loads);
     } catch (error: any) {
@@ -417,27 +426,68 @@ const ExternalLoads = () => {
 
       if (rows.length < 2) throw new Error("Planilha vazia ou aba CARGAS não encontrada.");
 
-      const dataRows = rows.slice(1).filter(r => r[2] && String(r[2]).trim() !== "");
+      // Identificar cabeçalhos dinamicamente para evitar desalinhamento caso colunas sejam adicionadas/removidas
+      const headers = (rows[0] || []).map((h: any) => String(h || '').trim().toUpperCase());
+
+      let colData = headers.findIndex((h: string) => h === 'DATA' || h.includes('DATA'));
+      let colUF = headers.findIndex((h: string) => h === 'UF');
+      let colPeso = headers.findIndex((h: string) => h === 'PESO');
+      let colFrete = headers.findIndex((h: string) => h === 'FRETE');
+      let colObs = headers.findIndex((h: string) => h.startsWith('OBS'));
+      let colStatus = headers.findIndex((h: string) => h === 'STATUS');
+
+      const entregaIndices: number[] = [];
+      headers.forEach((h: string, i: number) => {
+        if (h === 'ENTREGAS' || h === 'ROTA' || h === 'DESTINO') {
+          entregaIndices.push(i);
+        }
+      });
+
+      let colRota = -1;
+      let colEntregas = -1;
+
+      if (entregaIndices.length >= 2) {
+        colRota = entregaIndices[0]; // Primeira coluna é a descrição de cidades/rota
+        colEntregas = entregaIndices[1]; // Segunda coluna é a quantidade de entregas
+      } else if (entregaIndices.length === 1) {
+        colRota = entregaIndices[0];
+      }
+
+      // Fallbacks para índices padrão da planilha atual
+      if (colData === -1) colData = 0;
+      if (colRota === -1) colRota = 1;
+      if (colEntregas === -1) colEntregas = 2;
+      if (colUF === -1) colUF = 3;
+      if (colPeso === -1) colPeso = 4;
+      if (colFrete === -1) colFrete = 5;
+      if (colObs === -1) colObs = 6;
+      if (colStatus === -1) colStatus = 11;
+
+      const dataRows = rows.slice(1).filter(r => {
+        const rotaVal = r[colRota];
+        const dataVal = r[colData];
+        return (rotaVal && String(rotaVal).trim() !== "") || (dataVal && String(dataVal).trim() !== "");
+      });
 
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = String(row[2] || '');
-        const rawUF = String(row[4] || '');
-        const mainWeightStr = String(row[5] || '0');
-        const mainFreightType = String(row[6] || 'CIF').toUpperCase();
+        const rota = String(row[colRota] || '');
+        const rawUF = String(row[colUF] || '');
+        const mainWeightStr = String(row[colPeso] || '0');
+        const mainFreightType = String(row[colFrete] || 'CIF').toUpperCase();
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         
         return {
           id: `load-${idx}-${Date.now()}`,
-          data: excelSerialToFormattedDate(row[1]),
+          data: excelSerialToFormattedDate(row[colData]),
           rota: rota,
-          entregas: String(row[3] || ''),
+          entregas: colEntregas !== -1 ? String(row[colEntregas] || '') : '',
           uf: cleanUF,
           peso: mainWeightStr,
           frete: mainFreightType,
-          observacoes: String(row[7] || ''),
-          status: String(row[12] || ''),
+          observacoes: colObs !== -1 ? String(row[colObs] || '') : '',
+          status: colStatus !== -1 ? String(row[colStatus] || '') : '',
           parsedDeliveries: parsed,
           totalToPay: totalFreight * 0.7,
           manualDeliveryCount: parsed.length,
