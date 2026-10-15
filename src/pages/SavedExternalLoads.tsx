@@ -278,29 +278,29 @@ const SavedExternalLoads = () => {
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b p-4 lg:px-8 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-4">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col">
+      <header className="bg-white border-b px-3 py-3 sm:px-6 sm:py-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
           <Link to="/admin/external-loads">
-            <Button variant="ghost" size="icon"><ArrowLeft /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600"><ArrowLeft size={18} /></Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Cargas Externas Salvas</h1>
-            <p className="text-slate-500 text-xs">Histórico de snapshots salvos do Google Sheets.</p>
+            <h1 className="text-base sm:text-xl font-bold text-slate-900 leading-tight">Cargas Externas Salvas</h1>
+            <p className="text-slate-500 text-[10px] sm:text-xs">Histórico de snapshots salvos do Google Sheets.</p>
           </div>
         </div>
-        <div className="relative w-72">
-          <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
           <Input 
             placeholder="Buscar por rota..." 
-            className="pl-10 h-9"
+            className="pl-9 h-9 text-xs"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
       </header>
 
-      <main className="flex-1 p-4 lg:p-8">
+      <main className="flex-1 p-3 sm:p-6 lg:p-8">
         <div className="grid gap-6">
           {Object.entries(groupedLoads).map(([date, dateLoads]) => (
             <div key={date} className="space-y-4">
@@ -314,22 +314,22 @@ const SavedExternalLoads = () => {
                 </Badge>
               </div>
               
-              <div className="grid gap-4 mb-8">
+              <div className="grid gap-3 sm:gap-4 mb-8">
                 {dateLoads.map(load => (
-                  <Card key={load.id} className="border-none shadow-sm hover:shadow-md transition-all group">
-                    <CardContent className="p-6">
-                      <div className="flex flex-col md:flex-row justify-between gap-4">
+                  <Card key={load.id} className="border-none shadow-2xs hover:shadow-md transition-all group">
+                    <CardContent className="p-3.5 sm:p-6">
+                      <div className="flex flex-col md:flex-row justify-between gap-3 sm:gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 text-amber-600 mb-2">
-                            <Calendar size={14} />
+                          <div className="flex items-center gap-2 text-amber-600 mb-1.5 flex-wrap">
+                            <Calendar size={13} />
                             <span className="text-[10px] font-bold uppercase">
                               {load.data_original ? `Data: ${load.data_original}` : `Salvo em: ${new Date(load.created_at).toLocaleDateString('pt-BR')}`}
                             </span>
                             <span className="text-[10px] text-slate-300">|</span>
                             <span className="text-[10px] text-slate-400 font-medium">Snapshot: {new Date(load.created_at).toLocaleString('pt-BR')}</span>
                           </div>
-                          <h3 className="text-lg font-bold text-slate-900 mb-1 group-hover:text-amber-700 transition-colors">{load.rota}</h3>
-                          <div className="flex flex-wrap gap-4 text-sm text-slate-500">
+                          <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-1 group-hover:text-amber-700 transition-colors break-words leading-snug">{load.rota}</h3>
+                          <div className="flex flex-wrap gap-2.5 sm:gap-4 text-xs sm:text-sm text-slate-500">
                             <span className="flex items-center gap-1"><Truck size={14} /> {load.deliveries?.length} entregas</span>
                             <span className="flex items-center gap-1 font-bold text-slate-700">
                               R$ {formatCurrency(load.total_to_pay)} (Pago)
@@ -339,15 +339,15 @@ const SavedExternalLoads = () => {
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handlePrintMotorista(load)} className="gap-2 h-9">
-                            <Printer size={16} /> Motorista
+                        <div className="flex items-center gap-2 pt-2 border-t md:border-t-0 flex-wrap sm:flex-nowrap">
+                          <Button variant="outline" size="sm" onClick={() => handlePrintMotorista(load)} className="gap-1.5 h-8 text-xs flex-1 sm:flex-initial">
+                            <Printer size={14} /> Motorista
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => handlePrintCompleto(load)} className="gap-2 h-9 border-amber-200 text-amber-700 hover:bg-amber-50">
-                            <FileText size={16} /> Completo
+                          <Button variant="outline" size="sm" onClick={() => handlePrintCompleto(load)} className="gap-1.5 h-8 text-xs border-amber-200 text-amber-700 hover:bg-amber-50 flex-1 sm:flex-initial">
+                            <FileText size={14} /> Completo
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteLoad(load.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-9 w-9">
-                            <Trash2 size={18} />
+                          <Button variant="ghost" size="icon" onClick={() => deleteLoad(load.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8 shrink-0">
+                            <Trash2 size={16} />
                           </Button>
                         </div>
                       </div>

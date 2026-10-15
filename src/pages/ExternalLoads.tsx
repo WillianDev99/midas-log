@@ -33,7 +33,11 @@ import {
   VolumeX,
   Clock,
   ArrowRight,
-  Check
+  Check,
+  LayoutGrid,
+  Table as TableIcon,
+  MoreVertical,
+  Smartphone
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -103,6 +107,9 @@ const playNotificationSound = () => {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
@@ -115,6 +122,10 @@ const playNotificationSound = () => {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.4);
+
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate([150, 80, 150]);
+    }
   } catch (e) {
     console.log("Audio notification not supported:", e);
   }
@@ -125,6 +136,9 @@ const playWarningSound = () => {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
@@ -139,6 +153,10 @@ const playWarningSound = () => {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.55);
+
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate([300, 100, 300, 100, 400]);
+    }
   } catch (e) {
     console.log("Audio warning error:", e);
   }
@@ -188,6 +206,37 @@ const ExternalLoads = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[], special: any[] }>({ cif: [], fob: [], equalization: [], special: [] });
   const [manualSearch, setManualSearch] = useState("");
+  // Modo de exibição: Cards (perfeito para iPhone XR/Mobile) ou Tabela (Desktop)
+  const [displayMode, setDisplayMode] = useState<'cards' | 'table'>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) return 'cards';
+    return 'table';
+  });
+  const [selectedDetailLoad, setSelectedDetailLoad] = useState<ExternalLoad | null>(null);
+
+  // Desbloqueio de áudio para iPhone XR / iOS Safari no primeiro toque
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+        }
+      } catch (e) {}
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+    };
+
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('click', unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
 
   // Sistema de Notificações & Monitoramento de Mudanças
   const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'AGENCIANDO' | 'SEGURADORA' | 'SEGURADORA_OVERDUE' | 'CONTRATADO'>('ALL');
@@ -952,6 +1001,11 @@ const ExternalLoads = () => {
 
   const activeData = viewMode === 'current' ? currentLoads : previousLoads;
 
+  const activeDetailLoad = useMemo(() => {
+    if (!selectedDetailLoad) return null;
+    return activeData.find(l => l.id === selectedDetailLoad.id) || selectedDetailLoad;
+  }, [selectedDetailLoad, activeData]);
+
   const sortedData = useMemo(() => {
     let sortableItems = [...activeData];
     if (sortConfig.direction !== null) {
@@ -1371,22 +1425,30 @@ const ExternalLoads = () => {
   };
 
   return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <header className="max-w-full mx-auto w-full flex justify-between items-center p-4 lg:px-8 bg-white border-b shadow-sm z-50 h-16">
-        <div className="flex items-center gap-4">
+    <div className="min-h-[100dvh] h-[100dvh] bg-slate-50 flex flex-col overflow-hidden">
+      {/* Header Responsivo */}
+      <header className="max-w-full mx-auto w-full flex justify-between items-center px-3 py-2 sm:px-6 sm:py-3 bg-white border-b shadow-2xs z-50 min-h-14">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <Link to="/admin">
-            <Button variant="ghost" size="icon"><ArrowLeft /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600 hover:text-slate-900">
+              <ArrowLeft size={18} />
+            </Button>
           </Link>
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Midas Log" className="h-7 w-auto" />
-            <div className="hidden sm:block">
-              <h1 className="text-lg font-bold text-slate-900">Cargas Externas Hidracor</h1>
-              <p className="text-slate-500 text-[10px]">Monitoramento de cargas disponíveis no Google Sheets.</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/logo.png" alt="Midas Log" className="h-6 sm:h-7 w-auto shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                Cargas Externas Hidracor
+              </h1>
+              <p className="hidden md:block text-slate-500 text-[10px]">
+                Monitoramento de cargas disponíveis no Google Sheets.
+              </p>
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        {/* Desktop actions (md: e superior) */}
+        <div className="hidden md:flex items-center gap-2">
           {/* Status da última verificação */}
           {lastCheckTime && (
             <span className="hidden xl:inline-block text-[11px] text-slate-400 font-medium mr-1">
@@ -1395,7 +1457,7 @@ const ExternalLoads = () => {
           )}
 
           {/* Seletor de Auto-atualização */}
-          <div className="hidden lg:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs">
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs">
             <Clock size={12} className="text-slate-500" />
             <span className="text-[10px] text-slate-500 font-medium">Auto-atualizar:</span>
             <Select 
@@ -1436,10 +1498,10 @@ const ExternalLoads = () => {
               size="sm" 
               onClick={requestNotificationPermission} 
               className="gap-1.5 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 h-8 text-xs font-semibold"
-              title="Receba alertas no Windows/navegador quando surgirem novas cargas ou alterações"
+              title="Receba alertas no navegador quando surgirem novas cargas ou alterações"
             >
               <BellRing size={13} className="text-amber-600 animate-bounce" />
-              <span className="hidden md:inline">Ativar Alertas</span>
+              <span>Ativar Alertas</span>
             </Button>
           )}
 
@@ -1455,7 +1517,7 @@ const ExternalLoads = () => {
             }`}
           >
             <Bell size={13} />
-            <span className="hidden sm:inline">Alertas</span>
+            <span>Alertas</span>
             {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
               <span className="h-4 min-w-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center animate-pulse">
                 {newLoadKeys.size + Object.keys(statusChangedKeys).length}
@@ -1465,583 +1527,904 @@ const ExternalLoads = () => {
 
           <Link to="/admin/external-loads/saved" target="_blank">
             <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
-              <Bookmark size={14} /> <span className="hidden sm:inline">Cargas Salvas</span>
+              <Bookmark size={14} /> <span>Cargas Salvas</span>
             </Button>
           </Link>
 
           <a href={VIEW_SHEET_URL} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
-              <FileText size={14} /> <span className="hidden sm:inline">Ver Planilha</span>
+              <FileText size={14} /> <span>Ver Planilha</span>
             </Button>
           </a>
 
           <Button onClick={handlePrint} size="sm" className="bg-slate-900 hover:bg-slate-800 text-white gap-2 h-8 text-xs">
-            <Printer size={14} /> <span className="hidden sm:inline">Imprimir</span>
+            <Printer size={14} /> <span>Imprimir</span>
           </Button>
 
           <Button variant="outline" size="sm" onClick={() => updateFromGoogleSheets(false)} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs font-semibold">
             {updating ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
-            <span className="hidden sm:inline">Atualizar</span>
+            <span>Atualizar</span>
           </Button>
         </div>
-      </header>
 
-      <main className="flex-1 flex flex-col p-2 lg:p-4 gap-2 overflow-hidden">
-        <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
-          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-3 py-2 px-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-md flex items-center gap-2 mr-2">
-                <Filter size={16} className="text-amber-600" /> 
-                {viewMode === 'current' ? 'Cargas Atuais' : 'Versão Anterior'}
-              </CardTitle>
+        {/* Mobile compact quick actions (iPhone XR / telas < md) */}
+        <div className="flex md:hidden items-center gap-1.5">
+          {/* Som */}
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+              setSoundEnabled(!soundEnabled);
+              if (!soundEnabled) playNotificationSound();
+            }} 
+            className="h-8 w-8 text-slate-600 hover:bg-slate-100"
+            title={soundEnabled ? "Som ativado" : "Som desligado"}
+          >
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} className="text-slate-400" />}
+          </Button>
 
-              {/* Botões de Filtro Rápido */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Button
-                  variant={quickStatusFilter === 'ALL' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setQuickStatusFilter('ALL')}
-                  className={`h-7 text-xs px-2.5 rounded-full ${
-                    quickStatusFilter === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  Todas <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">{counts.total}</span>
-                </Button>
+          {/* Alertas com contador */}
+          <Button 
+            variant={newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0 ? "default" : "outline"}
+            size="sm" 
+            onClick={() => setShowChangesModal(true)} 
+            className={`h-8 px-2.5 text-xs relative ${
+              newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0 
+                ? "bg-amber-600 hover:bg-amber-700 text-white font-bold" 
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <Bell size={14} />
+            {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
+              <span className="h-4 min-w-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center animate-pulse ml-1">
+                {newLoadKeys.size + Object.keys(statusChangedKeys).length}
+              </span>
+            )}
+          </Button>
 
-                <Button
-                  variant={quickStatusFilter === 'NEW' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setQuickStatusFilter('NEW')}
-                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
-                    quickStatusFilter === 'NEW'
-                      ? 'bg-emerald-600 text-white font-bold'
-                      : counts.novas > 0
-                        ? 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold animate-pulse'
-                        : 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <Sparkles size={11} /> Novas
-                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    quickStatusFilter === 'NEW' ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'
-                  }`}>
-                    {counts.novas}
-                  </span>
-                </Button>
+          {/* Atualizar */}
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => updateFromGoogleSheets(false)} 
+            disabled={updating} 
+            className="h-8 w-8 border-amber-200 text-amber-700 hover:bg-amber-50"
+            title="Atualizar dados"
+          >
+            {updating ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+          </Button>
 
-                <Button
-                  variant={quickStatusFilter === 'SEGURADORA' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setQuickStatusFilter('SEGURADORA')}
-                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
-                    quickStatusFilter === 'SEGURADORA'
-                      ? 'bg-amber-600 text-white font-bold'
-                      : counts.seguradora > 0
-                        ? 'border-amber-400 text-amber-900 bg-amber-50 hover:bg-amber-100 font-extrabold shadow-xs'
-                        : 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <ShieldAlert size={11} /> Na Seguradora
-                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    quickStatusFilter === 'SEGURADORA' ? 'bg-white/20' : 'bg-amber-200 text-amber-900'
-                  }`}>
-                    {counts.seguradora}
-                  </span>
-                </Button>
-
-                {counts.seguradoraOverdue > 0 && (
-                  <Button
-                    variant={quickStatusFilter === 'SEGURADORA_OVERDUE' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setQuickStatusFilter('SEGURADORA_OVERDUE')}
-                    className={`h-7 text-xs px-2.5 rounded-full gap-1 animate-pulse ${
-                      quickStatusFilter === 'SEGURADORA_OVERDUE'
-                        ? 'bg-red-700 text-white font-black ring-2 ring-red-400 shadow-md'
-                        : 'border-red-400 text-red-950 bg-red-100 hover:bg-red-200 font-black shadow-xs'
-                    }`}
+          {/* Menu Mais Opções (Popover) */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600 hover:bg-slate-100">
+                <MoreVertical size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2 mr-2" align="end">
+              <div className="space-y-1">
+                <div className="px-2 py-1.5 border-b pb-2 mb-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Auto-atualizar</div>
+                  <Select 
+                    value={String(autoRefreshInterval)} 
+                    onValueChange={(v) => setAutoRefreshInterval(Number(v))}
                   >
-                    <Clock size={11} className="text-red-700 animate-spin" /> +2h na Seguradora
-                    <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white">
-                      {counts.seguradoraOverdue} URGENTE
-                    </span>
+                    <SelectTrigger className="h-7 w-full text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="60" className="text-xs">A cada 1 min</SelectItem>
+                      <SelectItem value="180" className="text-xs">A cada 3 min</SelectItem>
+                      <SelectItem value="300" className="text-xs">A cada 5 min</SelectItem>
+                      <SelectItem value="600" className="text-xs">A cada 10 min</SelectItem>
+                      <SelectItem value="0" className="text-xs">Desativado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {lastCheckTime && (
+                    <div className="text-[9px] text-slate-400 mt-1">
+                      Última checagem: {lastCheckTime}
+                    </div>
+                  )}
+                </div>
+
+                {!hasNotificationPermission && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={requestNotificationPermission} 
+                    className="w-full justify-start text-xs h-8 text-amber-700 hover:bg-amber-50 font-semibold"
+                  >
+                    <BellRing size={14} className="mr-2 text-amber-600" /> Ativar Alertas
                   </Button>
                 )}
 
-                <Button
-                  variant={quickStatusFilter === 'CONTRATADO' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setQuickStatusFilter('CONTRATADO')}
-                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
-                    quickStatusFilter === 'CONTRATADO'
-                      ? 'bg-purple-600 text-white font-bold'
-                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <CheckCircle2 size={11} /> Contratadas
-                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    quickStatusFilter === 'CONTRATADO' ? 'bg-white/20' : 'bg-purple-100 text-purple-800'
-                  }`}>
-                    {counts.contratado}
-                  </span>
-                </Button>
+                <Link to="/admin/external-loads/saved" className="block w-full">
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-xs h-8 text-slate-700">
+                    <Bookmark size={14} className="mr-2 text-slate-500" /> Cargas Salvas
+                  </Button>
+                </Link>
 
+                <a href={VIEW_SHEET_URL} target="_blank" rel="noopener noreferrer" className="block w-full">
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-xs h-8 text-slate-700">
+                    <FileText size={14} className="mr-2 text-slate-500" /> Abrir Google Sheets
+                  </Button>
+                </a>
+
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={handlePrint} 
+                  className="w-full justify-start text-xs h-8 text-slate-700"
+                >
+                  <Printer size={14} className="mr-2 text-slate-500" /> Imprimir Lista
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col p-1.5 sm:p-3 lg:p-4 gap-2 overflow-hidden">
+        <Card className="border-none shadow-xs overflow-hidden flex flex-col flex-1">
+          {/* CardHeader com Toggle Cards/Tabela e Filtros Rápido Deslizáveis */}
+          <CardHeader className="p-2 sm:p-3 bg-slate-50/80 border-b flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              {/* Toggle de Modo: Cards ou Tabela */}
+              <div className="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs">
                 <Button
-                  variant={quickStatusFilter === 'AGENCIANDO' ? 'default' : 'outline'}
+                  type="button"
+                  variant={displayMode === 'cards' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setQuickStatusFilter('AGENCIANDO')}
-                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
-                    quickStatusFilter === 'AGENCIANDO'
-                      ? 'bg-emerald-700 text-white font-bold'
-                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  onClick={() => setDisplayMode('cards')}
+                  className={`h-7 px-2.5 text-xs gap-1.5 rounded-md ${
+                    displayMode === 'cards' ? 'bg-amber-600 text-white font-bold hover:bg-amber-700' : 'text-slate-600'
                   }`}
                 >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Agenciando
-                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    quickStatusFilter === 'AGENCIANDO' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {counts.agenciando}
-                  </span>
+                  <LayoutGrid size={13} />
+                  <span>Cards</span>
                 </Button>
+                <Button
+                  type="button"
+                  variant={displayMode === 'table' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setDisplayMode('table')}
+                  className={`h-7 px-2.5 text-xs gap-1.5 rounded-md ${
+                    displayMode === 'table' ? 'bg-amber-600 text-white font-bold hover:bg-amber-700' : 'text-slate-600'
+                  }`}
+                >
+                  <TableIcon size={13} />
+                  <span>Tabela</span>
+                </Button>
+              </div>
+
+              {/* Botão limpar alertas e contador total */}
+              <div className="flex items-center gap-1.5">
+                {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setNewLoadKeys(new Set());
+                      setStatusChangedKeys({});
+                      showSuccess("Alertas marcados como lidos.");
+                    }}
+                    className="text-[10px] sm:text-[11px] h-7 px-2 text-slate-500 hover:text-slate-800"
+                  >
+                    <Check size={12} className="mr-1" />
+                    <span className="hidden sm:inline">Limpar</span> Alertas
+                  </Button>
+                )}
+                <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                  {filteredData.length} {filteredData.length === 1 ? 'carga' : 'cargas'}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
+            {/* Pílulas de Filtro Rápido com rolagem horizontal suave no iPhone XR */}
+            <div className="overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 flex items-center gap-1.5 flex-nowrap sm:flex-wrap">
+              <Button
+                variant={quickStatusFilter === 'ALL' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('ALL')}
+                className={`h-7 text-xs px-2.5 rounded-full shrink-0 ${
+                  quickStatusFilter === 'ALL'
+                    ? 'bg-slate-900 text-white font-bold'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                Todas <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">{counts.total}</span>
+              </Button>
+
+              <Button
+                variant={quickStatusFilter === 'NEW' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('NEW')}
+                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                  quickStatusFilter === 'NEW'
+                    ? 'bg-emerald-600 text-white font-bold'
+                    : counts.novas > 0
+                      ? 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold animate-pulse'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                <Sparkles size={11} /> Novas
+                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  quickStatusFilter === 'NEW' ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'
+                }`}>
+                  {counts.novas}
+                </span>
+              </Button>
+
+              <Button
+                variant={quickStatusFilter === 'SEGURADORA' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('SEGURADORA')}
+                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                  quickStatusFilter === 'SEGURADORA'
+                    ? 'bg-amber-600 text-white font-bold'
+                    : counts.seguradora > 0
+                      ? 'border-amber-400 text-amber-900 bg-amber-50 hover:bg-amber-100 font-extrabold shadow-2xs'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                <ShieldAlert size={11} /> Na Seguradora
+                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  quickStatusFilter === 'SEGURADORA' ? 'bg-white/20' : 'bg-amber-200 text-amber-900'
+                }`}>
+                  {counts.seguradora}
+                </span>
+              </Button>
+
+              {counts.seguradoraOverdue > 0 && (
                 <Button
-                  variant="ghost"
+                  variant={quickStatusFilter === 'SEGURADORA_OVERDUE' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => {
-                    setNewLoadKeys(new Set());
-                    setStatusChangedKeys({});
-                    showSuccess("Alertas marcados como lidos.");
-                  }}
-                  className="text-[11px] h-7 text-slate-500 hover:text-slate-800"
+                  onClick={() => setQuickStatusFilter('SEGURADORA_OVERDUE')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 animate-pulse ${
+                    quickStatusFilter === 'SEGURADORA_OVERDUE'
+                      ? 'bg-red-700 text-white font-black ring-2 ring-red-400 shadow-md'
+                      : 'border-red-400 text-red-950 bg-red-100 hover:bg-red-200 font-black shadow-2xs'
+                  }`}
                 >
-                  <Check size={12} className="mr-1" /> Limpar Alertas
+                  <Clock size={11} className="text-red-700 animate-spin" /> +2h na Seguradora
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white">
+                    {counts.seguradoraOverdue} URGENTE
+                  </span>
                 </Button>
               )}
-              <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
-                {filteredData.length} exibidas
-              </span>
+
+              <Button
+                variant={quickStatusFilter === 'CONTRATADO' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('CONTRATADO')}
+                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                  quickStatusFilter === 'CONTRATADO'
+                    ? 'bg-purple-600 text-white font-bold'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                <CheckCircle2 size={11} /> Contratadas
+                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  quickStatusFilter === 'CONTRATADO' ? 'bg-white/20' : 'bg-purple-100 text-purple-800'
+                }`}>
+                  {counts.contratado}
+                </span>
+              </Button>
+
+              <Button
+                variant={quickStatusFilter === 'AGENCIANDO' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('AGENCIANDO')}
+                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                  quickStatusFilter === 'AGENCIANDO'
+                    ? 'bg-emerald-700 text-white font-bold'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Agenciando
+                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  quickStatusFilter === 'AGENCIANDO' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {counts.agenciando}
+                </span>
+              </Button>
             </div>
           </CardHeader>
 
+          {/* CardContent: Renderização condicional Cards vs Tabela */}
           <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
-            <div className="flex-1 overflow-auto">
-              <Table>
-                <TableHeader className="bg-white sticky top-0 z-30 shadow-sm">
-                  <TableRow>
-                    <TableHead className="w-[80px]"></TableHead>
-                    <TableHead className="min-w-[120px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
-                          {renderSortIcon('data')}
-                        </div>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('data', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[300px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
-                          {renderSortIcon('rota')}
-                        </div>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('rota', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[80px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
-                          {renderSortIcon('entregas')}
-                        </div>
-                        <Input placeholder="Filt." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('entregas', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[110px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-1 cursor-pointer flex-1" onClick={() => handleSort('uf')}>
-                            <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
-                            {renderSortIcon('uf')}
+            {displayMode === 'cards' ? (
+              /* Modo Cards (Perfeito para iPhone XR e navegação móvel) */
+              <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-slate-100/60">
+                {filteredData.length === 0 ? (
+                  <div className="py-16 text-center bg-white rounded-xl border border-dashed border-slate-300 m-2">
+                    <Filter className="mx-auto text-slate-300 mb-2" size={36} />
+                    <p className="text-sm text-slate-500 font-medium">Nenhuma carga encontrada com os filtros selecionados.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {filteredData.map((load) => {
+                      const isNew = newLoadKeys.has(getLoadKey(load));
+                      return (
+                        <div 
+                          key={load.id}
+                          className={`bg-white rounded-xl border transition-all duration-150 p-3.5 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md ${
+                            isNew ? 'border-emerald-400 ring-2 ring-emerald-300/40' : 'border-slate-200'
+                          }`}
+                        >
+                          {/* Topo do Card: Data, Tag Nova, UF, Frete */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isNew && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white animate-bounce shadow-2xs uppercase tracking-wider">
+                                  <Sparkles size={10} /> NOVA
+                                </span>
+                              )}
+                              <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                {load.data || 'Sem data'}
+                              </span>
+                              <span className="text-[11px] font-black text-white bg-slate-900 px-2 py-0.5 rounded shadow-2xs">
+                                {load.uf}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                              {load.frete || 'CIF'}
+                            </span>
                           </div>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
-                                <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-44 p-2">
-                              <div className="space-y-3">
-                                <div className="space-y-1 border-b pb-2">
-                                  <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Ordenar</span>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'asc' ? 'bg-amber-50 text-amber-600' : ''}`}
-                                    onClick={() => setSortConfig({ key: 'uf', direction: 'asc' })}
-                                  >
-                                    <ArrowUp size={12} className="mr-1.5" />
-                                    A-Z (Ordem Crescente)
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'desc' ? 'bg-amber-50 text-amber-600' : ''}`}
-                                    onClick={() => setSortConfig({ key: 'uf', direction: 'desc' })}
-                                  >
-                                    <ArrowDown size={12} className="mr-1.5" />
-                                    Z-A (Ordem Decrescente)
-                                  </Button>
-                                  {(sortConfig.key === 'uf' && sortConfig.direction !== null) && (
+
+                          {/* Rota */}
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-sm leading-snug break-words" title={load.rota}>
+                              {load.rota}
+                            </h3>
+                          </div>
+
+                          {/* Status Badge + Horário na Seguradora */}
+                          <div className="w-full flex justify-start">
+                            {renderStatusBadge(load)}
+                          </div>
+
+                          {/* Grid de Informações: Entregas, Peso, Veículo */}
+                          <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200/80 grid grid-cols-3 gap-2 text-center items-center">
+                            <div>
+                              <span className="text-[9px] font-bold uppercase text-slate-400 block">Entregas</span>
+                              <span className="text-xs font-black text-slate-800">{load.entregas}</span>
+                            </div>
+                            <div className="border-x border-slate-200 px-1">
+                              <span className="text-[9px] font-bold uppercase text-slate-400 block">Peso</span>
+                              <span className="text-xs font-black text-slate-800 truncate block">{formatWeight(load.peso)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Veículo</span>
+                              <Select 
+                                value={getVehicleType(load)} 
+                                onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
+                              >
+                                <SelectTrigger className={`h-6 text-[10px] font-bold border rounded px-1.5 w-full flex justify-between items-center ${
+                                  load.manualVehicleType 
+                                    ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-2xs' 
+                                    : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-50'
+                                }`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {VEHICLE_OPTIONS.map(option => (
+                                    <SelectItem key={option} value={option} className="text-xs font-bold">
+                                      {option}
+                                    </SelectItem>
+                                  ))}
+                                  {load.manualVehicleType && (
+                                    <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
+                                      ↺ Automático
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação */}
+                          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={() => setSelectedDetailLoad(load)}
+                              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold h-8 text-xs gap-1.5 shadow-2xs"
+                            >
+                              <Calculator size={13} />
+                              <span>Calcular & Detalhar</span>
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleSaveLoad(load)}
+                              disabled={saving}
+                              title="Salvar carga"
+                              className="h-8 w-8 shrink-0 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            >
+                              <Save size={14} />
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handlePrintDetailed(load)}
+                              title="Imprimir ordem para motorista"
+                              className="h-8 w-8 shrink-0 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            >
+                              <Printer size={14} />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Modo Tabela Completa (Desktop ou modo horizontal) */
+              <div className="flex-1 overflow-auto">
+                <Table>
+                  <TableHeader className="bg-white sticky top-0 z-30 shadow-xs">
+                    <TableRow>
+                      <TableHead className="w-[80px]"></TableHead>
+                      <TableHead className="min-w-[120px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('data')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Data</span>
+                            {renderSortIcon('data')}
+                          </div>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('data', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[300px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('rota')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Rota</span>
+                            {renderSortIcon('rota')}
+                          </div>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('rota', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[80px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('entregas')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Entr.</span>
+                            {renderSortIcon('entregas')}
+                          </div>
+                          <Input placeholder="Filt." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('entregas', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[110px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-1 cursor-pointer flex-1" onClick={() => handleSort('uf')}>
+                              <span className="text-[10px] font-bold uppercase text-slate-500">UF</span>
+                              {renderSortIcon('uf')}
+                            </div>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-4 w-4 p-0">
+                                  <Filter size={12} className={selectedUFs.length > 0 ? "text-amber-600" : "text-slate-300"} />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-44 p-2">
+                                <div className="space-y-3">
+                                  <div className="space-y-1 border-b pb-2">
+                                    <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Ordenar</span>
                                     <Button 
                                       variant="ghost" 
                                       size="sm" 
-                                      className="w-full justify-start text-[10px] h-6 px-1 text-slate-400"
-                                      onClick={() => setSortConfig({ key: '', direction: null })}
+                                      className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'asc' ? 'bg-amber-50 text-amber-600' : ''}`}
+                                      onClick={() => setSortConfig({ key: 'uf', direction: 'asc' })}
                                     >
-                                      Remover Ordenação
+                                      <ArrowUp size={12} className="mr-1.5" />
+                                      A-Z (Ordem Crescente)
                                     </Button>
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Filtrar por UF</span>
-                                  <div className="max-h-40 overflow-y-auto space-y-1.5 px-1">
-                                    {allUFs.map(uf => (
-                                      <div key={uf} className="flex items-center space-x-2">
-                                        <Checkbox 
-                                          id={`uf-${uf}`} 
-                                          checked={selectedUFs.includes(uf)}
-                                          onCheckedChange={(checked) => {
-                                            if (checked) setSelectedUFs([...selectedUFs, uf]);
-                                            else setSelectedUFs(selectedUFs.filter(u => u !== uf));
-                                          }}
-                                        />
-                                        <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
-                                      </div>
-                                    ))}
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className={`w-full justify-start text-xs h-7 px-1 font-semibold ${sortConfig.key === 'uf' && sortConfig.direction === 'desc' ? 'bg-amber-50 text-amber-600' : ''}`}
+                                      onClick={() => setSortConfig({ key: 'uf', direction: 'desc' })}
+                                    >
+                                      <ArrowDown size={12} className="mr-1.5" />
+                                      Z-A (Ordem Decrescente)
+                                    </Button>
+                                    {(sortConfig.key === 'uf' && sortConfig.direction !== null) && (
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="w-full justify-start text-[10px] h-6 px-1 text-slate-400"
+                                        onClick={() => setSortConfig({ key: '', direction: null })}
+                                      >
+                                        Remover Ordenação
+                                      </Button>
+                                    )}
                                   </div>
-                                  {selectedUFs.length > 0 && (
-                                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-6 mt-1" onClick={() => setSelectedUFs([])}>Limpar Filtros</Button>
-                                  )}
-                                </div>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div className="h-7 flex items-center px-2 bg-slate-50 rounded border text-[10px] font-bold text-slate-500">
-                          {selectedUFs.length > 0 ? selectedUFs.join(', ') : 'Todos'}
-                        </div>
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[130px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
-                          {renderSortIcon('peso')}
-                        </div>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('peso', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[140px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('veiculo')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Veículo</span>
-                          {renderSortIcon('veiculo')}
-                        </div>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('veiculo', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[100px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
-                          {renderSortIcon('frete')}
-                        </div>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('frete', e.target.value)} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="min-w-[150px] py-4 px-4 bg-white">
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-bold uppercase text-slate-500">Status</span>
-                        <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('status', e.target.value)} />
-                      </div>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredData.map((load) => (
-                    <TableRow key={load.id} className="hover:bg-slate-50/50">
-                      <TableCell className="p-2 flex items-center gap-1">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 hover:bg-amber-50">
-                              <Eye size={16} />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-                            <DialogHeader className="flex flex-row items-center justify-between pr-8">
-                              <div className="flex flex-col gap-1">
-                                <DialogTitle className="flex items-center gap-3">
-                                  <img src="/logo.png" className="h-6 w-auto" />
-                                  Detalhamento da Carga
-                                </DialogTitle>
-                                <DialogDescription className="font-bold text-slate-900">
-                                  Rota: {load.rota}
-                                </DialogDescription>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                                  <ArrowRightLeft size={14} className="text-amber-600" />
-                                  <span className="text-[10px] font-bold text-slate-600 uppercase">Nova Tabela CIF</span>
-                                  <Switch 
-                                    checked={load.useEqualizationTable} 
-                                    onCheckedChange={(checked) => handleUpdateLoad(load.id, { useEqualizationTable: checked })}
-                                    className="scale-90 data-[state=checked]:bg-amber-500"
-                                  />
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button onClick={() => handleSaveLoad(load)} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
-                                    {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar Carga
-                                  </Button>
-                                  <Button onClick={() => handlePrintDetailed(load)} className="bg-slate-900 hover:bg-slate-800 text-white gap-2">
-                                    <Printer size={16} /> Imprimir para Motorista
-                                  </Button>
-                                </div>
-                              </div>
-                            </DialogHeader>
-                            
-                            <div className="mt-4">
-                              <Table>
-                                <TableHeader className="bg-slate-900">
-                                  <TableRow>
-                                    <TableHead className="text-white text-[10px] uppercase">Entregas</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">Cidade</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">UF</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">CIF/FOB</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">Peso</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">Alíquota</TableHead>
-                                    <TableHead className="text-white text-[10px] uppercase">Frete a Receber</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {load.parsedDeliveries?.map((delivery, dIdx) => (
-                                    <TableRow key={dIdx}>
-                                      <TableCell className="text-xs font-bold">{dIdx + 1}</TableCell>
-                                      <TableCell className="text-xs uppercase">{delivery.city}</TableCell>
-                                      <TableCell className="text-xs font-bold">{delivery.uf}</TableCell>
-                                      <TableCell className="text-xs">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${delivery.type === 'CIF' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                                          {delivery.type}
-                                        </span>
-                                      </TableCell>
-                                      <TableCell className="text-xs">
-                                        <Input type="number" className="h-7 w-24 text-xs" value={delivery.weight} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { weight: parseFloat(e.target.value) || 0 })} />
-                                      </TableCell>
-                                      <TableCell className="text-xs">
-                                        <div className="flex items-center gap-2">
-                                          <Input type="number" step="0.00000001" className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`} value={delivery.aliquot} onChange={(e) => handleUpdateDelivery(load.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })} />
-                                          <Popover>
-                                            <PopoverTrigger asChild><Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600"><Search size={12} /></Button></PopoverTrigger>
-                                            <PopoverContent className="w-80 p-2">
-                                              <div className="space-y-2">
-                                                <Input placeholder="Pesquisar cidade..." className="h-8 text-xs" value={manualSearch} onChange={(e) => setManualSearch(e.target.value)} />
-                                                <div className="max-h-60 overflow-y-auto space-y-1">
-                                                  {(delivery.type === 'CIF' ? (load.useEqualizationTable ? freightTables.equalization : freightTables.cif) : freightTables.fob)
-                                                    .filter((row: any) => {
-                                                      const name = (delivery.type === 'CIF' && load.useEqualizationTable) ? String(row['B'] || '') : (delivery.type === 'CIF' ? String(row['B'] || '') : String(row['A'] || ''));
-                                                      return normalizeText(name).includes(normalizeText(manualSearch));
-                                                    })
-                                                    .slice(0, 50)
-                                                    .map((row: any, idx: number) => (
-                                                      <Button key={idx} variant="ghost" className="w-full flex flex-col items-start text-[10px] h-auto py-2 px-2 border-b last:border-0" onClick={() => {
-                                                        let finalVal = 0;
-                                                        const weight = delivery.weight;
-                                                        if (delivery.type === 'CIF') {
-                                                          if (load.useEqualizationTable) {
-                                                            let col = 'F';
-                                                            const totalD = load.manualDeliveryCount || 1;
-                                                            if (totalD >= 2 && totalD <= 3) col = 'G';
-                                                            else if (totalD >= 4 && totalD <= 10) col = 'H';
-                                                            else if (totalD > 10) col = 'I';
-                                                            const rawVal = row[col as keyof typeof row];
-                                                            finalVal = parseValue(rawVal) / 1000;
-                                                          } else {
-                                                            if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
-                                                            else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
-                                                            else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
-                                                          }
-                                                        } else {
-                                                          if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0)) / 1000;
-                                                          else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0)) / 1000;
-                                                          else finalVal = parseFloat(String(row['I'] || 0)) / 1000;
-                                                        }
-                                                        handleUpdateDelivery(load.id, dIdx, { aliquot: finalVal });
-                                                      }}>
-                                                        <div className="font-bold uppercase">
-                                                          {delivery.type === 'CIF' ? (load.useEqualizationTable ? `${row['B']} (${row['E']})` : `${row['B']} (${row['E']})`) : `${row['A']} (${row['B']})`}
-                                                        </div>
-                                                      </Button>
-                                                    ))}
-                                                </div>
-                                              </div>
-                                            </PopoverContent>
-                                          </Popover>
+                                  <div className="space-y-2">
+                                    <span className="text-[10px] font-bold uppercase text-slate-400 block px-1">Filtrar por UF</span>
+                                    <div className="max-h-40 overflow-y-auto space-y-1.5 px-1">
+                                      {allUFs.map(uf => (
+                                        <div key={uf} className="flex items-center space-x-2">
+                                          <Checkbox 
+                                            id={`uf-${uf}`} 
+                                            checked={selectedUFs.includes(uf)}
+                                            onCheckedChange={(checked) => {
+                                              if (checked) setSelectedUFs([...selectedUFs, uf]);
+                                              else setSelectedUFs(selectedUFs.filter(u => u !== uf));
+                                            }}
+                                          />
+                                          <Label htmlFor={`uf-${uf}`} className="text-xs font-bold">{uf}</Label>
                                         </div>
-                                      </TableCell>
-                                      <TableCell className="text-xs font-bold">R$ {formatCurrency(delivery.freight)}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow className="bg-slate-50 font-bold">
-                                    <TableCell className="text-xs">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] uppercase text-slate-500">Total Entregas:</span>
-                                        <Input 
-                                          type="number" 
-                                          className="h-7 w-16 text-xs font-bold bg-white" 
-                                          value={load.manualDeliveryCount} 
-                                          onChange={(e) => handleUpdateLoad(load.id, { manualDeliveryCount: parseInt(e.target.value) || 0 })}
-                                        />
-                                      </div>
-                                    </TableCell>
-                                    <TableCell colSpan={3} className="text-right uppercase text-[10px]">Total:</TableCell>
-                                    <TableCell className="text-xs font-bold">{formatWeight(load.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
-                                    <TableCell className="text-xs">-</TableCell>
-                                    <TableCell className="text-xs text-amber-700">R$ {formatCurrency(load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0)}</TableCell>
-                                  </TableRow>
-                                </TableBody>
-                              </Table>
-
-                              {(() => {
-                                const baseFreightToReceive = load.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
-                                const complementaryValue = load.complementaryValue || 0;
-                                const totalReceived = baseFreightToReceive + complementaryValue;
-                                const totalToPay = load.totalToPay || 0;
-                                const tax = totalReceived * TAX_RATE; // 14%
-                                const marginBefore = totalReceived - totalToPay;
-                                const marginAfter = totalReceived - totalToPay - tax;
-                                const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
-                                const marginAfterPct = totalReceived > 0 ? (marginAfter / totalReceived) * 100 : 0;
-
-                                return (
-                                  <div className="mt-6 flex flex-col items-end gap-2.5 border-t pt-4">
-                                    <div className="flex items-center gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Frete Tabela a Receber:</span>
-                                      <span className="font-bold text-slate-800">R$ {formatCurrency(baseFreightToReceive)}</span>
+                                      ))}
                                     </div>
-
-                                    <div className="flex items-center gap-8 text-xs">
-                                      <span className="text-amber-700 font-bold uppercase flex items-center gap-1">
-                                        Valor Complementar (Ajuda de Custo):
-                                      </span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-slate-400 font-semibold">R$</span>
-                                        <Input 
-                                          type="number" 
-                                          step="0.01" 
-                                          className="h-7 w-32 text-xs font-bold border-amber-300 bg-amber-50/60 text-amber-900" 
-                                          value={load.complementaryValue ?? ''} 
-                                          placeholder="0,00"
-                                          onChange={(e) => handleUpdateLoad(load.id, { complementaryValue: parseFloat(e.target.value) || 0 })} 
-                                        />
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-8 text-xs bg-amber-100/60 px-3 py-1.5 rounded border border-amber-200">
-                                      <span className="text-amber-900 font-extrabold uppercase">Valor Total a Receber (Frete + Complemento):</span>
-                                      <span className="font-extrabold text-amber-900 text-sm">R$ {formatCurrency(totalReceived)}</span>
-                                    </div>
-
-                                    <div className="flex items-center gap-8 text-xs pt-1">
-                                      <span className="text-slate-500 font-bold uppercase">Total a Pagar (Motorista):</span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-slate-400 font-semibold">R$</span>
-                                        <Input 
-                                          type="number" 
-                                          step="0.01" 
-                                          className="h-7 w-32 text-xs font-bold" 
-                                          value={totalToPay} 
-                                          onChange={(e) => handleUpdateLoad(load.id, { totalToPay: parseFloat(e.target.value) || 0 })} 
-                                        />
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-8 text-xs pt-1 border-t w-full justify-end">
-                                      <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
-                                      <span className={`font-bold ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)
-                                      </span>
-                                    </div>
-
-                                    <div className="flex gap-8 text-xs">
-                                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (14%):</span>
-                                      <span className={`font-bold ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                                        R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)
-                                      </span>
-                                    </div>
+                                    {selectedUFs.length > 0 && (
+                                      <Button variant="ghost" size="sm" className="w-full text-[10px] h-6 mt-1" onClick={() => setSelectedUFs([])}>Limpar Filtros</Button>
+                                    )}
                                   </div>
-                                );
-                              })()}
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </TableCell>
-                      <TableCell className="text-[11px] font-medium whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          {newLoadKeys.has(getLoadKey(load)) && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white animate-bounce shadow-sm uppercase tracking-wider">
-                              <Sparkles size={10} /> NOVA
-                            </span>
-                          )}
-                          <span>{load.data}</span>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <div className="h-7 flex items-center px-2 bg-slate-50 rounded border text-[10px] font-bold text-slate-500">
+                            {selectedUFs.length > 0 ? selectedUFs.join(', ') : 'Todos'}
+                          </div>
                         </div>
-                      </TableCell>
-                      <TableCell className="text-[11px] font-medium max-w-[300px]">
-                        <div className="truncate" title={load.rota}>{load.rota}</div>
-                      </TableCell>
-                      <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
-                      <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
-                      <TableCell className="text-[11px] text-right font-medium whitespace-nowrap">{formatWeight(load.peso)}</TableCell>
-                      <TableCell className="text-[11px] text-center font-semibold">
-                        <Select 
-                          value={getVehicleType(load)} 
-                          onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
-                        >
-                          <SelectTrigger className={`h-7 text-[10px] font-bold border rounded px-2 w-[145px] mx-auto flex justify-between items-center ${
-                            load.manualVehicleType 
-                              ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-sm' 
-                              : 'bg-amber-50/80 text-amber-800 border-amber-200/80 hover:bg-amber-100/60'
-                          }`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VEHICLE_OPTIONS.map(option => (
-                              <SelectItem key={option} value={option} className="text-xs font-bold">
-                                {option}
-                              </SelectItem>
-                            ))}
-                            {load.manualVehicleType && (
-                              <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
-                                ↺ Restaurar Automático
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
-                      <TableCell className="text-[11px]">
-                        {renderStatusBadge(load)}
-                      </TableCell>
+                      </TableHead>
+                      <TableHead className="min-w-[130px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('peso')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Peso</span>
+                            {renderSortIcon('peso')}
+                          </div>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('peso', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[140px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('veiculo')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Veículo</span>
+                            {renderSortIcon('veiculo')}
+                          </div>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('veiculo', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[100px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('frete')}>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Frete</span>
+                            {renderSortIcon('frete')}
+                          </div>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('frete', e.target.value)} />
+                        </div>
+                      </TableHead>
+                      <TableHead className="min-w-[150px] py-4 px-4 bg-white">
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Status</span>
+                          <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('status', e.target.value)} />
+                        </div>
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredData.map((load) => (
+                      <TableRow key={load.id} className="hover:bg-slate-50/50">
+                        <TableCell className="p-2 flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => setSelectedDetailLoad(load)}
+                            className="h-8 w-8 text-amber-600 hover:bg-amber-50"
+                            title="Ver detalhes e calcular frete"
+                          >
+                            <Eye size={16} />
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-[11px] font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            {newLoadKeys.has(getLoadKey(load)) && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white animate-bounce shadow-xs uppercase tracking-wider">
+                                <Sparkles size={10} /> NOVA
+                              </span>
+                            )}
+                            <span>{load.data}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-[11px] font-medium max-w-[300px]">
+                          <div className="truncate" title={load.rota}>{load.rota}</div>
+                        </TableCell>
+                        <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
+                        <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
+                        <TableCell className="text-[11px] text-right font-medium whitespace-nowrap">{formatWeight(load.peso)}</TableCell>
+                        <TableCell className="text-[11px] text-center font-semibold">
+                          <Select 
+                            value={getVehicleType(load)} 
+                            onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
+                          >
+                            <SelectTrigger className={`h-7 text-[10px] font-bold border rounded px-2 w-[145px] mx-auto flex justify-between items-center ${
+                              load.manualVehicleType 
+                                ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs' 
+                                : 'bg-amber-50/80 text-amber-800 border-amber-200/80 hover:bg-amber-100/60'
+                            }`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {VEHICLE_OPTIONS.map(option => (
+                                <SelectItem key={option} value={option} className="text-xs font-bold">
+                                  {option}
+                                </SelectItem>
+                              ))}
+                              {load.manualVehicleType && (
+                                <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
+                                  ↺ Restaurar Automático
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
+                        <TableCell className="text-[11px]">
+                          {renderStatusBadge(load)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>
+
+      {/* Modal Único e Responsivo de Detalhamento e Cálculo (Otimizado para iPhone XR e Desktop) */}
+      <Dialog open={!!activeDetailLoad} onOpenChange={(open) => !open && setSelectedDetailLoad(null)}>
+        {activeDetailLoad && (
+          <DialogContent className="w-[96vw] max-w-5xl max-h-[92dvh] p-3 sm:p-6 overflow-y-auto rounded-xl">
+            <DialogHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b">
+              <div className="flex flex-col gap-1 min-w-0">
+                <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                  <img src="/logo.png" className="h-5 sm:h-6 w-auto shrink-0" />
+                  <span>Detalhamento da Carga</span>
+                </DialogTitle>
+                <DialogDescription className="font-bold text-slate-900 text-xs sm:text-sm break-words">
+                  Rota: {activeDetailLoad.rota}
+                </DialogDescription>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
+                <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 shadow-2xs">
+                  <ArrowRightLeft size={13} className="text-amber-600" />
+                  <span className="text-[10px] font-bold text-slate-600 uppercase">Nova Tabela CIF</span>
+                  <Switch 
+                    checked={activeDetailLoad.useEqualizationTable} 
+                    onCheckedChange={(checked) => handleUpdateLoad(activeDetailLoad.id, { useEqualizationTable: checked })}
+                    className="scale-90 data-[state=checked]:bg-amber-500"
+                  />
+                </div>
+                <Button 
+                  size="sm" 
+                  onClick={() => handleSaveLoad(activeDetailLoad)} 
+                  disabled={saving} 
+                  className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 h-8 text-xs font-bold"
+                >
+                  {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} Salvar
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={() => handlePrintDetailed(activeDetailLoad)} 
+                  className="bg-slate-900 hover:bg-slate-800 text-white gap-1.5 h-8 text-xs font-bold"
+                >
+                  <Printer size={14} /> Imprimir Motorista
+                </Button>
+              </div>
+            </DialogHeader>
+            
+            <div className="mt-3">
+              <div className="overflow-x-auto -mx-1 sm:mx-0 rounded-lg border border-slate-200">
+                <Table className="min-w-[650px]">
+                  <TableHeader className="bg-slate-900">
+                    <TableRow>
+                      <TableHead className="text-white text-[10px] uppercase w-12 text-center">Entr.</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase">Cidade</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase w-12 text-center">UF</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase w-20 text-center">CIF/FOB</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase w-28 text-right">Peso (KG)</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase w-32">Alíquota</TableHead>
+                      <TableHead className="text-white text-[10px] uppercase w-32 text-right">Frete a Receber</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeDetailLoad.parsedDeliveries?.map((delivery, dIdx) => (
+                      <TableRow key={dIdx} className="hover:bg-slate-50/50">
+                        <TableCell className="text-xs font-bold text-center">{dIdx + 1}</TableCell>
+                        <TableCell className="text-xs uppercase font-medium">{delivery.city}</TableCell>
+                        <TableCell className="text-xs font-bold text-center">{delivery.uf}</TableCell>
+                        <TableCell className="text-xs text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${delivery.type === 'CIF' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                            {delivery.type}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-right">
+                          <Input 
+                            type="number" 
+                            className="h-7 w-24 text-xs text-right ml-auto" 
+                            value={delivery.weight} 
+                            onChange={(e) => handleUpdateDelivery(activeDetailLoad.id, dIdx, { weight: parseFloat(e.target.value) || 0 })} 
+                          />
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <Input 
+                              type="number" 
+                              step="0.00000001" 
+                              className={`h-7 w-24 text-xs ${delivery.aliquot === 0 ? 'border-red-500 bg-red-50' : ''}`} 
+                              value={delivery.aliquot} 
+                              onChange={(e) => handleUpdateDelivery(activeDetailLoad.id, dIdx, { aliquot: parseFloat(e.target.value) || 0 })} 
+                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600 hover:bg-amber-50">
+                                  <Search size={12} />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-80 p-2">
+                                <div className="space-y-2">
+                                  <Input 
+                                    placeholder="Pesquisar cidade..." 
+                                    className="h-8 text-xs" 
+                                    value={manualSearch} 
+                                    onChange={(e) => setManualSearch(e.target.value)} 
+                                  />
+                                  <div className="max-h-60 overflow-y-auto space-y-1">
+                                    {(delivery.type === 'CIF' ? (activeDetailLoad.useEqualizationTable ? freightTables.equalization : freightTables.cif) : freightTables.fob)
+                                      .filter((row: any) => {
+                                        const name = (delivery.type === 'CIF' && activeDetailLoad.useEqualizationTable) ? String(row['B'] || '') : (delivery.type === 'CIF' ? String(row['B'] || '') : String(row['A'] || ''));
+                                        return normalizeText(name).includes(normalizeText(manualSearch));
+                                      })
+                                      .slice(0, 50)
+                                      .map((row: any, idx: number) => (
+                                        <Button 
+                                          key={idx} 
+                                          variant="ghost" 
+                                          className="w-full flex flex-col items-start text-[10px] h-auto py-2 px-2 border-b last:border-0" 
+                                          onClick={() => {
+                                            let finalVal = 0;
+                                            const weight = delivery.weight;
+                                            if (delivery.type === 'CIF') {
+                                              if (activeDetailLoad.useEqualizationTable) {
+                                                let col = 'F';
+                                                const totalD = activeDetailLoad.manualDeliveryCount || 1;
+                                                if (totalD >= 2 && totalD <= 3) col = 'G';
+                                                else if (totalD >= 4 && totalD <= 10) col = 'H';
+                                                else if (totalD > 10) col = 'I';
+                                                const rawVal = row[col as keyof typeof row];
+                                                finalVal = parseValue(rawVal) / 1000;
+                                              } else {
+                                                if (weight <= 7000) finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                                else if (weight <= 17000) finalVal = parseFloat(String(row['J'] || 0)) / 1000;
+                                                else finalVal = parseFloat(String(row['K'] || 0)) / 1000;
+                                              }
+                                            } else {
+                                              if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0)) / 1000;
+                                              else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0)) / 1000;
+                                              else finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                            }
+                                            handleUpdateDelivery(activeDetailLoad.id, dIdx, { aliquot: finalVal });
+                                          }}
+                                        >
+                                          <div className="font-bold uppercase">
+                                            {delivery.type === 'CIF' ? (activeDetailLoad.useEqualizationTable ? `${row['B']} (${row['E']})` : `${row['B']} (${row['E']})`) : `${row['A']} (${row['B']})`}
+                                          </div>
+                                        </Button>
+                                      ))}
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-right">R$ {formatCurrency(delivery.freight)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-slate-50 font-bold border-t-2">
+                      <TableCell className="text-xs" colSpan={2}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase text-slate-500">Qtd. Entregas:</span>
+                          <Input 
+                            type="number" 
+                            className="h-7 w-16 text-xs font-bold bg-white" 
+                            value={activeDetailLoad.manualDeliveryCount} 
+                            onChange={(e) => handleUpdateLoad(activeDetailLoad.id, { manualDeliveryCount: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell colSpan={2} className="text-right uppercase text-[10px] text-slate-500">Total:</TableCell>
+                      <TableCell className="text-xs font-bold text-right">{formatWeight(activeDetailLoad.parsedDeliveries?.reduce((acc, d) => acc + d.weight, 0) || 0)}</TableCell>
+                      <TableCell className="text-xs text-center">-</TableCell>
+                      <TableCell className="text-xs text-amber-700 font-black text-right">R$ {formatCurrency(activeDetailLoad.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              {(() => {
+                const baseFreightToReceive = activeDetailLoad.parsedDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
+                const complementaryValue = activeDetailLoad.complementaryValue || 0;
+                const totalReceived = baseFreightToReceive + complementaryValue;
+                const totalToPay = activeDetailLoad.totalToPay || 0;
+                const tax = totalReceived * TAX_RATE; // 14%
+                const marginBefore = totalReceived - totalToPay;
+                const marginAfter = totalReceived - totalToPay - tax;
+                const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
+                const marginAfterPct = totalReceived > 0 ? (marginAfter / totalReceived) * 100 : 0;
+
+                return (
+                  <div className="mt-5 flex flex-col items-stretch sm:items-end gap-2.5 border-t pt-4">
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs">
+                      <span className="text-slate-500 font-bold uppercase">Frete Tabela a Receber:</span>
+                      <span className="font-bold text-slate-800">R$ {formatCurrency(baseFreightToReceive)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs">
+                      <span className="text-amber-800 font-bold uppercase">
+                        Valor Complementar (Ajuda de Custo):
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400 font-semibold">R$</span>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          className="h-8 w-32 text-xs font-bold border-amber-300 bg-amber-50/70 text-amber-900" 
+                          value={activeDetailLoad.complementaryValue ?? ''} 
+                          placeholder="0,00"
+                          onChange={(e) => handleUpdateLoad(activeDetailLoad.id, { complementaryValue: parseFloat(e.target.value) || 0 })} 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs bg-amber-100/70 px-3 py-2 rounded-lg border border-amber-300">
+                      <span className="text-amber-900 font-black uppercase">Valor Total a Receber:</span>
+                      <span className="font-black text-amber-950 text-sm">R$ {formatCurrency(totalReceived)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs pt-1">
+                      <span className="text-slate-600 font-bold uppercase">Total a Pagar (Motorista):</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400 font-semibold">R$</span>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          className="h-8 w-32 text-xs font-bold" 
+                          value={totalToPay} 
+                          onChange={(e) => handleUpdateLoad(activeDetailLoad.id, { totalToPay: parseFloat(e.target.value) || 0 })} 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs pt-2 border-t w-full">
+                      <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
+                      <span className={`font-black ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        R$ {formatCurrency(marginBefore)} ({marginBeforePct.toFixed(2)}%)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs">
+                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (14%):</span>
+                      <span className={`font-black ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* Modal de Detalhes dos Alertas / Alterações */}
       <Dialog open={showChangesModal} onOpenChange={setShowChangesModal}>
@@ -2057,6 +2440,17 @@ const ExternalLoads = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Dica para iPhone XR / iOS Safari */}
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2.5 text-xs">
+              <Smartphone className="text-blue-600 shrink-0 mt-0.5" size={16} />
+              <div>
+                <div className="font-bold text-blue-900">Usando no iPhone?</div>
+                <div className="text-blue-800 text-[11px] leading-relaxed mt-0.5">
+                  Para uma experiência de aplicativo no iPhone, toque no botão <strong>Compartilhar</strong> do Safari ➔ <strong>"Adicionar à Tela de Início"</strong>. Você terá acesso rápido de tela cheia e alertas com som e vibração.
+                </div>
+              </div>
+            </div>
+
             {/* Cargas com mais de 2h na seguradora (URGENTE) */}
             {counts.seguradoraOverdue > 0 && (
               <div className="p-3 bg-red-50 border-2 border-red-500 rounded-lg shadow-sm">
@@ -2074,7 +2468,7 @@ const ExternalLoads = () => {
                     .map(l => {
                       const info = getSeguradoraTimeInfo(l);
                       return (
-                        <div key={l.id} className="p-2.5 rounded-lg border border-red-300 bg-white flex items-center justify-between text-xs shadow-xs">
+                        <div key={l.id} className="p-2.5 rounded-lg border border-red-300 bg-white flex items-center justify-between text-xs shadow-2xs">
                           <div>
                             <div className="font-bold text-slate-900">{l.rota}</div>
                             <div className="text-[11px] text-slate-600">
@@ -2162,8 +2556,8 @@ const ExternalLoads = () => {
             {!hasNotificationPermission && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs">
                 <div>
-                  <div className="font-bold text-amber-900">Deseja ser notificado no Windows?</div>
-                  <div className="text-amber-700 text-[11px]">Receba avisos instantâneos mesmo se estiver com outra aba aberta.</div>
+                  <div className="font-bold text-amber-900">Deseja ser notificado no navegador?</div>
+                  <div className="text-amber-700 text-[11px]">Receba avisos instantâneos mesmo com outra aba aberta.</div>
                 </div>
                 <Button size="sm" onClick={requestNotificationPermission} className="bg-amber-600 hover:bg-amber-700 text-white h-7 text-xs">
                   Ativar Agora
