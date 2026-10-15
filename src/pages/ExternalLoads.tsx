@@ -23,8 +23,19 @@ import {
   Trash2,
   FileText,
   Bookmark,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Bell,
+  BellRing,
+  Sparkles,
+  ShieldAlert,
+  CheckCircle2,
+  Volume2,
+  VolumeX,
+  Clock,
+  ArrowRight,
+  Check
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -77,9 +88,48 @@ interface ExternalLoad {
   complementaryValue?: number;
 }
 
-type SortConfig = {
-  key: string;
-  direction: 'asc' | 'desc' | null;
+const getLoadKey = (l: { rota?: string; observacoes?: string; data?: string; id?: string }) => {
+  const obs = (l.observacoes || '').trim().toUpperCase();
+  const rota = (l.rota || '').trim().toUpperCase();
+  const data = (l.data || '').trim();
+  if (obs) return `${obs}__${rota}`;
+  return `${data}__${rota}`;
+};
+
+const playNotificationSound = () => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(587.33, now); // D5
+    osc.frequency.setValueAtTime(880, now + 0.1); // A5
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } catch (e) {
+    console.log("Audio notification not supported:", e);
+  }
+};
+
+const sendDesktopNotification = (title: string, body: string) => {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    try {
+      new Notification(title, {
+        body,
+        icon: "/logo.png"
+      });
+    } catch (e) {
+      console.log("Desktop notification error:", e);
+    }
+  }
 };
 
 const ExternalLoads = () => {
@@ -95,6 +145,45 @@ const ExternalLoads = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[], special: any[] }>({ cif: [], fob: [], equalization: [], special: [] });
   const [manualSearch, setManualSearch] = useState("");
+
+  // Sistema de Notificações & Monitoramento de Mudanças
+  const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'AGENCIANDO' | 'SEGURADORA' | 'CONTRATADO'>('ALL');
+  const [newLoadKeys, setNewLoadKeys] = useState<Set<string>>(new Set());
+  const [statusChangedKeys, setStatusChangedKeys] = useState<Record<string, { oldStatus: string; newStatus: string }>>({});
+  const [showChangesModal, setShowChangesModal] = useState<boolean>(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(180); // 3 minutos por padrão
+  const [lastCheckTime, setLastCheckTime] = useState<string>('');
+  const [hasNotificationPermission, setHasNotificationPermission] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission === 'granted';
+    }
+    return false;
+  });
+
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      showError("Seu navegador não suporta notificações de área de trabalho.");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setHasNotificationPermission(true);
+        showSuccess("Notificações no Windows/Navegador ativadas!");
+        sendDesktopNotification("Midas Logística", "Notificações ativadas! Você será avisado quando houver novas cargas ou mudanças de status.");
+      } else {
+        showError("Permissão de notificação negada no navegador.");
+      }
+    } catch (e: any) {
+      showError("Erro ao solicitar permissão: " + e.message);
+    }
+  };
+
+  const currentLoadsRef = useRef<ExternalLoad[]>([]);
+  useEffect(() => {
+    currentLoadsRef.current = currentLoads;
+  }, [currentLoads]);
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
@@ -414,7 +503,7 @@ const ExternalLoads = () => {
     return strVal;
   };
 
-  const updateFromGoogleSheets = async () => {
+  const updateFromGoogleSheets = async (isAuto: boolean = false) => {
     setUpdating(true);
     try {
       const response = await fetch(SHEET_URL);
@@ -495,8 +584,37 @@ const ExternalLoads = () => {
         };
       });
 
+      // Comparação e detecção de novidades e mudanças de status
+      const previousList = currentLoadsRef.current;
+      const detectedNewKeys = new Set<string>();
+      const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
+
+      if (previousList && previousList.length > 0) {
+        const prevMap = new Map<string, ExternalLoad>();
+        previousList.forEach(l => {
+          prevMap.set(getLoadKey(l), l);
+        });
+
+        newLoads.forEach(load => {
+          const key = getLoadKey(load);
+          const existing = prevMap.get(key);
+          if (!existing) {
+            detectedNewKeys.add(key);
+          } else {
+            const oldStatus = (existing.status || '').trim();
+            const newStatus = (load.status || '').trim();
+            if (oldStatus.toUpperCase() !== newStatus.toUpperCase()) {
+              detectedStatusDiffs[key] = {
+                oldStatus: oldStatus || '(Vazio)',
+                newStatus: newStatus || '(Vazio)'
+              };
+            }
+          }
+        });
+      }
+
       await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
-      if (currentLoads.length > 0) {
+      if (previousList.length > 0) {
         await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
       }
 
@@ -509,16 +627,65 @@ const ExternalLoads = () => {
 
       if (insertError) throw insertError;
 
-      setPreviousLoads(currentLoads);
+      setPreviousLoads(previousList);
       setCurrentLoads(newLoads);
       setViewMode('current');
-      showSuccess(`Dados atualizados!`);
+      setLastCheckTime(new Date().toLocaleTimeString('pt-BR'));
+
+      // Processar notificações caso haja novidades ou mudanças
+      const hasNew = detectedNewKeys.size > 0;
+      const hasChanged = Object.keys(detectedStatusDiffs).length > 0;
+
+      if (hasNew || hasChanged) {
+        setNewLoadKeys(prev => {
+          const next = new Set(prev);
+          detectedNewKeys.forEach(k => next.add(k));
+          return next;
+        });
+
+        setStatusChangedKeys(prev => ({
+          ...prev,
+          ...detectedStatusDiffs
+        }));
+
+        if (soundEnabled) {
+          playNotificationSound();
+        }
+
+        let alertMsg = "";
+        if (hasNew && hasChanged) {
+          alertMsg = `${detectedNewKeys.size} nova(s) carga(s) e ${Object.keys(detectedStatusDiffs).length} alteração(ões) de status detectadas!`;
+        } else if (hasNew) {
+          alertMsg = `${detectedNewKeys.size} nova(s) carga(s) encontrada(s) na planilha!`;
+        } else {
+          alertMsg = `${Object.keys(detectedStatusDiffs).length} mudança(s) de status detectada(s) na planilha!`;
+        }
+
+        sendDesktopNotification("Midas Log - Atualização de Cargas", alertMsg);
+        showSuccess(`🔔 ${alertMsg}`);
+      } else {
+        if (!isAuto) {
+          showSuccess("Planilha sincronizada! Nenhuma alteração encontrada.");
+        }
+      }
     } catch (error: any) {
-      showError("Erro ao atualizar: " + error.message);
+      if (!isAuto) {
+        showError("Erro ao atualizar: " + error.message);
+      } else {
+        console.warn("Erro na verificação automática:", error);
+      }
     } finally {
       setUpdating(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
+    const interval = setInterval(() => {
+      updateFromGoogleSheets(true);
+    }, autoRefreshInterval * 1000);
+    return () => clearInterval(interval);
+  }, [autoRefreshInterval, soundEnabled]);
 
   const handleSaveLoad = async (load: ExternalLoad) => {
     const driverName = prompt("Nome do motorista que aceitou a carga:");
@@ -603,8 +770,43 @@ const ExternalLoads = () => {
     return sortableItems;
   }, [activeData, sortConfig]);
 
+  const counts = useMemo(() => {
+    let novas = 0;
+    let seguradora = 0;
+    let contratado = 0;
+    let agenciando = 0;
+
+    activeData.forEach(l => {
+      const key = getLoadKey(l);
+      if (newLoadKeys.has(key)) novas++;
+      const s = normalizeText(l.status);
+      if (s.includes('seguradora')) seguradora++;
+      else if (s.includes('contratad')) contratado++;
+      else if (s.includes('agenciando')) agenciando++;
+    });
+
+    return {
+      total: activeData.length,
+      novas,
+      seguradora,
+      contratado,
+      agenciando
+    };
+  }, [activeData, newLoadKeys]);
+
   const filteredData = useMemo(() => {
     return sortedData.filter(row => {
+      // Filtro Rápido por Status / Novas Cargas
+      if (quickStatusFilter === 'NEW') {
+        if (!newLoadKeys.has(getLoadKey(row))) return false;
+      } else if (quickStatusFilter === 'SEGURADORA') {
+        if (!normalizeText(row.status).includes('seguradora')) return false;
+      } else if (quickStatusFilter === 'CONTRATADO') {
+        if (!normalizeText(row.status).includes('contratad')) return false;
+      } else if (quickStatusFilter === 'AGENCIANDO') {
+        if (!normalizeText(row.status).includes('agenciando')) return false;
+      }
+
       const matchesFilters = Object.entries(columnFilters).every(([col, value]) => {
         if (!value) return true;
         if (col === 'veiculo') {
@@ -621,7 +823,58 @@ const ExternalLoads = () => {
       const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
       return matchesFilters && matchesUF;
     });
-  }, [sortedData, columnFilters, selectedUFs]);
+  }, [sortedData, columnFilters, selectedUFs, quickStatusFilter, newLoadKeys]);
+
+  const renderStatusBadge = (load: ExternalLoad) => {
+    const statusRaw = (load.status || '').trim();
+    const statusNorm = normalizeText(statusRaw);
+    const key = getLoadKey(load);
+    const changed = statusChangedKeys[key];
+
+    let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
+    let icon = null;
+    let label = statusRaw || "PENDENTE";
+
+    if (statusNorm.includes('seguradora')) {
+      badgeStyle = "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-sm animate-pulse";
+      icon = <ShieldAlert size={12} className="text-amber-600" />;
+      label = "NA SEGURADORA";
+    } else if (statusNorm.includes('contratado midas')) {
+      badgeStyle = "bg-purple-100 text-purple-800 border-purple-300 font-bold";
+      icon = <CheckCircle2 size={12} className="text-purple-600" />;
+      label = "CONTRATADO MIDAS";
+    } else if (statusNorm.includes('contratado transagil') || statusNorm.includes('contratado transágil')) {
+      badgeStyle = "bg-blue-100 text-blue-800 border-blue-300 font-bold";
+      icon = <CheckCircle2 size={12} className="text-blue-600" />;
+      label = "CONTRATADO TRANSÁGIL";
+    } else if (statusNorm.includes('contratad')) {
+      badgeStyle = "bg-indigo-100 text-indigo-800 border-indigo-300 font-bold";
+      icon = <CheckCircle2 size={12} className="text-indigo-600" />;
+    } else if (statusNorm.includes('agenciando')) {
+      badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
+      icon = <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping inline-block" />;
+      label = "AGENCIANDO";
+    } else if (statusNorm.includes('indisponivel') || statusNorm.includes('indisponível')) {
+      badgeStyle = "bg-red-50 text-red-700 border-red-200 font-semibold";
+      label = "INDISPONÍVEL";
+    }
+
+    return (
+      <div className="flex flex-col gap-1 items-center">
+        <div className={`px-2.5 py-1 rounded-full text-[10px] border flex items-center justify-center gap-1.5 whitespace-nowrap ${badgeStyle}`}>
+          {icon}
+          <span>{label}</span>
+        </div>
+        {changed && (
+          <span className="text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1 shadow-xs" title={`Status anterior: ${changed.oldStatus}`}>
+            <span>De: {changed.oldStatus}</span>
+            <ArrowRight size={8} />
+            <span>Para: {changed.newStatus}</span>
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const allUFs = useMemo(() => {
     const ufs = new Set(activeData.map(l => l.uf.toUpperCase()));
@@ -878,6 +1131,82 @@ const ExternalLoads = () => {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Status da última verificação */}
+          {lastCheckTime && (
+            <span className="hidden xl:inline-block text-[11px] text-slate-400 font-medium mr-1">
+              Verificado às {lastCheckTime}
+            </span>
+          )}
+
+          {/* Seletor de Auto-atualização */}
+          <div className="hidden lg:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs">
+            <Clock size={12} className="text-slate-500" />
+            <span className="text-[10px] text-slate-500 font-medium">Auto-atualizar:</span>
+            <Select 
+              value={String(autoRefreshInterval)} 
+              onValueChange={(v) => setAutoRefreshInterval(Number(v))}
+            >
+              <SelectTrigger className="h-6 w-24 text-[10px] bg-white border-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="60" className="text-xs">1 min</SelectItem>
+                <SelectItem value="180" className="text-xs">3 min</SelectItem>
+                <SelectItem value="300" className="text-xs">5 min</SelectItem>
+                <SelectItem value="600" className="text-xs">10 min</SelectItem>
+                <SelectItem value="0" className="text-xs">Desativado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Botão de Som */}
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+              setSoundEnabled(!soundEnabled);
+              if (!soundEnabled) playNotificationSound();
+            }} 
+            title={soundEnabled ? "Notificação sonora ativada (clique para silenciar)" : "Silenciado (clique para ativar)"}
+            className="h-8 w-8 text-slate-600 hover:text-amber-600 hover:bg-amber-50"
+          >
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} className="text-slate-400" />}
+          </Button>
+
+          {/* Ativar Notificações do Sistema */}
+          {!hasNotificationPermission && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={requestNotificationPermission} 
+              className="gap-1.5 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 h-8 text-xs font-semibold"
+              title="Receba alertas no Windows/navegador quando surgirem novas cargas ou alterações"
+            >
+              <BellRing size={13} className="text-amber-600 animate-bounce" />
+              <span className="hidden md:inline">Ativar Alertas</span>
+            </Button>
+          )}
+
+          {/* Botão de Alertas / Mudanças */}
+          <Button 
+            variant={newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0 ? "default" : "outline"}
+            size="sm" 
+            onClick={() => setShowChangesModal(true)} 
+            className={`gap-1.5 h-8 text-xs relative ${
+              newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0 
+                ? "bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-sm" 
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <Bell size={13} />
+            <span className="hidden sm:inline">Alertas</span>
+            {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
+              <span className="h-4 min-w-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center animate-pulse">
+                {newLoadKeys.size + Object.keys(statusChangedKeys).length}
+              </span>
+            )}
+          </Button>
+
           <Link to="/admin/external-loads/saved" target="_blank">
             <Button variant="outline" size="sm" className="gap-2 border-slate-200 hover:bg-slate-50 h-8 text-xs">
               <Bookmark size={14} /> <span className="hidden sm:inline">Cargas Salvas</span>
@@ -894,7 +1223,7 @@ const ExternalLoads = () => {
             <Printer size={14} /> <span className="hidden sm:inline">Imprimir</span>
           </Button>
 
-          <Button variant="outline" size="sm" onClick={updateFromGoogleSheets} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs">
+          <Button variant="outline" size="sm" onClick={() => updateFromGoogleSheets(false)} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs font-semibold">
             {updating ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
             <span className="hidden sm:inline">Atualizar</span>
           </Button>
@@ -903,14 +1232,123 @@ const ExternalLoads = () => {
 
       <main className="flex-1 flex flex-col p-2 lg:p-4 gap-2 overflow-hidden">
         <Card className="border-none shadow-sm overflow-hidden flex flex-col flex-1">
-          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-2 py-1.5 px-4">
-            <div className="flex items-center gap-4">
-              <CardTitle className="text-md flex items-center gap-2">
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50/50 border-b gap-3 py-2 px-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-md flex items-center gap-2 mr-2">
                 <Filter size={16} className="text-amber-600" /> 
                 {viewMode === 'current' ? 'Cargas Atuais' : 'Versão Anterior'}
               </CardTitle>
-              <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">
-                {filteredData.length} cargas
+
+              {/* Botões de Filtro Rápido */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  variant={quickStatusFilter === 'ALL' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setQuickStatusFilter('ALL')}
+                  className={`h-7 text-xs px-2.5 rounded-full ${
+                    quickStatusFilter === 'ALL'
+                      ? 'bg-slate-900 text-white font-bold'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  Todas <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">{counts.total}</span>
+                </Button>
+
+                <Button
+                  variant={quickStatusFilter === 'NEW' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setQuickStatusFilter('NEW')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
+                    quickStatusFilter === 'NEW'
+                      ? 'bg-emerald-600 text-white font-bold'
+                      : counts.novas > 0
+                        ? 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold animate-pulse'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Sparkles size={11} /> Novas
+                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    quickStatusFilter === 'NEW' ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'
+                  }`}>
+                    {counts.novas}
+                  </span>
+                </Button>
+
+                <Button
+                  variant={quickStatusFilter === 'SEGURADORA' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setQuickStatusFilter('SEGURADORA')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
+                    quickStatusFilter === 'SEGURADORA'
+                      ? 'bg-amber-600 text-white font-bold'
+                      : counts.seguradora > 0
+                        ? 'border-amber-400 text-amber-900 bg-amber-50 hover:bg-amber-100 font-extrabold shadow-xs'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <ShieldAlert size={11} /> Na Seguradora
+                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    quickStatusFilter === 'SEGURADORA' ? 'bg-white/20' : 'bg-amber-200 text-amber-900'
+                  }`}>
+                    {counts.seguradora}
+                  </span>
+                </Button>
+
+                <Button
+                  variant={quickStatusFilter === 'CONTRATADO' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setQuickStatusFilter('CONTRATADO')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
+                    quickStatusFilter === 'CONTRATADO'
+                      ? 'bg-purple-600 text-white font-bold'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <CheckCircle2 size={11} /> Contratadas
+                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    quickStatusFilter === 'CONTRATADO' ? 'bg-white/20' : 'bg-purple-100 text-purple-800'
+                  }`}>
+                    {counts.contratado}
+                  </span>
+                </Button>
+
+                <Button
+                  variant={quickStatusFilter === 'AGENCIANDO' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setQuickStatusFilter('AGENCIANDO')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 ${
+                    quickStatusFilter === 'AGENCIANDO'
+                      ? 'bg-emerald-700 text-white font-bold'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Agenciando
+                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    quickStatusFilter === 'AGENCIANDO' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {counts.agenciando}
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {(newLoadKeys.size > 0 || Object.keys(statusChangedKeys).length > 0) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setNewLoadKeys(new Set());
+                    setStatusChangedKeys({});
+                    showSuccess("Alertas marcados como lidos.");
+                  }}
+                  className="text-[11px] h-7 text-slate-500 hover:text-slate-800"
+                >
+                  <Check size={12} className="mr-1" /> Limpar Alertas
+                </Button>
+              )}
+              <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                {filteredData.length} exibidas
               </span>
             </div>
           </CardHeader>
@@ -1276,8 +1714,19 @@ const ExternalLoads = () => {
                           </DialogContent>
                         </Dialog>
                       </TableCell>
-                      <TableCell className="text-[11px]">{load.data}</TableCell>
-                      <TableCell className="text-[11px] font-medium max-w-[300px] truncate" title={load.rota}>{load.rota}</TableCell>
+                      <TableCell className="text-[11px] font-medium whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          {newLoadKeys.has(getLoadKey(load)) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white animate-bounce shadow-sm uppercase tracking-wider">
+                              <Sparkles size={10} /> NOVA
+                            </span>
+                          )}
+                          <span>{load.data}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-[11px] font-medium max-w-[300px]">
+                        <div className="truncate" title={load.rota}>{load.rota}</div>
+                      </TableCell>
                       <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
                       <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
                       <TableCell className="text-[11px] text-right font-medium whitespace-nowrap">{formatWeight(load.peso)}</TableCell>
@@ -1308,7 +1757,9 @@ const ExternalLoads = () => {
                         </Select>
                       </TableCell>
                       <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
-                      <TableCell className="text-[11px]"><div className={`px-2 py-1 rounded-full text-[10px] font-bold text-center ${load.status.includes('AGENCIANDO') ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{load.status}</div></TableCell>
+                      <TableCell className="text-[11px]">
+                        {renderStatusBadge(load)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1317,6 +1768,120 @@ const ExternalLoads = () => {
           </CardContent>
         </Card>
       </main>
+
+      {/* Modal de Detalhes dos Alertas / Alterações */}
+      <Dialog open={showChangesModal} onOpenChange={setShowChangesModal}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Bell className="text-amber-600" size={20} />
+              Resumo de Notificações e Alterações
+            </DialogTitle>
+            <DialogDescription>
+              Mudanças detectadas na planilha do Google Sheets desde a última checagem.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Novas Cargas */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5 mb-2">
+                <Sparkles size={14} /> Novas Cargas Detectadas ({newLoadKeys.size})
+              </h3>
+              {newLoadKeys.size === 0 ? (
+                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded border">Nenhuma nova carga adicionada recentemente.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {currentLoads
+                    .filter(l => newLoadKeys.has(getLoadKey(l)))
+                    .map(l => (
+                      <div key={l.id} className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/60 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-bold text-slate-900">{l.rota}</div>
+                          <div className="text-[11px] text-slate-500">
+                            Data: <span className="font-semibold">{l.data || 'N/A'}</span> • UF: <span className="font-bold">{l.uf}</span> • Peso: {formatWeight(l.peso)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-800">
+                            {l.status || 'NOVA'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Alterações de Status */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5 mb-2">
+                <ShieldAlert size={14} /> Alterações de Status ({Object.keys(statusChangedKeys).length})
+              </h3>
+              {Object.keys(statusChangedKeys).length === 0 ? (
+                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded border">Nenhuma alteração de status recente.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {Object.entries(statusChangedKeys).map(([key, diff]) => {
+                    const matched = currentLoads.find(l => getLoadKey(l) === key);
+                    return (
+                      <div key={key} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/60 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-bold text-slate-900">{matched?.rota || key}</div>
+                          <div className="text-[11px] text-slate-500">
+                            Data: {matched?.data || 'N/A'} • UF: {matched?.uf || 'N/A'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-700 line-through">
+                            {diff.oldStatus}
+                          </span>
+                          <ArrowRight size={12} className="text-amber-600" />
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                            {diff.newStatus}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Dica de Notificação do Sistema */}
+            {!hasNotificationPermission && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs">
+                <div>
+                  <div className="font-bold text-amber-900">Deseja ser notificado no Windows?</div>
+                  <div className="text-amber-700 text-[11px]">Receba avisos instantâneos mesmo se estiver com outra aba aberta.</div>
+                </div>
+                <Button size="sm" onClick={requestNotificationPermission} className="bg-amber-600 hover:bg-amber-700 text-white h-7 text-xs">
+                  Ativar Agora
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex justify-between items-center sm:justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setNewLoadKeys(new Set());
+                setStatusChangedKeys({});
+                setShowChangesModal(false);
+                showSuccess("Alertas limpos.");
+              }}
+              className="text-xs text-slate-500 hover:text-slate-800"
+            >
+              <Check size={14} className="mr-1" /> Marcar todos como lidos
+            </Button>
+            <Button size="sm" onClick={() => setShowChangesModal(false)} className="bg-slate-900 text-white">
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
