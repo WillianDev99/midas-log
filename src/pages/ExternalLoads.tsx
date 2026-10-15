@@ -86,6 +86,8 @@ interface ExternalLoad {
   useEqualizationTable?: boolean;
   manualVehicleType?: string;
   complementaryValue?: number;
+  seguradoraEnteredAt?: string;
+  seguradoraAlerted2h?: boolean;
 }
 
 const getLoadKey = (l: { rota?: string; observacoes?: string; data?: string; id?: string }) => {
@@ -118,6 +120,47 @@ const playNotificationSound = () => {
   }
 };
 
+const playWarningSound = () => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.setValueAtTime(880, now + 0.12);
+    osc.frequency.setValueAtTime(440, now + 0.24);
+    osc.frequency.setValueAtTime(880, now + 0.36);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.55);
+  } catch (e) {
+    console.log("Audio warning error:", e);
+  }
+};
+
+const getStoredSeguradoraTimestamps = (): Record<string, { enteredAt: string; alerted2h?: boolean }> => {
+  try {
+    const data = localStorage.getItem('midas_seguradora_timestamps_v1');
+    return data ? JSON.parse(data) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveStoredSeguradoraTimestamps = (map: Record<string, { enteredAt: string; alerted2h?: boolean }>) => {
+  try {
+    localStorage.setItem('midas_seguradora_timestamps_v1', JSON.stringify(map));
+  } catch (e) {
+    console.error("Erro ao salvar timestamps no localStorage:", e);
+  }
+};
+
 const sendDesktopNotification = (title: string, body: string) => {
   if (typeof window === "undefined" || !("Notification" in window)) return;
   if (Notification.permission === "granted") {
@@ -147,7 +190,7 @@ const ExternalLoads = () => {
   const [manualSearch, setManualSearch] = useState("");
 
   // Sistema de Notificações & Monitoramento de Mudanças
-  const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'AGENCIANDO' | 'SEGURADORA' | 'CONTRATADO'>('ALL');
+  const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'AGENCIANDO' | 'SEGURADORA' | 'SEGURADORA_OVERDUE' | 'CONTRATADO'>('ALL');
   const [newLoadKeys, setNewLoadKeys] = useState<Set<string>>(new Set());
   const [statusChangedKeys, setStatusChangedKeys] = useState<Record<string, { oldStatus: string; newStatus: string }>>({});
   const [showChangesModal, setShowChangesModal] = useState<boolean>(false);
@@ -184,6 +227,107 @@ const ExternalLoads = () => {
   useEffect(() => {
     currentLoadsRef.current = currentLoads;
   }, [currentLoads]);
+
+  // Timer e monitoramento em tempo real do tempo na seguradora (Limite de 2h)
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  const getSeguradoraTimeInfo = (load: ExternalLoad) => {
+    if (!load.seguradoraEnteredAt) return null;
+    const entered = new Date(load.seguradoraEnteredAt);
+    if (isNaN(entered.getTime())) return null;
+
+    const diffMs = Math.max(0, currentTime - entered.getTime());
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const isOverdue = totalMinutes >= 120; // 2 horas limite
+
+    const enteredFormatted = entered.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const timeElapsedStr = hours > 0 ? `${hours}h ${minutes.toString().padStart(2, '0')}m` : `${minutes}m`;
+
+    return {
+      enteredFormatted,
+      timeElapsedStr,
+      totalMinutes,
+      isOverdue
+    };
+  };
+
+  const handleEditSeguradoraTime = (load: ExternalLoad) => {
+    const currentInfo = getSeguradoraTimeInfo(load);
+    const defaultVal = currentInfo ? currentInfo.enteredFormatted : new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const userTime = prompt(`Informe o horário em que a carga entrou na seguradora (HH:mm):\nExemplo: 09:30`, defaultVal);
+    if (!userTime) return;
+
+    const parts = userTime.trim().split(':');
+    if (parts.length < 2 || isNaN(Number(parts[0])) || isNaN(Number(parts[1]))) {
+      showError("Formato de hora inválido. Use HH:mm (ex: 10:30)");
+      return;
+    }
+
+    const h = Number(parts[0]);
+    const m = Number(parts[1]);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+
+    if (d.getTime() > Date.now()) {
+      d.setDate(d.getDate() - 1);
+    }
+
+    const isoTime = d.toISOString();
+    const key = getLoadKey(load);
+
+    const stored = getStoredSeguradoraTimestamps();
+    stored[key] = { enteredAt: isoTime, alerted2h: false };
+    saveStoredSeguradoraTimestamps(stored);
+
+    handleUpdateLoad(load.id, { seguradoraEnteredAt: isoTime, seguradoraAlerted2h: false });
+    showSuccess(`Horário da seguradora ajustado para ${userTime}!`);
+  };
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setCurrentTime(now);
+
+      const storedTimestamps = getStoredSeguradoraTimestamps();
+      let updatedAny = false;
+
+      currentLoadsRef.current.forEach(load => {
+        const isSeguradora = normalizeText(load.status).includes('seguradora');
+        if (isSeguradora && load.seguradoraEnteredAt) {
+          const enteredMs = new Date(load.seguradoraEnteredAt).getTime();
+          const elapsedMinutes = Math.floor((now - enteredMs) / (1000 * 60));
+
+          if (elapsedMinutes >= 120 && !load.seguradoraAlerted2h) {
+            load.seguradoraAlerted2h = true;
+            updatedAny = true;
+
+            const key = getLoadKey(load);
+            if (storedTimestamps[key]) {
+              storedTimestamps[key].alerted2h = true;
+            }
+
+            if (soundEnabled) {
+              playWarningSound();
+            }
+
+            const alertTitle = "🚨 TEMPO LIMITE EXCEDIDO (2H) - SEGURADORA";
+            const alertMsg = `Atenção: A carga "${load.rota}" está há mais de 2 horas na seguradora!`;
+            sendDesktopNotification(alertTitle, alertMsg);
+            showError(`🚨 LIMITE 2H EXCEDIDO: ${load.rota} está há mais de 2 horas na seguradora!`);
+          }
+        }
+      });
+
+      if (updatedAny) {
+        saveStoredSeguradoraTimestamps(storedTimestamps);
+        setCurrentLoads([...currentLoadsRef.current]);
+      }
+    }, 15000);
+
+    return () => clearInterval(timer);
+  }, [soundEnabled]);
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
@@ -382,7 +526,27 @@ const ExternalLoads = () => {
         return;
       }
 
-      if (current) setCurrentLoads(current.loads);
+      if (current) {
+        const storedTimestamps = getStoredSeguradoraTimestamps();
+        const mergedLoads = (current.loads || []).map((l: ExternalLoad) => {
+          const isSeguradora = normalizeText(l.status).includes('seguradora');
+          if (isSeguradora) {
+            const key = getLoadKey(l);
+            const stored = storedTimestamps[key];
+            const enteredAt = l.seguradoraEnteredAt || stored?.enteredAt || new Date().toISOString();
+            const alerted2h = l.seguradoraAlerted2h ?? stored?.alerted2h ?? false;
+            storedTimestamps[key] = { enteredAt, alerted2h };
+            return {
+              ...l,
+              seguradoraEnteredAt: enteredAt,
+              seguradoraAlerted2h: alerted2h
+            };
+          }
+          return l;
+        });
+        saveStoredSeguradoraTimestamps(storedTimestamps);
+        setCurrentLoads(mergedLoads);
+      }
       if (previous) setPreviousLoads(previous.loads);
     } catch (error: any) {
       console.error("Erro ao carregar dados salvos:", error);
@@ -558,6 +722,19 @@ const ExternalLoads = () => {
         return (rotaVal && String(rotaVal).trim() !== "") || (dataVal && String(dataVal).trim() !== "");
       });
 
+      const previousList = currentLoadsRef.current;
+      const prevMap = new Map<string, ExternalLoad>();
+      if (previousList && previousList.length > 0) {
+        previousList.forEach(l => {
+          prevMap.set(getLoadKey(l), l);
+        });
+      }
+
+      const storedTimestamps = getStoredSeguradoraTimestamps();
+      const detectedNewKeys = new Set<string>();
+      const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
+      const newSeguradoraLoads: ExternalLoad[] = [];
+
       const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
         const rota = String(row[colRota] || '');
         const rawUF = String(row[colUF] || '');
@@ -566,8 +743,42 @@ const ExternalLoads = () => {
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
         const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
-        
-        return {
+        const statusStr = colStatus !== -1 ? String(row[colStatus] || '').trim() : '';
+
+        // Obter chave da carga
+        const obsVal = colObs !== -1 ? String(row[colObs] || '') : '';
+        const key = getLoadKey({ rota, observacoes: obsVal, data: excelSerialToFormattedDate(row[colData]) });
+        const isSeguradora = normalizeText(statusStr).includes('seguradora');
+        const existing = prevMap.get(key);
+        const stored = storedTimestamps[key];
+
+        let seguradoraEnteredAt: string | undefined = undefined;
+        let seguradoraAlerted2h: boolean | undefined = undefined;
+
+        if (isSeguradora) {
+          if (existing?.seguradoraEnteredAt) {
+            seguradoraEnteredAt = existing.seguradoraEnteredAt;
+            seguradoraAlerted2h = existing.seguradoraAlerted2h;
+          } else if (stored?.enteredAt) {
+            seguradoraEnteredAt = stored.enteredAt;
+            seguradoraAlerted2h = stored.alerted2h;
+          } else {
+            // Entrou na seguradora agora!
+            seguradoraEnteredAt = new Date().toISOString();
+            seguradoraAlerted2h = false;
+          }
+
+          storedTimestamps[key] = {
+            enteredAt: seguradoraEnteredAt,
+            alerted2h: !!seguradoraAlerted2h
+          };
+        } else {
+          if (storedTimestamps[key]) {
+            delete storedTimestamps[key];
+          }
+        }
+
+        const loadItem: ExternalLoad = {
           id: `load-${idx}-${Date.now()}`,
           data: excelSerialToFormattedDate(row[colData]),
           rota: rota,
@@ -575,43 +786,43 @@ const ExternalLoads = () => {
           uf: cleanUF,
           peso: mainWeightStr,
           frete: mainFreightType,
-          observacoes: colObs !== -1 ? String(row[colObs] || '') : '',
-          status: colStatus !== -1 ? String(row[colStatus] || '') : '',
+          observacoes: obsVal,
+          status: statusStr,
           parsedDeliveries: parsed,
           totalToPay: totalFreight * 0.7,
           manualDeliveryCount: parsed.length,
-          useEqualizationTable: false
+          useEqualizationTable: false,
+          seguradoraEnteredAt,
+          seguradoraAlerted2h
         };
-      });
 
-      // Comparação e detecção de novidades e mudanças de status
-      const previousList = currentLoadsRef.current;
-      const detectedNewKeys = new Set<string>();
-      const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
-
-      if (previousList && previousList.length > 0) {
-        const prevMap = new Map<string, ExternalLoad>();
-        previousList.forEach(l => {
-          prevMap.set(getLoadKey(l), l);
-        });
-
-        newLoads.forEach(load => {
-          const key = getLoadKey(load);
-          const existing = prevMap.get(key);
+        if (previousList && previousList.length > 0) {
           if (!existing) {
             detectedNewKeys.add(key);
+            if (isSeguradora) {
+              newSeguradoraLoads.push(loadItem);
+            }
           } else {
             const oldStatus = (existing.status || '').trim();
-            const newStatus = (load.status || '').trim();
+            const newStatus = statusStr;
             if (oldStatus.toUpperCase() !== newStatus.toUpperCase()) {
               detectedStatusDiffs[key] = {
                 oldStatus: oldStatus || '(Vazio)',
                 newStatus: newStatus || '(Vazio)'
               };
+
+              // Se acabou de mudar para SEGURADORA
+              if (!normalizeText(oldStatus).includes('seguradora') && isSeguradora) {
+                newSeguradoraLoads.push(loadItem);
+              }
             }
           }
-        });
-      }
+        }
+
+        return loadItem;
+      });
+
+      saveStoredSeguradoraTimestamps(storedTimestamps);
 
       await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
       if (previousList.length > 0) {
@@ -663,6 +874,12 @@ const ExternalLoads = () => {
 
         sendDesktopNotification("Midas Log - Atualização de Cargas", alertMsg);
         showSuccess(`🔔 ${alertMsg}`);
+
+        if (newSeguradoraLoads.length > 0) {
+          const segAlertMsg = `⚠️ ${newSeguradoraLoads.length} carga(s) colocada(s) na seguradora! Tempo limite de 2h iniciado.`;
+          sendDesktopNotification("🛡️ ENTRADA NA SEGURADORA (Limite: 2h)", segAlertMsg);
+          showSuccess(segAlertMsg);
+        }
       } else {
         if (!isAuto) {
           showSuccess("Planilha sincronizada! Nenhuma alteração encontrada.");
@@ -776,12 +993,17 @@ const ExternalLoads = () => {
     let contratado = 0;
     let agenciando = 0;
 
+    let seguradoraOverdue = 0;
+
     activeData.forEach(l => {
       const key = getLoadKey(l);
       if (newLoadKeys.has(key)) novas++;
       const s = normalizeText(l.status);
-      if (s.includes('seguradora')) seguradora++;
-      else if (s.includes('contratad')) contratado++;
+      if (s.includes('seguradora')) {
+        seguradora++;
+        const info = getSeguradoraTimeInfo(l);
+        if (info?.isOverdue) seguradoraOverdue++;
+      } else if (s.includes('contratad')) contratado++;
       else if (s.includes('agenciando')) agenciando++;
     });
 
@@ -789,18 +1011,23 @@ const ExternalLoads = () => {
       total: activeData.length,
       novas,
       seguradora,
+      seguradoraOverdue,
       contratado,
       agenciando
     };
-  }, [activeData, newLoadKeys]);
+  }, [activeData, newLoadKeys, currentTime]);
 
   const filteredData = useMemo(() => {
     return sortedData.filter(row => {
-      // Filtro Rápido por Status / Novas Cargas
+      // Filtro Rápido por Status / Novas Cargas / Seguradora Vencida
       if (quickStatusFilter === 'NEW') {
         if (!newLoadKeys.has(getLoadKey(row))) return false;
       } else if (quickStatusFilter === 'SEGURADORA') {
         if (!normalizeText(row.status).includes('seguradora')) return false;
+      } else if (quickStatusFilter === 'SEGURADORA_OVERDUE') {
+        if (!normalizeText(row.status).includes('seguradora')) return false;
+        const info = getSeguradoraTimeInfo(row);
+        if (!info?.isOverdue) return false;
       } else if (quickStatusFilter === 'CONTRATADO') {
         if (!normalizeText(row.status).includes('contratad')) return false;
       } else if (quickStatusFilter === 'AGENCIANDO') {
@@ -823,22 +1050,29 @@ const ExternalLoads = () => {
       const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
       return matchesFilters && matchesUF;
     });
-  }, [sortedData, columnFilters, selectedUFs, quickStatusFilter, newLoadKeys]);
+  }, [sortedData, columnFilters, selectedUFs, quickStatusFilter, newLoadKeys, currentTime]);
 
   const renderStatusBadge = (load: ExternalLoad) => {
     const statusRaw = (load.status || '').trim();
     const statusNorm = normalizeText(statusRaw);
     const key = getLoadKey(load);
     const changed = statusChangedKeys[key];
+    const segInfo = statusNorm.includes('seguradora') ? getSeguradoraTimeInfo(load) : null;
 
     let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
     let icon = null;
     let label = statusRaw || "PENDENTE";
 
     if (statusNorm.includes('seguradora')) {
-      badgeStyle = "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-sm animate-pulse";
-      icon = <ShieldAlert size={12} className="text-amber-600" />;
-      label = "NA SEGURADORA";
+      if (segInfo?.isOverdue) {
+        badgeStyle = "bg-red-100 text-red-950 border-red-500 font-black shadow-md animate-pulse ring-2 ring-red-400";
+        icon = <ShieldAlert size={13} className="text-red-700 animate-bounce" />;
+        label = "SEGURADORA (+2H - URGENTE)";
+      } else {
+        badgeStyle = "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-sm";
+        icon = <ShieldAlert size={12} className="text-amber-600" />;
+        label = "NA SEGURADORA";
+      }
     } else if (statusNorm.includes('contratado midas')) {
       badgeStyle = "bg-purple-100 text-purple-800 border-purple-300 font-bold";
       icon = <CheckCircle2 size={12} className="text-purple-600" />;
@@ -865,6 +1099,28 @@ const ExternalLoads = () => {
           {icon}
           <span>{label}</span>
         </div>
+
+        {/* Informações de Tempo na Seguradora com Ajuste Manual */}
+        {segInfo && (
+          <button
+            type="button"
+            onClick={() => handleEditSeguradoraTime(load)}
+            title="Clique para ajustar o horário de entrada manualmente se necessário"
+            className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded border transition-all hover:scale-105 cursor-pointer shadow-xs ${
+              segInfo.isOverdue 
+                ? 'bg-red-100 text-red-950 border-red-400 font-black animate-pulse' 
+                : 'bg-amber-50 text-amber-900 border-amber-200 font-semibold'
+            }`}
+          >
+            <Clock size={10} className={segInfo.isOverdue ? 'text-red-600 animate-spin' : 'text-amber-600'} />
+            <span>Entrou: <strong>{segInfo.enteredFormatted}</strong></span>
+            <span>•</span>
+            <span className={segInfo.isOverdue ? 'font-black text-red-700 underline' : 'font-bold'}>
+              {segInfo.isOverdue ? `Passou ${segInfo.timeElapsedStr}` : `${segInfo.timeElapsedStr} decorridos`}
+            </span>
+          </button>
+        )}
+
         {changed && (
           <span className="text-[9px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1 shadow-xs" title={`Status anterior: ${changed.oldStatus}`}>
             <span>De: {changed.oldStatus}</span>
@@ -1293,6 +1549,24 @@ const ExternalLoads = () => {
                     {counts.seguradora}
                   </span>
                 </Button>
+
+                {counts.seguradoraOverdue > 0 && (
+                  <Button
+                    variant={quickStatusFilter === 'SEGURADORA_OVERDUE' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setQuickStatusFilter('SEGURADORA_OVERDUE')}
+                    className={`h-7 text-xs px-2.5 rounded-full gap-1 animate-pulse ${
+                      quickStatusFilter === 'SEGURADORA_OVERDUE'
+                        ? 'bg-red-700 text-white font-black ring-2 ring-red-400 shadow-md'
+                        : 'border-red-400 text-red-950 bg-red-100 hover:bg-red-200 font-black shadow-xs'
+                    }`}
+                  >
+                    <Clock size={11} className="text-red-700 animate-spin" /> +2h na Seguradora
+                    <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white">
+                      {counts.seguradoraOverdue} URGENTE
+                    </span>
+                  </Button>
+                )}
 
                 <Button
                   variant={quickStatusFilter === 'CONTRATADO' ? 'default' : 'outline'}
@@ -1783,6 +2057,42 @@ const ExternalLoads = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Cargas com mais de 2h na seguradora (URGENTE) */}
+            {counts.seguradoraOverdue > 0 && (
+              <div className="p-3 bg-red-50 border-2 border-red-500 rounded-lg shadow-sm">
+                <h3 className="text-xs font-black uppercase tracking-wider text-red-700 flex items-center gap-1.5 mb-2">
+                  <ShieldAlert size={16} className="text-red-600 animate-bounce" /> 
+                  🚨 Cargas com Tempo Limite Excedido na Seguradora (+2h) ({counts.seguradoraOverdue})
+                </h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {currentLoads
+                    .filter(l => {
+                      if (!normalizeText(l.status).includes('seguradora')) return false;
+                      const info = getSeguradoraTimeInfo(l);
+                      return info?.isOverdue;
+                    })
+                    .map(l => {
+                      const info = getSeguradoraTimeInfo(l);
+                      return (
+                        <div key={l.id} className="p-2.5 rounded-lg border border-red-300 bg-white flex items-center justify-between text-xs shadow-xs">
+                          <div>
+                            <div className="font-bold text-slate-900">{l.rota}</div>
+                            <div className="text-[11px] text-slate-600">
+                              Entrou: <span className="font-bold text-slate-900">{info?.enteredFormatted}</span> • UF: <span className="font-bold">{l.uf}</span> • Peso: {formatWeight(l.peso)}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="px-2.5 py-1 rounded text-[10px] font-black bg-red-600 text-white animate-pulse">
+                              Passou {info?.timeElapsedStr}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
             {/* Novas Cargas */}
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5 mb-2">
