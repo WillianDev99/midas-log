@@ -37,7 +37,8 @@ import {
   LayoutGrid,
   Table as TableIcon,
   MoreVertical,
-  Smartphone
+  Smartphone,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { ExportLoadsImageModal } from '@/components/ExportLoadsImageModal';
 
 interface ExternalLoad {
   id: string;
@@ -212,6 +214,7 @@ const ExternalLoads = () => {
     return 'table';
   });
   const [selectedDetailLoad, setSelectedDetailLoad] = useState<ExternalLoad | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Desbloqueio de áudio para iPhone XR / iOS Safari no primeiro toque
   useEffect(() => {
@@ -1541,6 +1544,15 @@ const ExternalLoads = () => {
             <Printer size={14} /> <span>Imprimir</span>
           </Button>
 
+          <Button 
+            onClick={() => setShowExportModal(true)} 
+            size="sm" 
+            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 h-8 text-xs font-semibold shadow-xs"
+            title="Baixar imagem das cargas e copiar legenda padrão para o WhatsApp"
+          >
+            <ImageIcon size={14} /> <span>Baixar Imagem</span>
+          </Button>
+
           <Button variant="outline" size="sm" onClick={() => updateFromGoogleSheets(false)} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs font-semibold">
             {updating ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
             <span>Atualizar</span>
@@ -1580,6 +1592,17 @@ const ExternalLoads = () => {
                 {newLoadKeys.size + Object.keys(statusChangedKeys).length}
               </span>
             )}
+          </Button>
+
+          {/* Baixar Imagem WhatsApp (Mobile) */}
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => setShowExportModal(true)} 
+            className="h-8 w-8 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            title="Baixar Cargas como Imagem (WhatsApp)"
+          >
+            <ImageIcon size={14} />
           </Button>
 
           {/* Atualizar */}
@@ -1637,6 +1660,15 @@ const ExternalLoads = () => {
                     <BellRing size={14} className="mr-2 text-amber-600" /> Ativar Alertas
                   </Button>
                 )}
+
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setShowExportModal(true)} 
+                  className="w-full justify-start text-xs h-8 text-emerald-700 hover:bg-emerald-50 font-bold"
+                >
+                  <ImageIcon size={14} className="mr-2 text-emerald-600" /> Baixar Imagem (WhatsApp)
+                </Button>
 
                 <Link to="/admin/external-loads/saved" className="block w-full">
                   <Button variant="ghost" size="sm" className="w-full justify-start text-xs h-8 text-slate-700">
@@ -2586,6 +2618,15 @@ const ExternalLoads = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Exportação das Cargas em Imagem (WhatsApp) */}
+      <ExportLoadsImageModal 
+        open={showExportModal} 
+        onOpenChange={setShowExportModal} 
+        loads={activeData} 
+        getVehicleType={getVehicleType} 
+        formatWeight={formatWeight} 
+      />
     </div>
   );
 };
