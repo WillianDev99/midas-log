@@ -18,7 +18,6 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { 
   Download, 
   Copy, 
@@ -29,7 +28,8 @@ import {
   Loader2, 
   Layers, 
   FileDown,
-  CheckCircle2
+  CheckCircle2,
+  Filter
 } from 'lucide-react';
 import { showSuccess, showError } from '@/utils/toast';
 
@@ -61,6 +61,16 @@ export const BRAZIL_STATES: Record<string, string> = {
   SP: 'São Paulo',
   SE: 'Sergipe',
   TO: 'Tocantins'
+};
+
+const normalizeText = (text: string) => {
+  if (!text) return "";
+  return text.toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
 };
 
 interface ExternalLoad {
@@ -135,14 +145,20 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
     return todayStr.replace(/\//g, '-');
   }, [todayStr]);
 
-  // Lista de UFs disponíveis nas cargas
+  // FILTRO OBRIGATÓRIO: Conforme solicitado pelo usuário, nas imagens para os motoristas
+  // vão apenas as cargas com status "Agenciando" (disponíveis para contratação)
+  const targetLoads = useMemo(() => {
+    return loads.filter(l => normalizeText(l.status).includes('agenciando'));
+  }, [loads]);
+
+  // Lista de UFs disponíveis nas cargas com status Agenciando
   const availableUFs = useMemo(() => {
     const ufs = new Set<string>();
-    loads.forEach(l => {
+    targetLoads.forEach(l => {
       if (l.uf) ufs.add(l.uf.trim().toUpperCase());
     });
     return Array.from(ufs).sort();
-  }, [loads]);
+  }, [targetLoads]);
 
   useEffect(() => {
     if (availableUFs.length > 0 && !availableUFs.includes(selectedState)) {
@@ -183,7 +199,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
   const currentExportData = useMemo(() => {
     if (activeTab === 'presets') {
       const p = presetDefinitions.find(x => x.id === selectedPreset);
-      const items = loads.filter(p ? p.filterFn : () => true);
+      const items = targetLoads.filter(p ? p.filterFn : () => true);
       return {
         title: p?.name || 'Padrão',
         caption: p?.caption || `Cargas Hidracor ${todayStr}`,
@@ -194,7 +210,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
 
     if (activeTab === 'state') {
       const stateName = BRAZIL_STATES[selectedState] || selectedState;
-      const items = loads.filter(l => (l.uf || '').trim().toUpperCase() === selectedState);
+      const items = targetLoads.filter(l => (l.uf || '').trim().toUpperCase() === selectedState);
       return {
         title: stateName,
         caption: `Cargas Hidracor ${todayStr}, ${stateName}`,
@@ -203,14 +219,14 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       };
     }
 
-    // activeTab === 'all' (Todas as cargas exibidas)
+    // activeTab === 'all' (Todas as cargas com status Agenciando)
     return {
-      title: 'Todas as Cargas',
+      title: 'Todas as Cargas Agenciando',
       caption: `Cargas Hidracor ${todayStr}`,
-      filename: `cargas-hidracor-todas-${todaySlug}.png`,
-      items: loads
+      filename: `cargas-hidracor-agenciando-${todaySlug}.png`,
+      items: targetLoads
     };
-  }, [activeTab, selectedPreset, selectedState, presetDefinitions, loads, todayStr, todaySlug]);
+  }, [activeTab, selectedPreset, selectedState, presetDefinitions, targetLoads, todayStr, todaySlug]);
 
   // Função para gerar o Canvas através do elemento escondido
   const generateCanvas = async (targetElement: HTMLElement): Promise<HTMLCanvasElement> => {
@@ -266,7 +282,6 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
             setTimeout(() => setCopiedImage(false), 2500);
             showSuccess("Imagem copiada! Basta dar Ctrl+V na conversa do WhatsApp.");
           } catch (clipErr) {
-            // Em caso de bloqueio pelo navegador, faz o download automático como fallback
             handleDownloadImage();
           }
         } else {
@@ -332,16 +347,22 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
     }
   };
 
-  // 6. Baixar Todos os 3 Padrões Salvos de uma vez só!
+  // 6. Baixar Todos os Padrões Salvos que possuem cargas disponíveis
   const handleDownloadAllPresets = async () => {
+    const presetsWithLoads = presetDefinitions.filter(p => targetLoads.filter(p.filterFn).length > 0);
+    
+    if (presetsWithLoads.length === 0) {
+      showError("Nenhuma carga com status 'Agenciando' disponível para os padrões.");
+      return;
+    }
+
     setBatchGenerating(true);
     try {
-      for (const preset of presetDefinitions) {
-        // Renderiza temporariamente cada grupo
+      for (const preset of presetsWithLoads) {
         setSelectedPreset(preset.id);
         setActiveTab('presets');
         // Pequena pausa para garantir a montagem do DOM
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 250));
 
         if (renderSheetRef.current) {
           const canvas = await generateCanvas(renderSheetRef.current);
@@ -354,9 +375,9 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
           document.body.removeChild(a);
         }
       }
-      showSuccess("As 3 imagens padrão foram geradas e baixadas com sucesso!");
+      showSuccess(`As imagens dos padrões com cargas disponíveis (${presetsWithLoads.length}) foram baixadas!`);
     } catch (err: any) {
-      showError("Erro ao baixar os 3 padrões: " + (err.message || err));
+      showError("Erro ao baixar os padrões: " + (err.message || err));
     } finally {
       setBatchGenerating(false);
     }
@@ -378,11 +399,27 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500">
-                Baixe as imagens formatadas no padrão Midas Log e copie a legenda com data e estado para envio.
+                Imagens formatadas no padrão Midas Log com as cargas disponíveis para contratação pelos motoristas.
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
+
+        {/* Faixa Informativa: Apenas Cargas com Status Agenciando */}
+        <div className="flex items-center justify-between bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-300 text-xs mt-2 shadow-2xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+            <div className="min-w-0">
+              <span className="font-extrabold text-emerald-950 block sm:inline mr-1">Filtro para Motoristas:</span>
+              <span className="text-emerald-800 text-[11px] sm:text-xs">
+                Apenas cargas com status <strong className="underline uppercase">Agenciando</strong> (disponíveis para contratação)
+              </span>
+            </div>
+          </div>
+          <Badge variant="outline" className="border-emerald-400 bg-white text-emerald-950 font-black text-[10px] shrink-0 ml-2 shadow-2xs">
+            {targetLoads.length} {targetLoads.length === 1 ? 'disponível' : 'disponíveis'}
+          </Badge>
+        </div>
 
         {/* Abas de Modo: Padrões Salvos (MA, CE/PI, Outros) vs. Estado Específico */}
         <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full mt-2">
@@ -396,7 +433,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
               <span>Por Estado (UF)</span>
             </TabsTrigger>
             <TabsTrigger value="all" className="text-xs font-bold gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-700">
-              <span>Todas as Cargas</span>
+              <span>Todas Agenciando</span>
             </TabsTrigger>
           </TabsList>
 
@@ -405,7 +442,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
             {/* Seletor dos 3 Padrões Salvos */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {presetDefinitions.map((preset) => {
-                const count = loads.filter(preset.filterFn).length;
+                const count = targetLoads.filter(preset.filterFn).length;
                 const isSelected = selectedPreset === preset.id;
                 return (
                   <button
@@ -420,8 +457,12 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold text-xs text-slate-900">{preset.name}</span>
-                      <Badge variant="outline" className={`text-[10px] font-black ${isSelected ? 'border-emerald-400 text-emerald-800 bg-white' : 'border-slate-200 text-slate-600'}`}>
-                        {count} {count === 1 ? 'carga' : 'cargas'}
+                      <Badge variant="outline" className={`text-[10px] font-black ${
+                        count > 0 
+                          ? isSelected ? 'border-emerald-400 text-emerald-800 bg-white' : 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                          : 'border-slate-200 text-slate-400 bg-slate-50'
+                      }`}>
+                        {count} {count === 1 ? 'disponível' : 'disponíveis'}
                       </Badge>
                     </div>
                     <div className="text-[10px] text-slate-500 truncate">{preset.shortLabel}</div>
@@ -433,22 +474,22 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
               })}
             </div>
 
-            {/* Ação em lote: Baixar os 3 Padrões de uma vez */}
+            {/* Ação em lote: Baixar os Padrões de uma vez */}
             <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
               <div className="text-xs text-slate-600">
                 <span className="font-bold text-slate-900">Quer agilidade? </span>
-                Baixe as 3 imagens padrão (Maranhão, Ceará/Piauí e Outros) em sequência:
+                Baixe as imagens de todos os padrões que possuem cargas em agenciamento:
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleDownloadAllPresets}
-                disabled={batchGenerating}
+                disabled={batchGenerating || targetLoads.length === 0}
                 className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-bold shrink-0"
               >
                 {batchGenerating ? <Loader2 size={12} className="animate-spin" /> : <FileDown size={12} />}
-                Baixar Todos os 3 Padrões
+                Baixar Padrões Disponíveis
               </Button>
             </div>
           </TabsContent>
@@ -466,11 +507,11 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                   </SelectTrigger>
                   <SelectContent>
                     {availableUFs.map(uf => {
-                      const count = loads.filter(l => (l.uf || '').trim().toUpperCase() === uf).length;
+                      const count = targetLoads.filter(l => (l.uf || '').trim().toUpperCase() === uf).length;
                       const name = BRAZIL_STATES[uf] || uf;
                       return (
                         <SelectItem key={uf} value={uf} className="text-xs font-semibold">
-                          {uf} - {name} ({count} {count === 1 ? 'carga' : 'cargas'})
+                          {uf} - {name} ({count} {count === 1 ? 'disponível' : 'disponíveis'})
                         </SelectItem>
                       );
                     })}
@@ -478,15 +519,15 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                 </Select>
               </div>
               <span className="text-xs text-slate-500">
-                Total de <strong>{currentExportData.items.length}</strong> cargas em {BRAZIL_STATES[selectedState] || selectedState}.
+                Total de <strong>{currentExportData.items.length}</strong> cargas em agenciamento em {BRAZIL_STATES[selectedState] || selectedState}.
               </span>
             </div>
           </TabsContent>
 
-          {/* ABA 3: TODAS AS CARGAS */}
+          {/* ABA 3: TODAS AS CARGAS EM AGENCIAMENTO */}
           <TabsContent value="all" className="mt-3">
             <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
-              Exportando a totalidade de <strong>{loads.length} cargas</strong> atualmente carregadas no sistema.
+              Exportando todas as <strong>{targetLoads.length} cargas com status "Agenciando"</strong> disponíveis para divulgação.
             </div>
           </TabsContent>
         </Tabs>
@@ -574,13 +615,14 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
         {/* Pré-visualização da Folha / Imagem a ser gerada */}
         <div className="mt-3">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-            <span>Pré-visualização da Imagem ({currentExportData.items.length} {currentExportData.items.length === 1 ? 'carga' : 'cargas'}):</span>
+            <span>Pré-visualização da Imagem ({currentExportData.items.length} {currentExportData.items.length === 1 ? 'carga disponível' : 'cargas disponíveis'}):</span>
             <span className="text-[10px] text-slate-400 font-normal">Resolução de alta fidelidade (2x)</span>
           </div>
 
           {currentExportData.items.length === 0 ? (
             <div className="p-8 text-center bg-slate-50 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500">
-              Nenhuma carga encontrada para este filtro no momento.
+              <Filter className="mx-auto text-slate-300 mb-2" size={28} />
+              Nenhuma carga com status <strong>"Agenciando"</strong> encontrada para este grupo no momento.
             </div>
           ) : (
             <div className="border border-slate-300 rounded-lg overflow-x-auto bg-slate-200/50 p-2 sm:p-4 max-h-[48vh] overflow-y-auto">
