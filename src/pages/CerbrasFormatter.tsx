@@ -452,8 +452,6 @@ const CerbrasFormatter = () => {
         return {
           'DATA': excelDateToJSDate(row[idxData]),
           'ROTA': finalRoute,
-          'REGIONAL': idxRegional !== -1 ? String(row[idxRegional] || '') : '',
-          'TIPOLOGIA': idxTipologia !== -1 ? String(row[idxTipologia] || '') : '',
           'CLIENTE': row[idxCliente] || '',
           'CNPJ': row[idxCnpj] || '',
           'CIDADE': row[idxCidade] || '',
@@ -527,12 +525,12 @@ const CerbrasFormatter = () => {
     const range = filteredData.length + 1;
     
     for(let i = 2; i <= range; i++) {
-      const prodCell = `P${i}`;
-      const paletCell = `Q${i}`;
-      const m2Cell = `R${i}`;
-      const pesoCell = `S${i}`;
-      const valUniCell = `U${i}`;
-      const valTotCell = `V${i}`;
+      const prodCell = `N${i}`;
+      const paletCell = `O${i}`;
+      const m2Cell = `P${i}`;
+      const pesoCell = `Q${i}`;
+      const valUniCell = `S${i}`;
+      const valTotCell = `T${i}`;
 
       mainWs[m2Cell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,2,FALSE),0)` };
       mainWs[pesoCell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,3,FALSE),0)` };
@@ -540,11 +538,11 @@ const CerbrasFormatter = () => {
     }
 
     const subtotalRow = range + 1;
-    const colsToSum = ['Q', 'R', 'S', 'U', 'V'];
+    const colsToSum = ['O', 'P', 'Q', 'S', 'T'];
     colsToSum.forEach(col => {
       mainWs[`${col}${subtotalRow}`] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
     });
-    mainWs[`P${subtotalRow}`] = { v: "SUBTOTAL:" };
+    mainWs[`N${subtotalRow}`] = { v: "SUBTOTAL:" };
 
     const range_ref = XLSX.utils.decode_range(mainWs['!ref']!);
     range_ref.e.r = subtotalRow - 1;
