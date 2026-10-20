@@ -359,6 +359,13 @@ const CerbrasFormatter = () => {
     reader.readAsBinaryString(file);
   };
 
+  const cleanFormato = (val: any): string => {
+    const str = String(val || '').trim();
+    if (/super\s*prime/i.test(str)) return 'SUPER PRIME';
+    if (/porcelan/i.test(str)) return 'PORCELANATO';
+    return 'CERÂMICA';
+  };
+
   const processCerbrasWallet = (rows: any[][]) => {
     setProcessing(true);
     if (rows.length < 2) {
@@ -377,17 +384,54 @@ const CerbrasFormatter = () => {
       if (route) cityToRouteMap[c.city_name.toUpperCase()] = route.name;
     });
 
-    const formatted = rows.slice(1)
+    // Detectar linha de cabeçalho (procura linha com 'CLIENTE' ou 'PRODUTO' ou 'UF')
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const rowStr = (rows[i] || []).map(c => String(c || '').toUpperCase().trim());
+      if (rowStr.includes('CLIENTE') && (rowStr.includes('PRODUTO') || rowStr.includes('UF') || rowStr.includes('FORMATO'))) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    const headerRow = (rows[headerRowIdx] || []).map(c => String(c || '').trim().toUpperCase());
+    
+    // Função auxiliar para mapear coluna por nome ou fallback para índice tradicional
+    const colIdx = (headerName: string, fallbackIdx: number): number => {
+      const found = headerRow.findIndex(h => h === headerName || h.includes(headerName));
+      return found !== -1 ? found : fallbackIdx;
+    };
+
+    const idxRegional = colIdx('REGIONAL', -1);
+    const idxTipologia = colIdx('TIPOLOGIA', -1);
+    const idxFormato = colIdx('FORMATO', -1);
+    const idxCliente = colIdx('CLIENTE', getIdx('A'));
+    const idxCnpj = colIdx('CNPJ', getIdx('C'));
+    const idxCidade = colIdx('CIDADE', getIdx('D'));
+    const idxUf = colIdx('UF', getIdx('F'));
+    const idxData = colIdx('DATA', getIdx('G'));
+    const idxPedido = colIdx('PEDIDO', getIdx('H'));
+    const idxProduto = colIdx('PRODUTO', getIdx('I'));
+    const idxPalet = colIdx('PALET', getIdx('P'));
+    const idxValUni = colIdx('VALORUNIT', getIdx('K'));
+    const idxLote = colIdx('LOTE', getIdx('M'));
+    const idxCom = colIdx('COMERCIAL', getIdx('T'));
+    const idxExp = colIdx('EXPEDICAO', getIdx('U'));
+    const idxFin = colIdx('FINANCEIRO', getIdx('V'));
+    const idxIniRes = colIdx('DTRESTOTMOV', getIdx('R'));
+    const idxFimRes = colIdx('DTLIMITE', getIdx('S'));
+
+    const formatted = rows.slice(headerRowIdx + 1)
       .filter(row => {
-        const uf = String(row[getIdx('F')] || '').trim().toUpperCase();
+        const uf = String(row[idxUf] || '').trim().toUpperCase();
         return uf !== "" && uf !== "UF";
       })
       .map((row) => {
-        const clientName = String(row[getIdx('A')] || '').toUpperCase().trim();
-        const cityName = String(row[getIdx('D')] || '').toUpperCase().trim();
-        const productName = String(row[getIdx('I')] || '').toUpperCase().trim();
-        const palet = parseFloat(String(row[getIdx('P')] || '0').replace(',', '.'));
-        const valUni = parseFloat(String(row[getIdx('K')] || '0').replace(',', '.'));
+        const clientName = String(row[idxCliente] || '').toUpperCase().trim();
+        const cityName = String(row[idxCidade] || '').toUpperCase().trim();
+        const productName = String(row[idxProduto] || '').toUpperCase().trim();
+        const palet = parseFloat(String(row[idxPalet] || '0').replace(',', '.'));
+        const valUni = parseFloat(String(row[idxValUni] || '0').replace(',', '.'));
         
         // Lógica de ROTA
         let finalRoute = 'NÃO ENCONTRADA';
@@ -402,24 +446,30 @@ const CerbrasFormatter = () => {
         const peso = productBase ? palet * productBase.unit_peso : 0;
         const valTot = m2 * valUni;
 
+        const rawFormato = idxFormato !== -1 ? row[idxFormato] : '';
+        const formatoLimpo = cleanFormato(rawFormato);
+
         return {
-          'DATA': excelDateToJSDate(row[getIdx('G')]),
+          'DATA': excelDateToJSDate(row[idxData]),
           'ROTA': finalRoute,
-          'CLIENTE': row[getIdx('A')],
-          'CNPJ': row[getIdx('C')],
-          'CIDADE': row[getIdx('D')],
-          'UF': row[getIdx('F')],
-          'PEDIDO': row[getIdx('H')],
-          'COM': row[getIdx('T')],
-          'FIN': row[getIdx('V')],
-          'EXP': row[getIdx('U')],
-          'INI RES': excelDateToJSDate(row[getIdx('R')]),
-          'FIM RES': excelDateToJSDate(row[getIdx('S')]),
+          'REGIONAL': idxRegional !== -1 ? String(row[idxRegional] || '') : '',
+          'TIPOLOGIA': idxTipologia !== -1 ? String(row[idxTipologia] || '') : '',
+          'CLIENTE': row[idxCliente] || '',
+          'CNPJ': row[idxCnpj] || '',
+          'CIDADE': row[idxCidade] || '',
+          'UF': row[idxUf] || '',
+          'PEDIDO': row[idxPedido] || '',
+          'COM': row[idxCom] || '',
+          'FIN': row[idxFin] || '',
+          'EXP': row[idxExp] || '',
+          'INI RES': excelDateToJSDate(row[idxIniRes]),
+          'FIM RES': excelDateToJSDate(row[idxFimRes]),
+          'FORMATO': formatoLimpo,
           'PRODUTO': productName,
           'PALET': palet,
           'M²': m2,
           'PESO': peso,
-          'LOTE': row[getIdx('M')],
+          'LOTE': row[idxLote] || '',
           'VAL UNI': valUni,
           'VAL TOT': valTot
         };
@@ -477,12 +527,12 @@ const CerbrasFormatter = () => {
     const range = filteredData.length + 1;
     
     for(let i = 2; i <= range; i++) {
-      const prodCell = `M${i}`;
-      const paletCell = `N${i}`;
-      const m2Cell = `O${i}`;
-      const pesoCell = `P${i}`;
-      const valUniCell = `R${i}`;
-      const valTotCell = `S${i}`;
+      const prodCell = `P${i}`;
+      const paletCell = `Q${i}`;
+      const m2Cell = `R${i}`;
+      const pesoCell = `S${i}`;
+      const valUniCell = `U${i}`;
+      const valTotCell = `V${i}`;
 
       mainWs[m2Cell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,2,FALSE),0)` };
       mainWs[pesoCell] = { t: 'n', f: `${paletCell}*IFERROR(VLOOKUP(${prodCell},DADOS!$A:$C,3,FALSE),0)` };
@@ -490,11 +540,11 @@ const CerbrasFormatter = () => {
     }
 
     const subtotalRow = range + 1;
-    const colsToSum = ['N', 'O', 'P', 'R', 'S'];
+    const colsToSum = ['Q', 'R', 'S', 'U', 'V'];
     colsToSum.forEach(col => {
       mainWs[`${col}${subtotalRow}`] = { t: 'n', f: `SUBTOTAL(9,${col}2:${col}${range})` };
     });
-    mainWs[`M${subtotalRow}`] = { v: "SUBTOTAL:" };
+    mainWs[`P${subtotalRow}`] = { v: "SUBTOTAL:" };
 
     const range_ref = XLSX.utils.decode_range(mainWs['!ref']!);
     range_ref.e.r = subtotalRow - 1;
