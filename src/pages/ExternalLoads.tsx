@@ -383,7 +383,7 @@ const ExternalLoads = () => {
 
   const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/export?format=xlsx";
   const VIEW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1bNkZkZ3hVkdjM4fzc5o_Who/edit";
-  const TAX_RATE = 0.14; // Imposto de 14%
+  const TAX_RATE = 0.07; // Imposto padrão de 7%
 
   useEffect(() => {
     const init = async () => {
@@ -2388,7 +2388,9 @@ const ExternalLoads = () => {
                 const complementaryValue = activeDetailLoad.complementaryValue || 0;
                 const totalReceived = baseFreightToReceive + complementaryValue;
                 const totalToPay = activeDetailLoad.totalToPay || 0;
-                const tax = totalReceived * TAX_RATE; // 14%
+                const effectiveTaxRate = activeDetailLoad.taxRate ?? (activeDetailLoad.parsedDeliveries?.[0]?.tax_rate ?? TAX_RATE);
+                const taxRatePercent = Number((effectiveTaxRate * 100).toFixed(2));
+                const tax = totalReceived * effectiveTaxRate;
                 const marginBefore = totalReceived - totalToPay;
                 const marginAfter = totalReceived - totalToPay - tax;
                 const marginBeforePct = totalReceived > 0 ? (marginBefore / totalReceived) * 100 : 0;
@@ -2437,6 +2439,24 @@ const ExternalLoads = () => {
                       </div>
                     </div>
 
+                    <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs pt-1">
+                      <span className="text-slate-600 font-bold uppercase">Alíquota do Imposto:</span>
+                      <div className="flex items-center gap-1.5">
+                        <Input 
+                          type="number" 
+                          step="0.1" 
+                          className="h-8 w-24 text-xs font-bold text-right border-slate-300" 
+                          value={taxRatePercent} 
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            const newRate = isNaN(val) ? 0 : val / 100;
+                            handleUpdateLoad(activeDetailLoad.id, { taxRate: newRate });
+                          }} 
+                        />
+                        <span className="text-slate-600 font-bold text-xs">%</span>
+                      </div>
+                    </div>
+
                     <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs pt-2 border-t w-full">
                       <span className="text-slate-500 font-bold uppercase">Margem antes do Imposto:</span>
                       <span className={`font-black ${marginBefore >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -2445,7 +2465,7 @@ const ExternalLoads = () => {
                     </div>
 
                     <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 text-xs">
-                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto (14%):</span>
+                      <span className="text-slate-500 font-bold uppercase">Margem depois do Imposto ({taxRatePercent}%):</span>
                       <span className={`font-black ${marginAfter >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                         R$ {formatCurrency(marginAfter)} ({marginAfterPct.toFixed(2)}%)
                       </span>
