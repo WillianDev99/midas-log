@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as XLSX from 'xlsx';
-import { generateLoadsSvg, SvgLoadItem } from '../src/utils/generateLoadsSvg';
+// @ts-ignore
+import { generateSvgCard } from './generatePngCard.cjs';
 
 const TELEGRAM_BOT_TOKEN = "8211554528:AAFrR9uRKisGtHgXWAFdw9BCx6HyrcSSM5M";
 const TELEGRAM_CHAT_ID = "1733888570";
@@ -9,26 +10,6 @@ const SHEET_URL = "https://docs.google.com/spreadsheets/d/1_84-QjABx4I97rSUPIA1b
 function normalizeText(text: string) {
   if (!text) return "";
   return text.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
-
-function parseWeightNumber(weight: string | number): number {
-  if (typeof weight === 'number') return weight;
-  const str = String(weight || '0').trim();
-  if (str.includes(',')) {
-    return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
-  }
-  return parseFloat(str.replace(/[^0-9.]/g, '')) || 0;
-}
-
-function getVehicleType(weight: string | number): string {
-  const num = parseWeightNumber(weight);
-  const ton = num / 1000;
-  if (ton < 18) return 'TRUCK';
-  if (ton <= 22) return 'BITRUCK';
-  if (ton <= 30) return 'CARRETA';
-  if (ton <= 38) return 'BITREM';
-  if (ton <= 40) return 'RODOTREM 3 TAMPAS';
-  return 'RODOTREM 4 TAMPAS';
 }
 
 function excelSerialToDate(serialVal: any): string {
@@ -44,29 +25,22 @@ function excelSerialToDate(serialVal: any): string {
   return String(serialVal);
 }
 
-async function sendTelegramText(text: string) {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      parse_mode: 'HTML'
-    })
-  });
-}
+async function sendTelegramPhotoBuffer(photoBuffer: Buffer, caption: string) {
+  const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${TELEGRAM_CHAT_ID}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="cargas.png"\r\nContent-Type: image/png\r\n\r\n`),
+    photoBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`)
+  ]);
 
-async function sendTelegramSvgDocument(svgContent: string, filename: string, caption: string) {
-  const formData = new FormData();
-  formData.append('chat_id', TELEGRAM_CHAT_ID);
-  const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-  formData.append('document', blob, filename);
-  formData.append('caption', caption);
-  formData.append('parse_mode', 'HTML');
-
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
     method: 'POST',
-    body: formData
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`
+    },
+    body
   });
 }
 
@@ -77,16 +51,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const arrayBuffer = await response.arrayBuffer();
     const wb = XLSX.read(Buffer.from(arrayBuffer), { type: 'buffer' });
 
-    // Encontrar aba correta ("CARGAS")
-    const sheetName = wb.SheetNames.find(name => name.toUpperCase() === "CARGAS") || wb.SheetNames[0];
+    // Encontrar aba CARGAS
+    const sheetName = wb.SheetNames.find((name: string) => name.toUpperCase() === "CARGAS") || wb.SheetNames[0];
     const sheet = wb.Sheets[sheetName];
     const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length < 2) {
-      return res.status(200).json({ message: "Planilha sem dados" });
+      return res.status(200).json({ message: "Planilha sem dados na aba CARGAS" });
     }
 
-    // Mapear cabeçalhos dinamicamente
+    // Identificar colunas dinamicamente
     const headers = (rows[0] || []).map((h: any) => String(h || '').trim().toUpperCase());
     let colData = headers.findIndex((h: string) => h === 'DATA' || h.includes('DATA'));
     let colUF = headers.findIndex((h: string) => h === 'UF');
@@ -101,83 +75,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     });
 
-    let colRota = -1;
-    let colEntregas = -1;
-    if (entregaIndices.length >= 2) {
-      colRota = entregaIndices[0];
-      colEntregas = entregaIndices[1];
-    } else if (entregaIndices.length === 1) {
-      colRota = entregaIndices[0];
-    }
+    let colRota = entregaIndices.length > 0 ? entregaIndices[0] : 1;
+    let colEntregas = entregaIndices.length > 1 ? entregaIndices[1] : 2;
 
     if (colData === -1) colData = 0;
-    if (colRota === -1) colRota = 1;
-    if (colEntregas === -1) colEntregas = 2;
     if (colUF === -1) colUF = 3;
     if (colPeso === -1) colPeso = 4;
     if (colFrete === -1) colFrete = 5;
     if (colStatus === -1) colStatus = 11;
 
-    const agenciandoLoads: (SvgLoadItem & { data: string })[] = [];
+    const agenciandoLoads: any[] = [];
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
       const rota = String(r[colRota] || '').trim();
-      const status = String(r[colStatus] || '').trim();
+      const status = colStatus !== -1 ? String(r[colStatus] || '').trim() : '';
       if (rota && normalizeText(status).includes('agenciando')) {
         const rawUF = String(r[colUF] || '').replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-        const peso = r[colPeso] || 0;
         agenciandoLoads.push({
           data: excelSerialToDate(r[colData]),
           rota,
-          entregas: r[colEntregas] || 1,
+          entregas: r[colEntregas] || '-',
           uf: rawUF,
-          peso: peso,
-          veiculo: getVehicleType(peso),
-          frete: String(r[colFrete] || 'CIF/FOB').toUpperCase()
+          peso: r[colPeso] || 0,
+          frete: String(r[colFrete] || 'CIF/FOB')
         });
       }
     }
 
     const today = new Date().toLocaleDateString('pt-BR');
 
-    // Separar nos 3 grupos solicitados
+    // Grupos
     const maranhao = agenciandoLoads.filter(l => l.uf === 'MA');
     const cearaPiaui = agenciandoLoads.filter(l => ['CE', 'PI'].includes(l.uf));
     const outros = agenciandoLoads.filter(l => !['CE', 'PI', 'MA', 'AL'].includes(l.uf));
 
-    // Cabeçalho da Notificação Geral
-    await sendTelegramText(`🔔 <b>RESUMO PROGRAMADO DE CARGAS HIDRACOR (${today})</b>\nStatus: <b>Agenciando (${agenciandoLoads.length} disponíveis)</b>`);
-
-    // 1. Grupo Maranhão
-    const captionMA = `Cargas Hidracor ${today}, Maranhão`;
+    // 1. Enviar Grupo Maranhão (se houver cargas)
     if (maranhao.length > 0) {
-      const svgMA = generateLoadsSvg(today, maranhao);
-      await sendTelegramSvgDocument(svgMA, `cargas-maranhao-${today.replace(/\//g, '-')}.svg`, captionMA);
-    } else {
-      await sendTelegramText(`📦 <b>${captionMA}</b>\n<i>Nenhuma carga agenciando no momento.</i>`);
+      const pngMA = generateSvgCard('Maranhão', today, maranhao);
+      await sendTelegramPhotoBuffer(pngMA, `Cargas Hidracor ${today}, Maranhão`);
     }
 
-    // 2. Grupo Ceará e Piauí
-    const captionCE_PI = `Cargas Hidracor ${today}, Ceará e Piauí`;
+    // 2. Enviar Grupo Ceará e Piauí (se houver cargas)
     if (cearaPiaui.length > 0) {
-      const svgCE_PI = generateLoadsSvg(today, cearaPiaui);
-      await sendTelegramSvgDocument(svgCE_PI, `cargas-ceara-piaui-${today.replace(/\//g, '-')}.svg`, captionCE_PI);
-    } else {
-      await sendTelegramText(`📦 <b>${captionCE_PI}</b>\n<i>Nenhuma carga agenciando no momento.</i>`);
+      const pngCE_PI = generateSvgCard('Ceará e Piauí', today, cearaPiaui);
+      await sendTelegramPhotoBuffer(pngCE_PI, `Cargas Hidracor ${today}, Ceará e Piauí`);
     }
 
-    // 3. Grupo Outros Estados
-    const captionOutros = `Cargas Hidracor ${today}, Outros Estados`;
+    // 3. Enviar Grupo Outros Estados (se houver cargas)
     if (outros.length > 0) {
-      const svgOutros = generateLoadsSvg(today, outros);
-      await sendTelegramSvgDocument(svgOutros, `cargas-outros-estados-${today.replace(/\//g, '-')}.svg`, captionOutros);
-    } else {
-      await sendTelegramText(`📦 <b>${captionOutros}</b>\n<i>Nenhuma carga agenciando no momento.</i>`);
+      const pngOutros = generateSvgCard('Outros Estados', today, outros);
+      await sendTelegramPhotoBuffer(pngOutros, `Cargas Hidracor ${today}, Outros Estados`);
     }
 
-    return res.status(200).json({ 
-      ok: true, 
-      total: agenciandoLoads.length,
+    return res.status(200).json({
+      ok: true,
+      totalAgenciando: agenciandoLoads.length,
       maranhao: maranhao.length,
       cearaPiaui: cearaPiaui.length,
       outros: outros.length
