@@ -948,6 +948,7 @@ const ExternalLoads = () => {
               const cardLoads = newLoadsItems.map(l => ({
                 data: l.data,
                 rota: l.rota,
+                entregas: l.entregas,
                 uf: l.uf,
                 peso: l.peso,
                 frete: l.frete,
