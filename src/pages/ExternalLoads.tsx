@@ -75,6 +75,8 @@ import { useAuth } from '@/components/AuthProvider';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { ExportLoadsImageModal } from '@/components/ExportLoadsImageModal';
+import { sendTelegramMessage, sendTelegramPhoto } from '@/utils/telegram';
+import { generateLoadsCardBlob } from '@/utils/generateLoadsImage';
 
 interface ExternalLoad {
   id: string;
@@ -368,6 +370,7 @@ const ExternalLoads = () => {
             const alertMsg = `Atenção: A carga "${load.rota}" está há mais de 2 horas na seguradora!`;
             sendDesktopNotification(alertTitle, alertMsg);
             showError(`🚨 LIMITE 2H EXCEDIDO: ${load.rota} está há mais de 2 horas na seguradora!`);
+            sendTelegramMessage(`🚨 <b>TEMPO LIMITE EXCEDIDO (2 HORAS) - SEGURADORA</b>\n\n📍 Carga: <b>${load.rota}</b> (${load.uf})\n⚠️ Esta carga já ultrapassou as 2 horas limite no status Seguradora!`);
           }
         }
       });
@@ -927,10 +930,56 @@ const ExternalLoads = () => {
         sendDesktopNotification("Midas Log - Atualização de Cargas", alertMsg);
         showSuccess(`🔔 ${alertMsg}`);
 
+        // Enviar Alerta Geral no Telegram
+        let tgReport = `🔔 <b>Midas Log - Atualização de Cargas</b>\n`;
+        if (hasNew) tgReport += `\n✨ <b>${detectedNewKeys.size} nova(s) carga(s) detectada(s)!</b>`;
+        if (hasChanged) tgReport += `\n🔄 <b>${Object.keys(detectedStatusDiffs).length} mudança(s) de status detectada(s)!</b>`;
+
+        // Se houver novas cargas, enviar a imagem gerada no ponto de compartilhar
+        if (hasNew) {
+          const newLoadsItems = newLoads.filter(l => {
+            const key = getLoadKey(l);
+            return detectedNewKeys.has(key);
+          });
+
+          // Enviar imagem com as novas cargas
+          (async () => {
+            try {
+              const cardLoads = newLoadsItems.map(l => ({
+                data: l.data,
+                rota: l.rota,
+                uf: l.uf,
+                peso: l.peso,
+                frete: l.frete,
+                status: l.status,
+                veiculo: getVehicleType(l)
+              }));
+              const blob = await generateLoadsCardBlob('Novas Cargas', new Date().toLocaleDateString('pt-BR'), cardLoads);
+              const caption = `🚀 <b>NOVA(S) CARGA(S) DISPONÍVEL(IS)</b>\nCargas Hidracor ${new Date().toLocaleDateString('pt-BR')}\n\n${newLoadsItems.map((c, i) => `${i+1}. 📍 <b>${c.rota}</b> (${c.uf}) - ⚖️ ${formatWeight(c.peso)} - 🚛 ${getVehicleType(c)}`).join('\n')}`;
+              await sendTelegramPhoto(blob, caption);
+            } catch (err) {
+              console.error("Erro ao gerar imagem de novas cargas para o Telegram:", err);
+            }
+          })();
+        }
+
+        if (hasChanged) {
+          tgReport += `\n\n📋 <b>Detalhes das alterações:</b>`;
+          Object.entries(detectedStatusDiffs).forEach(([k, diff]) => {
+            tgReport += `\n• Carga <b>${k.split('__')[1] || k}</b>: <i>${diff.oldStatus}</i> ➔ <b>${diff.newStatus}</b>`;
+          });
+          sendTelegramMessage(tgReport);
+        } else if (!hasNew && tgReport) {
+          sendTelegramMessage(tgReport);
+        }
+
         if (newSeguradoraLoads.length > 0) {
           const segAlertMsg = `⚠️ ${newSeguradoraLoads.length} carga(s) colocada(s) na seguradora! Tempo limite de 2h iniciado.`;
           sendDesktopNotification("🛡️ ENTRADA NA SEGURADORA (Limite: 2h)", segAlertMsg);
           showSuccess(segAlertMsg);
+
+          const segTgMsg = `🛡️ <b>ENTRADA NA SEGURADORA (Limite: 2h)</b>\n${newSeguradoraLoads.map(l => `• 📍 <b>${l.rota}</b> (${l.uf}) - Entrou às ${new Date(l.seguradoraEnteredAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`).join('\n')}\n\n<i>Tempo limite de 2 horas iniciado!</i>`;
+          sendTelegramMessage(segTgMsg);
         }
       } else {
         if (!isAuto) {
