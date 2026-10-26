@@ -7,7 +7,15 @@
     },
     {
       "path": "/api/cron-cargas",
+      "schedule": "45 11 * * *"
+    },
+    {
+      "path": "/api/cron-cargas",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron-cargas",
+      "schedule": "30 18 * * *"
     }
   ],
   "rewrites": [
