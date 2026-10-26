@@ -1,7 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as XLSX from 'xlsx';
-// @ts-ignore
-import { generateSvgCard } from './generatePngCard.cjs';
 
 const TELEGRAM_BOT_TOKEN = "8211554528:AAFrR9uRKisGtHgXWAFdw9BCx6HyrcSSM5M";
 const TELEGRAM_CHAT_ID = "1733888570";
@@ -25,23 +23,47 @@ function excelSerialToDate(serialVal: any): string {
   return String(serialVal);
 }
 
-async function sendTelegramPhotoBuffer(photoBuffer: Buffer, caption: string) {
-  const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
-  const body = Buffer.concat([
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${TELEGRAM_CHAT_ID}\r\n`),
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`),
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="cargas.png"\r\nContent-Type: image/png\r\n\r\n`),
-    photoBuffer,
-    Buffer.from(`\r\n--${boundary}--\r\n`)
-  ]);
+function getVehicleType(peso: any) {
+  const num = typeof peso === 'number' ? peso : parseFloat(String(peso || '0').replace(/\./g, '').replace(',', '.')) || 0;
+  const ton = num / 1000;
+  if (ton < 18) return 'TRUCK';
+  if (ton <= 22) return 'BITRUCK';
+  if (ton <= 30) return 'CARRETA';
+  if (ton <= 38) return 'BITREM';
+  if (ton <= 40) return 'RODOTREM 3 TAMPAS';
+  return 'RODOTREM 4 TAMPAS';
+}
 
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+function formatWeight(peso: any) {
+  const num = typeof peso === 'number' ? peso : parseFloat(String(peso || '0').replace(/\./g, '').replace(',', '.')) || 0;
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+}
+
+async function sendTelegramText(text: string) {
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
-    headers: {
-      'Content-Type': `multipart/form-data; boundary=${boundary}`
-    },
-    body
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: 'HTML'
+    })
   });
+  return res.json();
+}
+
+async function sendTelegramPhotoUrl(photoUrl: string, caption: string) {
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      photo: photoUrl,
+      caption: caption,
+      parse_mode: 'HTML'
+    })
+  });
+  return res.json();
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -109,23 +131,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cearaPiaui = agenciandoLoads.filter(l => ['CE', 'PI'].includes(l.uf));
     const outros = agenciandoLoads.filter(l => !['CE', 'PI', 'MA', 'AL'].includes(l.uf));
 
-    // 1. Enviar Grupo Maranhão (se houver cargas)
-    if (maranhao.length > 0) {
-      const pngMA = generateSvgCard('Maranhão', today, maranhao);
-      await sendTelegramPhotoBuffer(pngMA, `Cargas Hidracor ${today}, Maranhão`);
+    // Formatar bloco de texto do Maranhão
+    let msgMA = `📦 <b>Cargas Hidracor ${today}, Maranhão</b>\n`;
+    if (maranhao.length === 0) {
+      msgMA += `<i>Nenhuma carga agenciando no momento.</i>\n`;
+    } else {
+      maranhao.forEach((c, idx) => {
+        msgMA += `\n${idx + 1}. 📍 <b>${c.rota}</b> (${c.uf}) - ⚖️ ${formatWeight(c.peso)} - 🚛 ${getVehicleType(c.peso)}`;
+      });
     }
 
-    // 2. Enviar Grupo Ceará e Piauí (se houver cargas)
-    if (cearaPiaui.length > 0) {
-      const pngCE_PI = generateSvgCard('Ceará e Piauí', today, cearaPiaui);
-      await sendTelegramPhotoBuffer(pngCE_PI, `Cargas Hidracor ${today}, Ceará e Piauí`);
+    // Formatar bloco de texto de Ceará e Piauí
+    let msgCE_PI = `📦 <b>Cargas Hidracor ${today}, Ceará e Piauí</b>\n`;
+    if (cearaPiaui.length === 0) {
+      msgCE_PI += `<i>Nenhuma carga agenciando no momento.</i>\n`;
+    } else {
+      cearaPiaui.forEach((c, idx) => {
+        msgCE_PI += `\n${idx + 1}. 📍 <b>${c.rota}</b> (${c.uf}) - ⚖️ ${formatWeight(c.peso)} - 🚛 ${getVehicleType(c.peso)}`;
+      });
     }
 
-    // 3. Enviar Grupo Outros Estados (se houver cargas)
-    if (outros.length > 0) {
-      const pngOutros = generateSvgCard('Outros Estados', today, outros);
-      await sendTelegramPhotoBuffer(pngOutros, `Cargas Hidracor ${today}, Outros Estados`);
+    // Formatar bloco de texto de Outros Estados
+    let msgOutros = `📦 <b>Cargas Hidracor ${today}, Outros Estados</b>\n`;
+    if (outros.length === 0) {
+      msgOutros += `<i>Nenhuma carga agenciando no momento.</i>\n`;
+    } else {
+      outros.forEach((c, idx) => {
+        msgOutros += `\n${idx + 1}. 📍 <b>${c.rota}</b> (${c.uf}) - ⚖️ ${formatWeight(c.peso)} - 🚛 ${getVehicleType(c.peso)}`;
+      });
     }
+
+    // Enviar as mensagens completas
+    await sendTelegramText(`🔔 <b>RESUMO PROGRAMADO DE CARGAS DISPONÍVEIS (${today})</b>\nTotal: <b>${agenciandoLoads.length} carga(s) agenciando</b>\n`);
+    await sendTelegramText(msgMA);
+    await sendTelegramText(msgCE_PI);
+    await sendTelegramText(msgOutros);
 
     return res.status(200).json({
       ok: true,
