@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { Resvg, initWasm } = require('@resvg/resvg-wasm');
+const { fontBuffers } = require('./embeddedFonts.cjs');
 
 let wasmInitialized = false;
-let cachedFontBuffers = null;
 
 async function ensureWasm() {
   if (!wasmInitialized) {
@@ -12,37 +12,6 @@ async function ensureWasm() {
     await initWasm(wasmBuffer);
     wasmInitialized = true;
   }
-}
-
-function getFontBuffers() {
-  if (cachedFontBuffers && cachedFontBuffers.length > 0) {
-    return cachedFontBuffers;
-  }
-
-  const possibleDirs = [
-    path.join(__dirname, 'fonts'),
-    path.join(process.cwd(), 'api', 'fonts'),
-    path.join(__dirname, '..', 'api', 'fonts'),
-    path.join(process.cwd(), 'fonts')
-  ];
-
-  for (const dir of possibleDirs) {
-    const regPath = path.join(dir, 'segoeui.ttf');
-    const boldPath = path.join(dir, 'segoeuib.ttf');
-    if (fs.existsSync(regPath) && fs.existsSync(boldPath)) {
-      try {
-        cachedFontBuffers = [
-          fs.readFileSync(regPath),
-          fs.readFileSync(boldPath)
-        ];
-        return cachedFontBuffers;
-      } catch (e) {
-        console.error('Erro ao ler fontes Segoe UI:', e);
-      }
-    }
-  }
-
-  return [];
 }
 
 function escapeXml(unsafe) {
@@ -214,23 +183,18 @@ async function generateSvgCard(title, dateStr, loads) {
 </svg>
   `;
 
-  const fontBuffers = getFontBuffers();
-  const resvgOptions = {
+  const resvg = new Resvg(svg, {
+    font: {
+      loadSystemFonts: false,
+      fontBuffers: fontBuffers,
+      defaultFontFamily: 'Segoe UI'
+    },
     fitTo: {
       mode: 'zoom',
       value: 2
     }
-  };
+  });
 
-  if (fontBuffers.length > 0) {
-    resvgOptions.font = {
-      loadSystemFonts: false,
-      fontBuffers: fontBuffers,
-      defaultFontFamily: 'Segoe UI'
-    };
-  }
-
-  const resvg = new Resvg(svg, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
