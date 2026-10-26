@@ -3,6 +3,7 @@ const path = require('path');
 const { Resvg, initWasm } = require('@resvg/resvg-wasm');
 
 let wasmInitialized = false;
+let cachedFontBuffers = null;
 
 async function ensureWasm() {
   if (!wasmInitialized) {
@@ -11,6 +12,37 @@ async function ensureWasm() {
     await initWasm(wasmBuffer);
     wasmInitialized = true;
   }
+}
+
+function getFontBuffers() {
+  if (cachedFontBuffers && cachedFontBuffers.length > 0) {
+    return cachedFontBuffers;
+  }
+
+  const possibleDirs = [
+    path.join(__dirname, 'fonts'),
+    path.join(process.cwd(), 'api', 'fonts'),
+    path.join(__dirname, '..', 'api', 'fonts'),
+    path.join(process.cwd(), 'fonts')
+  ];
+
+  for (const dir of possibleDirs) {
+    const regPath = path.join(dir, 'segoeui.ttf');
+    const boldPath = path.join(dir, 'segoeuib.ttf');
+    if (fs.existsSync(regPath) && fs.existsSync(boldPath)) {
+      try {
+        cachedFontBuffers = [
+          fs.readFileSync(regPath),
+          fs.readFileSync(boldPath)
+        ];
+        return cachedFontBuffers;
+      } catch (e) {
+        console.error('Erro ao ler fontes Segoe UI:', e);
+      }
+    }
+  }
+
+  return [];
 }
 
 function escapeXml(unsafe) {
@@ -72,18 +104,22 @@ async function generateSvgCard(title, dateStr, loads) {
 
   let logoSvg = '';
   try {
-    const logoPath = path.join(__dirname, '..', 'public', 'logo.png');
-    if (fs.existsSync(logoPath)) {
-      const b64 = fs.readFileSync(logoPath).toString('base64');
+    const logoCandidates = [
+      path.join(__dirname, '..', 'public', 'logo.png'),
+      path.join(process.cwd(), 'public', 'logo.png')
+    ];
+    const foundLogo = logoCandidates.find(p => fs.existsSync(p));
+    if (foundLogo) {
+      const b64 = fs.readFileSync(foundLogo).toString('base64');
       logoSvg = `<image href="data:image/png;base64,${b64}" x="${padding}" y="${padding}" width="150" height="50" preserveAspectRatio="xMinYMid meet" />`;
     }
   } catch {}
 
-  if (!logoSvg) {
-    logoSvg = `<text x="${padding}" y="${padding + 36}" fill="#f59e0b" font-size="28" font-weight="800" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">MIDAS LOG</text>`;
-  }
+  const FONT_FAMILY = "Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif";
 
-  const FONT_FAMILY = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+  if (!logoSvg) {
+    logoSvg = `<text x="${padding}" y="${padding + 36}" fill="#f59e0b" font-size="28" font-weight="800" font-family="${FONT_FAMILY}">MIDAS LOG</text>`;
+  }
 
   const rowDetails = loads.map(l => {
     const rotaLines = wrapText(l.rota, 46);
@@ -178,12 +214,23 @@ async function generateSvgCard(title, dateStr, loads) {
 </svg>
   `;
 
-  const resvg = new Resvg(svg, {
+  const fontBuffers = getFontBuffers();
+  const resvgOptions = {
     fitTo: {
       mode: 'zoom',
       value: 2
     }
-  });
+  };
+
+  if (fontBuffers.length > 0) {
+    resvgOptions.font = {
+      loadSystemFonts: false,
+      fontBuffers: fontBuffers,
+      defaultFontFamily: 'Segoe UI'
+    };
+  }
+
+  const resvg = new Resvg(svg, resvgOptions);
   const pngData = resvg.render();
   return Buffer.from(pngData.asPng());
 }
