@@ -244,7 +244,8 @@ const ExternalLoads = () => {
   }, []);
 
   // Sistema de Notificações & Monitoramento de Mudanças
-  const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'AGENCIANDO' | 'SEGURADORA' | 'SEGURADORA_OVERDUE' | 'CONTRATADO'>('ALL');
+  const [quickStatusFilter, setQuickStatusFilter] = useState<'ALL' | 'NEW' | 'DISPONIVEL' | 'ENCERRADA' | 'SEGURADORA' | 'SEGURADORA_OVERDUE'>('ALL');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [newLoadKeys, setNewLoadKeys] = useState<Set<string>>(new Set());
   const [statusChangedKeys, setStatusChangedKeys] = useState<Record<string, { oldStatus: string; newStatus: string }>>({});
   const [showChangesModal, setShowChangesModal] = useState<boolean>(false);
@@ -722,62 +723,82 @@ const ExternalLoads = () => {
     return strVal;
   };
 
+  // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
+  const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
+    return (rawLoads || []).map((load: any, idx: number) => {
+      const parsed = (load.parsedDeliveries || []).map((d: any) => {
+        const isCif = String(d.type || 'CIF').toUpperCase().includes('CIF');
+        const weight = Number(d.weight) || 0;
+        let freight = Number(d.freight) || 0;
+        let aliquot = Number(d.aliquot) || 0;
+
+        if (isCif) {
+          // Entregas CIF usam DIRETO o valor de Frete + Descarga extraído do Gestão de Fretes
+          if (d.freteDescarga !== undefined && d.freteDescarga !== null && Number(d.freteDescarga) > 0) {
+            freight = Number(d.freteDescarga);
+          }
+          aliquot = weight > 0 ? freight / weight : 0;
+        } else {
+          // Entregas FOB continuam calculadas através da tabela FOB do site
+          if (!freight || freight === 0) {
+            aliquot = getAliquot(d.city, d.uf, 'FOB', weight);
+            freight = weight * aliquot;
+          }
+        }
+
+        return {
+          ...d,
+          type: isCif ? 'CIF' : 'FOB',
+          weight,
+          freight,
+          aliquot
+        };
+      });
+
+      const totalFreight = parsed.reduce((acc: number, d: any) => acc + (d.freight || 0), 0) || Number(load.totalToPay) || 0;
+
+      let statusFormatted = load.status || '';
+      const stNorm = normalizeText(statusFormatted);
+      if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
+        statusFormatted = 'Aguardando Analise Transportadora';
+      } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
+        statusFormatted = 'Cotação encerrada';
+      }
+
+      return {
+        ...load,
+        id: load.id || `load-${idx}-${Date.now()}`,
+        status: statusFormatted,
+        parsedDeliveries: parsed,
+        totalToPay: totalFreight,
+        manualDeliveryCount: parsed.length,
+        useEqualizationTable: false
+      };
+    });
+  };
+
+  // Atualiza as cargas buscando a versão mais recente sincronizada pela extensão no Supabase
   const updateFromGoogleSheets = async (isAuto: boolean = false) => {
     setUpdating(true);
     try {
-      const response = await fetch(SHEET_URL);
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames.find(name => name.toUpperCase() === "CARGAS") || workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      const { data, error } = await supabase
+        .from('hidracor_external_loads')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-      if (rows.length < 2) throw new Error("Planilha vazia ou aba CARGAS não encontrada.");
+      if (error) throw error;
 
-      // Identificar cabeçalhos dinamicamente para evitar desalinhamento caso colunas sejam adicionadas/removidas
-      const headers = (rows[0] || []).map((h: any) => String(h || '').trim().toUpperCase());
+      const current = data?.find(d => d.version === 'current');
+      const previous = data?.find(d => d.version === 'previous');
 
-      let colData = headers.findIndex((h: string) => h === 'DATA' || h.includes('DATA'));
-      let colUF = headers.findIndex((h: string) => h === 'UF');
-      let colPeso = headers.findIndex((h: string) => h === 'PESO');
-      let colFrete = headers.findIndex((h: string) => h === 'FRETE');
-      let colObs = headers.findIndex((h: string) => h.startsWith('OBS'));
-      let colStatus = headers.findIndex((h: string) => h === 'STATUS');
-
-      const entregaIndices: number[] = [];
-      headers.forEach((h: string, i: number) => {
-        if (h === 'ENTREGAS' || h === 'ROTA' || h === 'DESTINO') {
-          entregaIndices.push(i);
+      if (!current || !current.loads || current.loads.length === 0) {
+        if (!isAuto) {
+          showError("Nenhuma carga encontrada no banco. Utilize a extensão no site Gestão de Fretes para sincronizar ou importe um arquivo Excel.");
         }
-      });
-
-      let colRota = -1;
-      let colEntregas = -1;
-
-      if (entregaIndices.length >= 2) {
-        colRota = entregaIndices[0]; // Primeira coluna é a descrição de cidades/rota
-        colEntregas = entregaIndices[1]; // Segunda coluna é a quantidade de entregas
-      } else if (entregaIndices.length === 1) {
-        colRota = entregaIndices[0];
+        return;
       }
 
-      // Fallbacks para índices padrão da planilha atual
-      if (colData === -1) colData = 0;
-      if (colRota === -1) colRota = 1;
-      if (colEntregas === -1) colEntregas = 2;
-      if (colUF === -1) colUF = 3;
-      if (colPeso === -1) colPeso = 4;
-      if (colFrete === -1) colFrete = 5;
-      if (colObs === -1) colObs = 6;
-      if (colStatus === -1) colStatus = 11;
-
-      const dataRows = rows.slice(1).filter(r => {
-        const rotaVal = r[colRota];
-        const dataVal = r[colData];
-        return (rotaVal && String(rotaVal).trim() !== "") || (dataVal && String(dataVal).trim() !== "");
-      });
-
-      const previousList = currentLoadsRef.current;
+      const previousList = currentLoadsRef.current.length > 0 ? currentLoadsRef.current : (previous?.loads || []);
       const prevMap = new Map<string, ExternalLoad>();
       if (previousList && previousList.length > 0) {
         previousList.forEach(l => {
@@ -790,19 +811,9 @@ const ExternalLoads = () => {
       const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
       const newSeguradoraLoads: ExternalLoad[] = [];
 
-      const newLoads: ExternalLoad[] = dataRows.map((row, idx) => {
-        const rota = String(row[colRota] || '');
-        const rawUF = String(row[colUF] || '');
-        const mainWeightStr = String(row[colPeso] || '0');
-        const mainFreightType = String(row[colFrete] || 'CIF').toUpperCase();
-        const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-        const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
-        const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
-        const statusStr = colStatus !== -1 ? String(row[colStatus] || '').trim() : '';
-
-        // Obter chave da carga
-        const obsVal = colObs !== -1 ? String(row[colObs] || '') : '';
-        const key = getLoadKey({ rota, observacoes: obsVal, data: excelSerialToFormattedDate(row[colData]) });
+      const newLoads: ExternalLoad[] = processAndEnrichLoads(current.loads).map((loadItem) => {
+        const key = getLoadKey(loadItem);
+        const statusStr = loadItem.status || '';
         const isSeguradora = normalizeText(statusStr).includes('seguradora');
         const existing = prevMap.get(key);
         const stored = storedTimestamps[key];
@@ -818,7 +829,6 @@ const ExternalLoads = () => {
             seguradoraEnteredAt = stored.enteredAt;
             seguradoraAlerted2h = stored.alerted2h;
           } else {
-            // Entrou na seguradora agora!
             seguradoraEnteredAt = new Date().toISOString();
             seguradoraAlerted2h = false;
           }
@@ -827,29 +837,7 @@ const ExternalLoads = () => {
             enteredAt: seguradoraEnteredAt,
             alerted2h: !!seguradoraAlerted2h
           };
-        } else {
-          if (storedTimestamps[key]) {
-            delete storedTimestamps[key];
-          }
         }
-
-        const loadItem: ExternalLoad = {
-          id: `load-${idx}-${Date.now()}`,
-          data: excelSerialToFormattedDate(row[colData]),
-          rota: rota,
-          entregas: colEntregas !== -1 ? String(row[colEntregas] || '') : '',
-          uf: cleanUF,
-          peso: mainWeightStr,
-          frete: mainFreightType,
-          observacoes: obsVal,
-          status: statusStr,
-          parsedDeliveries: parsed,
-          totalToPay: totalFreight * 0.7,
-          manualDeliveryCount: parsed.length,
-          useEqualizationTable: false,
-          seguradoraEnteredAt,
-          seguradoraAlerted2h
-        };
 
         if (previousList && previousList.length > 0) {
           if (!existing) {
@@ -866,7 +854,6 @@ const ExternalLoads = () => {
                 newStatus: newStatus || '(Vazio)'
               };
 
-              // Se acabou de mudar para SEGURADORA
               if (!normalizeText(oldStatus).includes('seguradora') && isSeguradora) {
                 newSeguradoraLoads.push(loadItem);
               }
@@ -874,27 +861,17 @@ const ExternalLoads = () => {
           }
         }
 
-        return loadItem;
+        return {
+          ...loadItem,
+          seguradoraEnteredAt,
+          seguradoraAlerted2h
+        };
       });
 
       saveStoredSeguradoraTimestamps(storedTimestamps);
 
-      await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
-      if (previousList.length > 0) {
-        await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
-      }
-
-      const { error: insertError } = await supabase.from('hidracor_external_loads').insert([{
-        user_id: user?.id,
-        loads: newLoads,
-        version: 'current',
-        updated_at: new Date().toISOString()
-      }]);
-
-      if (insertError) throw insertError;
-
-      setPreviousLoads(previousList);
       setCurrentLoads(newLoads);
+      if (previous?.loads) setPreviousLoads(previous.loads);
       setViewMode('current');
       setLastCheckTime(new Date().toLocaleTimeString('pt-BR'));
 
@@ -998,6 +975,139 @@ const ExternalLoads = () => {
     }
   };
 
+  // Importação manual de arquivo Excel (.xlsx) gerado pela extensão
+  const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUpdating(true);
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'buffer' });
+
+      const entregasSheet = wb.Sheets['Entregas Detalhadas'] || wb.Sheets[wb.SheetNames[0]];
+      const resumoSheet = wb.Sheets['Resumo Embarques'];
+
+      const rawEntregas: any[] = XLSX.utils.sheet_to_json(entregasSheet);
+      let rawResumo: any[] = resumoSheet ? XLSX.utils.sheet_to_json(resumoSheet) : [];
+
+      if (rawResumo.length === 0) {
+        const map = new Map<string, any>();
+        rawEntregas.forEach((r: any) => {
+          const emb = r['Embarque'] || r['Romaneio'];
+          if (!map.has(emb)) {
+            map.set(emb, {
+              Embarque: r['Embarque'],
+              Romaneio: r['Romaneio'],
+              'Veículo / Eixos': r['Veículo / Eixos'],
+              Empresa: r['Empresa'],
+              Transportadora: r['Transportadora'],
+              Status: r['Status']
+            });
+          }
+        });
+        rawResumo = Array.from(map.values());
+      }
+
+      const newLoads: ExternalLoad[] = rawResumo.map((carga: any, idx: number) => {
+        const entregasDaCarga = rawEntregas.filter((e: any) =>
+          (e['Embarque'] && e['Embarque'] === carga['Embarque']) ||
+          (e['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']))
+        );
+
+        const parsedDeliveries = entregasDaCarga.map((e: any, dIdx: number) => {
+          const isCif = String(e['CIF / FOB'] || 'CIF').toUpperCase().includes('CIF');
+          const weight = parseWeightNumber(e['Peso (kg)']);
+          let freight = isCif ? parseValue(e['Frete + Descarga (R$)']) : 0;
+          let aliquot = (weight > 0 && isCif) ? (freight / weight) : 0;
+
+          if (!isCif) {
+            aliquot = getAliquot(String(e['Cidade'] || ''), String(e['UF'] || ''), 'FOB', weight);
+            freight = weight * aliquot;
+          }
+
+          return {
+            deliveryNum: e['Entrega'] || (dIdx + 1),
+            city: String(e['Cidade'] || ''),
+            uf: String(e['UF'] || ''),
+            type: isCif ? 'CIF' : 'FOB',
+            weight: weight,
+            aliquot: aliquot,
+            freight: freight,
+            tax_rate: 0.07,
+            clientCode: String(e['Código do cliente'] || ''),
+            clientName: String(e['Nome do cliente'] || ''),
+            romaneioERP: String(e['Romaneio ERP'] || ''),
+            embarquesERP: String(e['Embarques ERP'] || carga['Romaneio'] || ''),
+            pedidosERP: String(e['Pedidos ERP'] || ''),
+            valorNF: parseValue(e['Valor da NF (R$)']),
+            freteDescarga: parseValue(e['Frete + Descarga (R$)'])
+          };
+        });
+
+        const cityGroups: Record<string, string[]> = {};
+        parsedDeliveries.forEach((d: any) => {
+          if (!cityGroups[d.city]) cityGroups[d.city] = [];
+          cityGroups[d.city].push(`${d.weight} KG ${d.type}`);
+        });
+        const rotaFormatted = Object.entries(cityGroups).map(([c, ws]) => `${c} (${ws.join(' / ')})`).join(', ') || carga['Embarque'];
+
+        const mainUF = parsedDeliveries[0]?.uf || 'CE';
+        const hasCif = parsedDeliveries.some((d: any) => d.type === 'CIF');
+        const hasFob = parsedDeliveries.some((d: any) => d.type === 'FOB');
+        const freteType = (hasCif && hasFob) ? 'CIF/FOB' : (hasFob ? 'FOB' : 'CIF');
+
+        let statusFormatted = carga['Status'] || '';
+        const stNorm = normalizeText(statusFormatted);
+        if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
+          statusFormatted = 'Aguardando Analise Transportadora';
+        } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
+          statusFormatted = 'Cotação encerrada';
+        }
+
+        const totalWeight = parseWeightNumber(carga['Peso (kg)']) || parsedDeliveries.reduce((acc: number, d: any) => acc + d.weight, 0);
+        const totalFreight = parsedDeliveries.reduce((acc: number, d: any) => acc + d.freight, 0) || parseValue(carga['Frete + Descarga (R$)']);
+
+        return {
+          id: carga['Embarque'] || `EMB-${carga['Romaneio']}`,
+          data: new Date().toLocaleDateString('pt-BR'),
+          rota: rotaFormatted,
+          entregas: String(parsedDeliveries.length || 1),
+          uf: mainUF,
+          peso: String(totalWeight),
+          frete: freteType,
+          observacoes: `${carga['Embarque'] || ''} | Romaneio: ${carga['Romaneio'] || ''} | ${carga['Veículo / Eixos'] || ''}`,
+          status: statusFormatted,
+          parsedDeliveries: parsedDeliveries,
+          totalToPay: totalFreight,
+          manualDeliveryCount: parsedDeliveries.length,
+          useEqualizationTable: false,
+          manualVehicleType: carga['Veículo / Eixos'] || 'TRUCK'
+        };
+      });
+
+      await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
+      if (currentLoadsRef.current.length > 0) {
+        await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
+      }
+
+      await supabase.from('hidracor_external_loads').insert([{
+        user_id: user?.id,
+        loads: newLoads,
+        version: 'current',
+        updated_at: new Date().toISOString()
+      }]);
+
+      setCurrentLoads(newLoads);
+      showSuccess(`✅ ${newLoads.length} cargas importadas e sincronizadas com sucesso!`);
+    } catch (err: any) {
+      showError("Erro ao importar planilha: " + err.message);
+    } finally {
+      setUpdating(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   useEffect(() => {
     if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
     const interval = setInterval(() => {
@@ -1096,31 +1206,34 @@ const ExternalLoads = () => {
 
   const counts = useMemo(() => {
     let novas = 0;
+    let disponiveis = 0; // Aguardando Analise Transportadora
+    let encerradas = 0; // Cotação encerrada
     let seguradora = 0;
-    let contratado = 0;
-    let agenciando = 0;
-
     let seguradoraOverdue = 0;
 
     activeData.forEach(l => {
       const key = getLoadKey(l);
       if (newLoadKeys.has(key)) novas++;
       const s = normalizeText(l.status);
+      if (s.includes('aguardando') || s.includes('analise transportadora')) {
+        disponiveis++;
+      } else if (s.includes('encerrada') || s.includes('cotacao_encerrada')) {
+        encerradas++;
+      }
       if (s.includes('seguradora')) {
         seguradora++;
         const info = getSeguradoraTimeInfo(l);
         if (info?.isOverdue) seguradoraOverdue++;
-      } else if (s.includes('contratad')) contratado++;
-      else if (s.includes('agenciando')) agenciando++;
+      }
     });
 
     return {
       total: activeData.length,
       novas,
+      disponiveis,
+      encerradas,
       seguradora,
-      seguradoraOverdue,
-      contratado,
-      agenciando
+      seguradoraOverdue
     };
   }, [activeData, newLoadKeys, currentTime]);
 
@@ -1129,16 +1242,18 @@ const ExternalLoads = () => {
       // Filtro Rápido por Status / Novas Cargas / Seguradora Vencida
       if (quickStatusFilter === 'NEW') {
         if (!newLoadKeys.has(getLoadKey(row))) return false;
+      } else if (quickStatusFilter === 'DISPONIVEL') {
+        const s = normalizeText(row.status);
+        if (!s.includes('aguardando') && !s.includes('analise transportadora')) return false;
+      } else if (quickStatusFilter === 'ENCERRADA') {
+        const s = normalizeText(row.status);
+        if (!s.includes('encerrada') && !s.includes('cotacao_encerrada')) return false;
       } else if (quickStatusFilter === 'SEGURADORA') {
         if (!normalizeText(row.status).includes('seguradora')) return false;
       } else if (quickStatusFilter === 'SEGURADORA_OVERDUE') {
         if (!normalizeText(row.status).includes('seguradora')) return false;
         const info = getSeguradoraTimeInfo(row);
         if (!info?.isOverdue) return false;
-      } else if (quickStatusFilter === 'CONTRATADO') {
-        if (!normalizeText(row.status).includes('contratad')) return false;
-      } else if (quickStatusFilter === 'AGENCIANDO') {
-        if (!normalizeText(row.status).includes('agenciando')) return false;
       }
 
       const matchesFilters = Object.entries(columnFilters).every(([col, value]) => {
@@ -1163,14 +1278,21 @@ const ExternalLoads = () => {
     const statusRaw = (load.status || '').trim();
     const statusNorm = normalizeText(statusRaw);
     const key = getLoadKey(load);
-    const changed = statusChangedKeys[key];
     const segInfo = statusNorm.includes('seguradora') ? getSeguradoraTimeInfo(load) : null;
 
     let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
     let icon = null;
     let label = statusRaw || "PENDENTE";
 
-    if (statusNorm.includes('seguradora')) {
+    if (statusNorm.includes('aguardando') || statusNorm.includes('analise transportadora')) {
+      badgeStyle = "bg-emerald-100 text-emerald-900 border-emerald-400 font-extrabold shadow-2xs";
+      icon = <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping inline-block" />;
+      label = "AGUARDANDO ANÁLISE (DISPONÍVEL)";
+    } else if (statusNorm.includes('encerrada') || statusNorm.includes('cotacao_encerrada')) {
+      badgeStyle = "bg-slate-100 text-slate-600 border-slate-300 font-medium";
+      icon = null;
+      label = "COTAÇÃO ENCERRADA";
+    } else if (statusNorm.includes('seguradora')) {
       if (segInfo?.isOverdue) {
         badgeStyle = "bg-red-100 text-red-950 border-red-500 font-black shadow-md animate-pulse ring-2 ring-red-400";
         icon = <ShieldAlert size={13} className="text-red-700 animate-bounce" />;
@@ -1180,21 +1302,10 @@ const ExternalLoads = () => {
         icon = <ShieldAlert size={12} className="text-amber-600" />;
         label = "NA SEGURADORA";
       }
-    } else if (statusNorm.includes('contratado midas')) {
+    } else if (statusNorm.includes('contratad')) {
       badgeStyle = "bg-purple-100 text-purple-800 border-purple-300 font-bold";
       icon = <CheckCircle2 size={12} className="text-purple-600" />;
-      label = "CONTRATADO MIDAS";
-    } else if (statusNorm.includes('contratado transagil') || statusNorm.includes('contratado transágil')) {
-      badgeStyle = "bg-blue-100 text-blue-800 border-blue-300 font-bold";
-      icon = <CheckCircle2 size={12} className="text-blue-600" />;
-      label = "CONTRATADO TRANSÁGIL";
-    } else if (statusNorm.includes('contratad')) {
-      badgeStyle = "bg-indigo-100 text-indigo-800 border-indigo-300 font-bold";
-      icon = <CheckCircle2 size={12} className="text-indigo-600" />;
-    } else if (statusNorm.includes('agenciando')) {
-      badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
-      icon = <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping inline-block" />;
-      label = "AGENCIANDO";
+      label = statusRaw.toUpperCase();
     } else if (statusNorm.includes('indisponivel') || statusNorm.includes('indisponível')) {
       badgeStyle = "bg-red-50 text-red-700 border-red-200 font-semibold";
       label = "INDISPONÍVEL";
@@ -1603,6 +1714,25 @@ const ExternalLoads = () => {
             <ImageIcon size={14} /> <span>Baixar Imagem</span>
           </Button>
 
+          <input 
+            ref={fileInputRef} 
+            type="file" 
+            accept=".xlsx" 
+            className="hidden" 
+            onChange={handleImportExcelFile} 
+          />
+
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={updating} 
+            className="gap-1.5 border-emerald-300 text-emerald-800 hover:bg-emerald-50 h-8 text-xs font-semibold"
+            title="Importar arquivo Excel (.xlsx) baixado da extensão"
+          >
+            <Download size={13} className="rotate-180" /> <span>Importar Excel</span>
+          </Button>
+
           <Button variant="outline" size="sm" onClick={() => updateFromGoogleSheets(false)} disabled={updating} className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs font-semibold">
             {updating ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
             <span>Atualizar</span>
@@ -1838,78 +1968,62 @@ const ExternalLoads = () => {
               </Button>
 
               <Button
-                variant={quickStatusFilter === 'SEGURADORA' ? 'default' : 'outline'}
+                variant={quickStatusFilter === 'DISPONIVEL' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setQuickStatusFilter('SEGURADORA')}
+                onClick={() => setQuickStatusFilter('DISPONIVEL')}
                 className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
-                  quickStatusFilter === 'SEGURADORA'
-                    ? 'bg-amber-600 text-white font-bold'
-                    : counts.seguradora > 0
-                      ? 'border-amber-400 text-amber-900 bg-amber-50 hover:bg-amber-100 font-extrabold shadow-2xs'
+                  quickStatusFilter === 'DISPONIVEL'
+                    ? 'bg-emerald-700 text-white font-bold'
+                    : counts.disponiveis > 0
+                      ? 'border-emerald-500 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-extrabold shadow-2xs'
                       : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
                 }`}
               >
-                <ShieldAlert size={11} /> Na Seguradora
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping inline-block" /> Aguardando Análise (Disponíveis)
                 <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  quickStatusFilter === 'SEGURADORA' ? 'bg-white/20' : 'bg-amber-200 text-amber-900'
+                  quickStatusFilter === 'DISPONIVEL' ? 'bg-white/20' : 'bg-emerald-200 text-emerald-900'
                 }`}>
-                  {counts.seguradora}
+                  {counts.disponiveis}
                 </span>
               </Button>
 
-              {counts.seguradoraOverdue > 0 && (
+              <Button
+                variant={quickStatusFilter === 'ENCERRADA' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setQuickStatusFilter('ENCERRADA')}
+                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                  quickStatusFilter === 'ENCERRADA'
+                    ? 'bg-slate-700 text-white font-bold'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-100 bg-white'
+                }`}
+              >
+                <CheckCircle2 size={11} /> Cotação Encerrada
+                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  quickStatusFilter === 'ENCERRADA' ? 'bg-white/20' : 'bg-slate-200 text-slate-800'
+                }`}>
+                  {counts.encerradas}
+                </span>
+              </Button>
+
+              {counts.seguradora > 0 && (
                 <Button
-                  variant={quickStatusFilter === 'SEGURADORA_OVERDUE' ? 'default' : 'outline'}
+                  variant={quickStatusFilter === 'SEGURADORA' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setQuickStatusFilter('SEGURADORA_OVERDUE')}
-                  className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 animate-pulse ${
-                    quickStatusFilter === 'SEGURADORA_OVERDUE'
-                      ? 'bg-red-700 text-white font-black ring-2 ring-red-400 shadow-md'
-                      : 'border-red-400 text-red-950 bg-red-100 hover:bg-red-200 font-black shadow-2xs'
+                  onClick={() => setQuickStatusFilter('SEGURADORA')}
+                  className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
+                    quickStatusFilter === 'SEGURADORA'
+                      ? 'bg-amber-600 text-white font-bold'
+                      : 'border-amber-400 text-amber-900 bg-amber-50 hover:bg-amber-100 font-extrabold shadow-2xs'
                   }`}
                 >
-                  <Clock size={11} className="text-red-700 animate-spin" /> +2h na Seguradora
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white">
-                    {counts.seguradoraOverdue} URGENTE
+                  <ShieldAlert size={11} /> Na Seguradora
+                  <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    quickStatusFilter === 'SEGURADORA' ? 'bg-white/20' : 'bg-amber-200 text-amber-900'
+                  }`}>
+                    {counts.seguradora}
                   </span>
                 </Button>
               )}
-
-              <Button
-                variant={quickStatusFilter === 'CONTRATADO' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setQuickStatusFilter('CONTRATADO')}
-                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
-                  quickStatusFilter === 'CONTRATADO'
-                    ? 'bg-purple-600 text-white font-bold'
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
-                }`}
-              >
-                <CheckCircle2 size={11} /> Contratadas
-                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  quickStatusFilter === 'CONTRATADO' ? 'bg-white/20' : 'bg-purple-100 text-purple-800'
-                }`}>
-                  {counts.contratado}
-                </span>
-              </Button>
-
-              <Button
-                variant={quickStatusFilter === 'AGENCIANDO' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setQuickStatusFilter('AGENCIANDO')}
-                className={`h-7 text-xs px-2.5 rounded-full gap-1 shrink-0 ${
-                  quickStatusFilter === 'AGENCIANDO'
-                    ? 'bg-emerald-700 text-white font-bold'
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-100 bg-white'
-                }`}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Agenciando
-                <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  quickStatusFilter === 'AGENCIANDO' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {counts.agenciando}
-                </span>
-              </Button>
             </div>
           </CardHeader>
 
@@ -2278,15 +2392,6 @@ const ExternalLoads = () => {
               </div>
               
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
-                <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 shadow-2xs">
-                  <ArrowRightLeft size={13} className="text-amber-600" />
-                  <span className="text-[10px] font-bold text-slate-600 uppercase">Nova Tabela CIF</span>
-                  <Switch 
-                    checked={activeDetailLoad.useEqualizationTable} 
-                    onCheckedChange={(checked) => handleUpdateLoad(activeDetailLoad.id, { useEqualizationTable: checked })}
-                    className="scale-90 data-[state=checked]:bg-amber-500"
-                  />
-                </div>
                 <Button 
                   size="sm" 
                   onClick={() => handleSaveLoad(activeDetailLoad)} 
