@@ -423,11 +423,17 @@ const ExternalLoads = () => {
 
   const parseWeightNumber = (weight: string | number | undefined | null): number => {
     if (typeof weight === 'number') return isNaN(weight) ? 0 : weight;
-    const str = String(weight || '0').trim();
+    let str = String(weight || '0').trim();
+    str = str.replace(/[^0-9.,]/g, '');
+    if (!str) return 0;
     if (str.includes(',')) {
       return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
     }
-    return parseFloat(str.replace(/[^0-9.]/g, '')) || 0;
+    // Caso especial pt-BR: '21.569' -> 21569 (ponto como separador de milhar)
+    if (/^\d{1,3}\.\d{3}$/.test(str)) {
+      return parseFloat(str.replace(/\./g, '')) || 0;
+    }
+    return parseFloat(str) || 0;
   };
 
   const formatWeight = (weight: string | number | undefined | null): string => {
@@ -441,18 +447,23 @@ const ExternalLoads = () => {
     'CARRETA',
     'BITREM',
     'RODOTREM 3 TAMPAS',
-    'RODOTREM 4 TAMPAS'
+    'RODOTREM 4 TAMPAS',
+    'TOCO',
+    '3/4'
   ];
 
   const normalizeVehicleType = (raw: string | undefined | null): string | undefined => {
     if (!raw) return undefined;
-    const up = String(raw).toUpperCase();
+    const up = String(raw).toUpperCase().trim();
     if (up.includes('RODOTREM')) return up.includes('4') ? 'RODOTREM 4 TAMPAS' : 'RODOTREM 3 TAMPAS';
     if (up.includes('BITREM')) return 'BITREM';
     if (up.includes('CARRETA')) return 'CARRETA';
     if (up.includes('BITRUCK')) return 'BITRUCK';
     if (up.includes('TRUCK')) return 'TRUCK';
-    return undefined;
+    if (up.includes('TOCO')) return 'TOCO';
+    if (up.includes('3/4') || up.includes('TRES QUARTOS')) return '3/4';
+    if (up.includes('VLC') || up.includes('VAN')) return 'VLC';
+    return up;
   };
 
   const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string } | string | number): string => {
@@ -714,6 +725,21 @@ const ExternalLoads = () => {
 
       const mainUF = parsed.find((d: any) => d.uf && d.uf !== 'CE')?.uf || parsed.find((d: any) => d.uf)?.uf || load.uf || 'CE';
 
+      // Extrai e preserva o tipo de veículo oficial do site / planilha
+      const rawVeh = load.manualVehicleType 
+        || load['Veículo / Eixos'] 
+        || load['Veiculo / Eixos'] 
+        || load['Veículo'] 
+        || load.veiculo;
+      
+      let detectedVehicle = normalizeVehicleType(rawVeh);
+      if (!detectedVehicle && load.observacoes) {
+        const mVehObs = String(load.observacoes).match(/\b(RODOTREM(?:\s+[34]\s+TAMPAS)?|BITREM|CARRETA|BITRUCK|TRUCK|TOCO|3\/4|VLC)\b/i);
+        if (mVehObs) {
+          detectedVehicle = normalizeVehicleType(mVehObs[1]);
+        }
+      }
+
       return {
         ...load,
         id: String(load.id || `load-${idx}-${Date.now()}`),
@@ -729,7 +755,7 @@ const ExternalLoads = () => {
         totalToPay: totalFreight,
         manualDeliveryCount: parsed.length,
         useEqualizationTable: false,
-        manualVehicleType: normalizeVehicleType(load.manualVehicleType)
+        manualVehicleType: detectedVehicle || normalizeVehicleType(load.manualVehicleType)
       };
     });
   };
@@ -1222,10 +1248,18 @@ const ExternalLoads = () => {
         rawEntregas.forEach((r: any) => {
           const emb = r['Embarque'] || r['Romaneio'];
           if (emb && !map.has(emb)) {
+            const veh = r['Veículo / Eixos'] 
+              || r['Veiculo / Eixos'] 
+              || r['Veículo/Eixos'] 
+              || r['Veiculo/Eixos'] 
+              || r['Veículo'] 
+              || r['Veiculo']
+              || r['Tipo de Veículo']
+              || r['Tipo de Veiculo'];
             map.set(emb, {
               Embarque: r['Embarque'],
               Romaneio: r['Romaneio'],
-              'Veículo / Eixos': r['Veículo / Eixos'],
+              'Veículo / Eixos': veh,
               Empresa: r['Empresa'],
               Transportadora: r['Transportadora'],
               Status: r['Status'],
@@ -1313,6 +1347,22 @@ const ExternalLoads = () => {
         const totalWeight = parseWeightNumber(carga['Peso (kg)']) || parsedDeliveries.reduce((acc: number, d: any) => acc + d.weight, 0);
         const totalFreight = parsedDeliveries.reduce((acc: number, d: any) => acc + d.freight, 0) || parseValue(carga['Frete + Descarga (R$)']);
 
+        const rawVeh = carga['Veículo / Eixos'] 
+          || carga['Veiculo / Eixos'] 
+          || carga['Veículo/Eixos'] 
+          || carga['Veiculo/Eixos'] 
+          || carga['Veículo'] 
+          || carga['Veiculo']
+          || carga['Tipo de Veículo']
+          || carga['Tipo de Veiculo']
+          || targetEntregas[0]?.['Veículo / Eixos']
+          || targetEntregas[0]?.['Veiculo / Eixos']
+          || targetEntregas[0]?.['Veículo/Eixos']
+          || targetEntregas[0]?.['Veiculo/Eixos']
+          || targetEntregas[0]?.['Veículo']
+          || targetEntregas[0]?.['Veiculo'];
+        const vehNormalized = normalizeVehicleType(rawVeh);
+
         return {
           id: String(carga['Embarque'] || `EMB-${carga['Romaneio'] || idx}`),
           data: new Date().toLocaleDateString('pt-BR'),
@@ -1321,13 +1371,13 @@ const ExternalLoads = () => {
           uf: mainUF,
           peso: String(totalWeight),
           frete: freteType,
-          observacoes: `${carga['Embarque'] || ''} | Romaneio: ${carga['Romaneio'] || ''} | ${carga['Veículo / Eixos'] || ''}`,
+          observacoes: `${carga['Embarque'] || ''} | Romaneio: ${carga['Romaneio'] || ''} | ${rawVeh || ''}`,
           status: statusFormatted,
           parsedDeliveries: parsedDeliveries,
           totalToPay: totalFreight,
           manualDeliveryCount: parsedDeliveries.length,
           useEqualizationTable: false,
-          manualVehicleType: normalizeVehicleType(carga['Veículo / Eixos'])
+          manualVehicleType: vehNormalized
         };
       });
 

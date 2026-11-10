@@ -181,11 +181,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       shortLabel: 'MA',
       caption: `Cargas Hidracor ${todayStr}, Maranhão`,
       filename: `cargas-hidracor-maranhao-${todaySlug}.png`,
-      filterFn: (l: ExternalLoad) => {
-        const u = (l.uf || '').trim().toUpperCase();
-        if (u === 'MA') return true;
-        return l.parsedDeliveries?.some((d: any) => (d.uf || '').trim().toUpperCase() === 'MA') || false;
-      }
+      filterFn: (l: ExternalLoad) => (l.uf || '').trim().toUpperCase() === 'MA'
     },
     {
       id: 'CE_PI' as const,
@@ -193,11 +189,7 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       shortLabel: 'CE e PI',
       caption: `Cargas Hidracor ${todayStr}, Ceará e Piauí`,
       filename: `cargas-hidracor-ceara-piaui-${todaySlug}.png`,
-      filterFn: (l: ExternalLoad) => {
-        const u = (l.uf || '').trim().toUpperCase();
-        if (['CE', 'PI'].includes(u)) return true;
-        return l.parsedDeliveries?.some((d: any) => ['CE', 'PI'].includes((d.uf || '').trim().toUpperCase())) || false;
-      }
+      filterFn: (l: ExternalLoad) => ['CE', 'PI'].includes((l.uf || '').trim().toUpperCase())
     },
     {
       id: 'OUTROS' as const,
@@ -205,11 +197,8 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       shortLabel: 'Exceto CE, PI e MA apenas',
       caption: `Cargas Hidracor ${todayStr}, Outros Estados`,
       filename: `cargas-hidracor-outros-estados-${todaySlug}.png`,
-      // Todas as UFs com exceção de CE, PI e MA apenas (cargas de AL, RN, PB, PE, BA, etc. voltam a aparecer)
-      filterFn: (l: ExternalLoad) => {
-        const u = (l.uf || '').trim().toUpperCase();
-        return !['CE', 'PI', 'MA'].includes(u);
-      }
+      // Todas as UFs com exceção de CE, PI e MA apenas (cargas de AL, RN, PB, PE, BA, etc. aparecem aqui)
+      filterFn: (l: ExternalLoad) => !['CE', 'PI', 'MA'].includes((l.uf || '').trim().toUpperCase())
     }
   ], [todayStr, todaySlug]);
 
