@@ -159,6 +159,10 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
     targetLoads.forEach(l => {
       const u = (l?.uf || '').trim().toUpperCase();
       if (u) ufs.add(u);
+      l?.parsedDeliveries?.forEach((d: any) => {
+        const du = (d?.uf || '').trim().toUpperCase();
+        if (du) ufs.add(du);
+      });
     });
     return Array.from(ufs).sort();
   }, [targetLoads]);
@@ -177,7 +181,11 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       shortLabel: 'MA',
       caption: `Cargas Hidracor ${todayStr}, Maranhão`,
       filename: `cargas-hidracor-maranhao-${todaySlug}.png`,
-      filterFn: (l: ExternalLoad) => (l.uf || '').trim().toUpperCase() === 'MA'
+      filterFn: (l: ExternalLoad) => {
+        const u = (l.uf || '').trim().toUpperCase();
+        if (u === 'MA') return true;
+        return l.parsedDeliveries?.some((d: any) => (d.uf || '').trim().toUpperCase() === 'MA') || false;
+      }
     },
     {
       id: 'CE_PI' as const,
@@ -185,16 +193,23 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
       shortLabel: 'CE e PI',
       caption: `Cargas Hidracor ${todayStr}, Ceará e Piauí`,
       filename: `cargas-hidracor-ceara-piaui-${todaySlug}.png`,
-      filterFn: (l: ExternalLoad) => ['CE', 'PI'].includes((l.uf || '').trim().toUpperCase())
+      filterFn: (l: ExternalLoad) => {
+        const u = (l.uf || '').trim().toUpperCase();
+        if (['CE', 'PI'].includes(u)) return true;
+        return l.parsedDeliveries?.some((d: any) => ['CE', 'PI'].includes((d.uf || '').trim().toUpperCase())) || false;
+      }
     },
     {
       id: 'OUTROS' as const,
       name: 'Outros Estados',
-      shortLabel: 'Exceto CE, PI, MA, AL',
+      shortLabel: 'Exceto CE, PI e MA apenas',
       caption: `Cargas Hidracor ${todayStr}, Outros Estados`,
       filename: `cargas-hidracor-outros-estados-${todaySlug}.png`,
-      // Todas as UFs com exceção do CE, PI, MA e AL conforme solicitado pelo usuário
-      filterFn: (l: ExternalLoad) => !['CE', 'PI', 'MA', 'AL'].includes((l.uf || '').trim().toUpperCase())
+      // Todas as UFs com exceção de CE, PI e MA apenas (cargas de AL, RN, PB, PE, BA, etc. voltam a aparecer)
+      filterFn: (l: ExternalLoad) => {
+        const u = (l.uf || '').trim().toUpperCase();
+        return !['CE', 'PI', 'MA'].includes(u);
+      }
     }
   ], [todayStr, todaySlug]);
 
@@ -213,7 +228,11 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
 
     if (activeTab === 'state') {
       const stateName = BRAZIL_STATES[selectedState] || selectedState;
-      const items = targetLoads.filter(l => (l.uf || '').trim().toUpperCase() === selectedState);
+      const items = targetLoads.filter(l => {
+        const u = (l.uf || '').trim().toUpperCase();
+        if (u === selectedState) return true;
+        return l.parsedDeliveries?.some((d: any) => (d.uf || '').trim().toUpperCase() === selectedState) || false;
+      });
       return {
         title: stateName,
         caption: `Cargas Hidracor ${todayStr}, ${stateName}`,
