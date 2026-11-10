@@ -1450,6 +1450,7 @@ const ExternalLoads = () => {
     const statusRaw = (load.status || '').trim();
     const statusNorm = normalizeText(statusRaw);
     const key = getLoadKey(load);
+    const changed = statusChangedKeys[key];
     const segInfo = statusNorm.includes('seguradora') ? getSeguradoraTimeInfo(load) : null;
 
     let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
