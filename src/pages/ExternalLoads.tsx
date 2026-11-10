@@ -605,10 +605,45 @@ const ExternalLoads = () => {
     }
   };
 
+  const UF_LIST_REGEX = /^(?:(\d+)[\s.\-–—]+)?\s*([A-Za-zÀ-ÿ0-9\s.\-–—']+?)\s*[\/\-–—]\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/i;
+
+  const parseCityAndUFFromText = (text: string) => {
+    if (!text) return { city: '', uf: '' };
+    const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const m = line.match(UF_LIST_REGEX);
+      if (m) {
+        let candCity = m[2].replace(/^\d+[\s.\-–—]+/, '').trim();
+        candCity = candCity.replace(/\b(CIF|FOB)\b/ig, '').trim();
+        if (candCity) {
+          return { city: candCity, uf: m[3].toUpperCase() };
+        }
+      }
+    }
+    const mAll = text.match(UF_LIST_REGEX);
+    if (mAll) {
+      let candCity = mAll[2].replace(/^\d+[\s.\-–—]+/, '').trim();
+      candCity = candCity.replace(/\b(CIF|FOB)\b/ig, '').trim();
+      if (candCity) {
+        return { city: candCity, uf: mAll[3].toUpperCase() };
+      }
+    }
+    return { city: '', uf: '' };
+  };
+
   // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
   const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
     return (rawLoads || []).map((load: any, idx: number) => {
       const parsed = (load.parsedDeliveries || []).map((d: any, dIdx: number) => {
+        let city = String(d.city || '').trim();
+        let uf = String(d.uf || '').trim().toUpperCase();
+
+        if (!city || !uf) {
+          const cand = parseCityAndUFFromText(String(d.romaneioERP || d.clientName || load.observacoes || ''));
+          if (!city && cand.city) city = cand.city;
+          if (!uf && cand.uf) uf = cand.uf;
+        }
+
         const isCif = String(d.type || 'CIF').toUpperCase().includes('CIF');
         const weight = Number(d.weight) || 0;
         let freight = Number(d.freight) || 0;
@@ -623,15 +658,15 @@ const ExternalLoads = () => {
         } else {
           // Entregas FOB continuam calculadas através da tabela FOB do site
           if (!freight || freight === 0) {
-            aliquot = getAliquot(d.city, d.uf, 'FOB', weight);
+            aliquot = getAliquot(city, uf || 'CE', 'FOB', weight);
             freight = weight * aliquot;
           }
         }
 
         return {
           deliveryNum: d.deliveryNum || (dIdx + 1),
-          city: String(d.city || ''),
-          uf: String(d.uf || 'CE').toUpperCase(),
+          city: city,
+          uf: uf || 'CE',
           type: isCif ? 'CIF' : 'FOB',
           weight,
           freight,
@@ -647,6 +682,26 @@ const ExternalLoads = () => {
         };
       });
 
+      // Recria a rota caso esteja vazia, apenas "Destino" ou com o padrão antigo
+      let rota = String(load.rota || '');
+      const hasDestinoOnly = rota.startsWith('Destino (') || rota === 'Destino' || !rota || rota === 'Carga';
+      
+      const cityGroups: Record<string, string[]> = {};
+      parsed.forEach((d: any) => {
+        const destKey = d.city ? (d.uf ? `${d.city}/${d.uf}` : d.city) : (d.uf || 'Destino');
+        if (!cityGroups[destKey]) cityGroups[destKey] = [];
+        cityGroups[destKey].push(`${d.weight} KG ${d.type}`);
+      });
+      const newRota = Object.entries(cityGroups)
+        .map(([c, ws]) => `${c} (${ws.join(' / ')})`)
+        .join(', ');
+
+      if ((hasDestinoOnly || !rota) && newRota) {
+        rota = newRota;
+      } else if (!rota) {
+        rota = newRota || String(load.id || 'Carga');
+      }
+
       const totalFreight = parsed.reduce((acc: number, d: any) => acc + (d.freight || 0), 0) || Number(load.totalToPay) || 0;
 
       let statusFormatted = load.status || '';
@@ -657,13 +712,15 @@ const ExternalLoads = () => {
         statusFormatted = 'Cotação encerrada';
       }
 
+      const mainUF = parsed.find((d: any) => d.uf && d.uf !== 'CE')?.uf || parsed.find((d: any) => d.uf)?.uf || load.uf || 'CE';
+
       return {
         ...load,
         id: String(load.id || `load-${idx}-${Date.now()}`),
         data: String(load.data || new Date().toLocaleDateString('pt-BR')),
-        rota: String(load.rota || 'Carga'),
+        rota: rota,
         entregas: String(parsed.length || load.entregas || 1),
-        uf: String(load.uf || parsed[0]?.uf || 'CE').toUpperCase(),
+        uf: String(mainUF).toUpperCase(),
         peso: String(load.peso || parsed.reduce((acc: number, d: any) => acc + d.weight, 0)),
         frete: String(load.frete || 'CIF'),
         observacoes: String(load.observacoes || ''),
@@ -1189,20 +1246,32 @@ const ExternalLoads = () => {
         const targetEntregas = entregasDaCarga.length > 0 ? entregasDaCarga : [carga];
 
         const parsedDeliveries = targetEntregas.map((e: any, dIdx: number) => {
-          const isCif = String(e['CIF / FOB'] || 'CIF').toUpperCase().includes('CIF');
+          let city = String(e['Cidade'] || e['cidade'] || e['City'] || '').trim();
+          let uf = String(e['UF'] || e['uf'] || e['Estado'] || '').trim().toUpperCase();
+
+          if (!city || !uf) {
+            const rawCol = String(e['Entrega / destino'] || e['Destino'] || e['Entrega'] || e['Rota'] || e['Descrição'] || '');
+            if (rawCol) {
+              const cand = parseCityAndUFFromText(rawCol);
+              if (!city && cand.city) city = cand.city;
+              if (!uf && cand.uf) uf = cand.uf;
+            }
+          }
+
+          const isCif = String(e['CIF / FOB'] || e['Tipo'] || 'CIF').toUpperCase().includes('CIF');
           const weight = parseWeightNumber(e['Peso (kg)']);
           let freight = isCif ? parseValue(e['Frete + Descarga (R$)']) : 0;
           let aliquot = (weight > 0 && isCif) ? (freight / weight) : 0;
 
           if (!isCif) {
-            aliquot = getAliquot(String(e['Cidade'] || ''), String(e['UF'] || ''), 'FOB', weight);
+            aliquot = getAliquot(city, uf || 'CE', 'FOB', weight);
             freight = weight * aliquot;
           }
 
           return {
             deliveryNum: e['Entrega'] || (dIdx + 1),
-            city: String(e['Cidade'] || ''),
-            uf: String(e['UF'] || 'CE').toUpperCase(),
+            city: city,
+            uf: uf || 'CE',
             type: isCif ? 'CIF' : 'FOB',
             weight: weight,
             aliquot: aliquot,
@@ -1220,13 +1289,13 @@ const ExternalLoads = () => {
 
         const cityGroups: Record<string, string[]> = {};
         parsedDeliveries.forEach((d: any) => {
-          const cityName = d.city || 'Destino';
-          if (!cityGroups[cityName]) cityGroups[cityName] = [];
-          cityGroups[cityName].push(`${d.weight} KG ${d.type}`);
+          const destKey = d.city ? (d.uf ? `${d.city}/${d.uf}` : d.city) : 'Destino';
+          if (!cityGroups[destKey]) cityGroups[destKey] = [];
+          cityGroups[destKey].push(`${d.weight} KG ${d.type}`);
         });
         const rotaFormatted = Object.entries(cityGroups).map(([c, ws]) => `${c} (${ws.join(' / ')})`).join(', ') || String(carga['Embarque'] || 'Carga');
 
-        const mainUF = parsedDeliveries[0]?.uf || 'CE';
+        const mainUF = parsedDeliveries.find((d: any) => d.uf && d.uf !== 'CE')?.uf || parsedDeliveries.find((d: any) => d.uf)?.uf || 'CE';
         const hasCif = parsedDeliveries.some((d: any) => d.type === 'CIF');
         const hasFob = parsedDeliveries.some((d: any) => d.type === 'FOB');
         const freteType = (hasCif && hasFob) ? 'CIF/FOB' : (hasFob ? 'FOB' : 'CIF');
@@ -1440,8 +1509,12 @@ const ExternalLoads = () => {
         }
         return row[col as keyof ExternalLoad]?.toString().toLowerCase().includes(value.toLowerCase());
       });
-      const cleanUF = (row?.uf ? String(row.uf) : '').trim().toUpperCase();
-      const matchesUF = selectedUFs.length === 0 || (cleanUF !== '' && selectedUFs.includes(cleanUF));
+      const rowUFs = new Set<string>();
+      if (row?.uf) rowUFs.add(String(row.uf).trim().toUpperCase());
+      row?.parsedDeliveries?.forEach(d => {
+        if (d?.uf) rowUFs.add(String(d.uf).trim().toUpperCase());
+      });
+      const matchesUF = selectedUFs.length === 0 || selectedUFs.some(u => rowUFs.has(u));
       return matchesFilters && matchesUF;
     });
   }, [sortedData, columnFilters, selectedUFs, quickStatusFilter, newLoadKeys, currentTime]);
@@ -1528,6 +1601,10 @@ const ExternalLoads = () => {
     (activeData || []).forEach(l => {
       const u = (l?.uf ? String(l.uf) : '').trim().toUpperCase();
       if (u) ufs.add(u);
+      l?.parsedDeliveries?.forEach(d => {
+        const du = (d?.uf ? String(d.uf) : '').trim().toUpperCase();
+        if (du) ufs.add(du);
+      });
     });
     return Array.from(ufs).sort();
   }, [activeData]);
@@ -2236,9 +2313,14 @@ const ExternalLoads = () => {
                               <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                                 {load.data || 'Sem data'}
                               </span>
-                              <span className="text-[11px] font-black text-white bg-slate-900 px-2 py-0.5 rounded shadow-2xs">
-                                {load.uf}
-                              </span>
+                              {(() => {
+                                const ufs = Array.from(new Set([load.uf, ...(load.parsedDeliveries?.map((d: any) => d.uf) || [])].filter(Boolean)));
+                                return (
+                                  <span className="text-[11px] font-black text-white bg-slate-900 px-2 py-0.5 rounded shadow-2xs">
+                                    {ufs.length > 0 ? ufs.join(' / ') : 'CE'}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
                               {load.frete || 'CIF'}
