@@ -568,23 +568,17 @@ const ExternalLoads = () => {
         .select('*')
         .order('updated_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.warn("Aviso ao carregar dados do Supabase:", error);
+      }
 
       const current = data?.find(d => d.version === 'current');
       const previous = data?.find(d => d.version === 'previous');
 
-      const isDataCorrupted = current?.loads && current.loads.length > 0 && (
-        current.loads.some((l: ExternalLoad) => (l.data && l.data.includes('(')) || l.peso === 'CIF' || l.peso === 'FOB' || l.peso === 'CIF/FOB')
-      );
-
-      if (isDataCorrupted || !current) {
-        await updateFromGoogleSheets();
-        return;
-      }
-
-      if (current) {
+      if (current && current.loads && Array.isArray(current.loads) && current.loads.length > 0) {
+        const enriched = processAndEnrichLoads(current.loads);
         const storedTimestamps = getStoredSeguradoraTimestamps();
-        const mergedLoads = (current.loads || []).map((l: ExternalLoad) => {
+        const mergedLoads = enriched.map((l: ExternalLoad) => {
           const isSeguradora = normalizeText(l.status).includes('seguradora');
           if (isSeguradora) {
             const key = getLoadKey(l);
@@ -602,14 +596,57 @@ const ExternalLoads = () => {
         });
         saveStoredSeguradoraTimestamps(storedTimestamps);
         setCurrentLoads(mergedLoads);
+      } else {
+        setCurrentLoads([]);
       }
-      if (previous) setPreviousLoads(previous.loads);
+
+      if (previous?.loads && Array.isArray(previous.loads)) {
+        setPreviousLoads(processAndEnrichLoads(previous.loads));
+      }
     } catch (error: any) {
       console.error("Erro ao carregar dados salvos:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Listener de sincronização em tempo real vindo da extensão Chrome
+  useEffect(() => {
+    const handleExtensionSync = async (event: any) => {
+      const extractedLoads = event.detail;
+      if (!Array.isArray(extractedLoads) || extractedLoads.length === 0) return;
+
+      try {
+        setUpdating(true);
+        const enriched = processAndEnrichLoads(extractedLoads);
+
+        await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
+        if (currentLoadsRef.current.length > 0) {
+          await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
+        }
+
+        await supabase.from('hidracor_external_loads').insert([{
+          user_id: user?.id,
+          loads: enriched,
+          version: 'current',
+          updated_at: new Date().toISOString()
+        }]);
+
+        setCurrentLoads(enriched);
+        setLastCheckTime(new Date().toLocaleTimeString('pt-BR'));
+        showSuccess(`⚡ ${enriched.length} cargas sincronizadas diretamente da extensão!`);
+      } catch (err: any) {
+        console.error("Erro ao processar sync da extensão:", err);
+      } finally {
+        setUpdating(false);
+      }
+    };
+
+    window.addEventListener('midas-sync-loads', handleExtensionSync);
+    return () => {
+      window.removeEventListener('midas-sync-loads', handleExtensionSync);
+    };
+  }, [user]);
 
   const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
     const deliveries: any[] = [];
@@ -1269,7 +1306,8 @@ const ExternalLoads = () => {
         }
         return row[col as keyof ExternalLoad]?.toString().toLowerCase().includes(value.toLowerCase());
       });
-      const matchesUF = selectedUFs.length === 0 || selectedUFs.includes(row.uf.toUpperCase());
+      const cleanUF = (row?.uf ? String(row.uf) : '').trim().toUpperCase();
+      const matchesUF = selectedUFs.length === 0 || (cleanUF !== '' && selectedUFs.includes(cleanUF));
       return matchesFilters && matchesUF;
     });
   }, [sortedData, columnFilters, selectedUFs, quickStatusFilter, newLoadKeys, currentTime]);
@@ -1351,7 +1389,11 @@ const ExternalLoads = () => {
   };
 
   const allUFs = useMemo(() => {
-    const ufs = new Set(activeData.map(l => l.uf.toUpperCase()));
+    const ufs = new Set<string>();
+    (activeData || []).forEach(l => {
+      const u = (l?.uf ? String(l.uf) : '').trim().toUpperCase();
+      if (u) ufs.add(u);
+    });
     return Array.from(ufs).sort();
   }, [activeData]);
 
