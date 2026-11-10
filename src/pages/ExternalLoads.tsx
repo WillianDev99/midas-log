@@ -561,6 +561,60 @@ const ExternalLoads = () => {
     return parseValue(entry['K']) / 1000;
   };
 
+  // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
+  const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
+    return (rawLoads || []).map((load: any, idx: number) => {
+      const parsed = (load.parsedDeliveries || []).map((d: any) => {
+        const isCif = String(d.type || 'CIF').toUpperCase().includes('CIF');
+        const weight = Number(d.weight) || 0;
+        let freight = Number(d.freight) || 0;
+        let aliquot = Number(d.aliquot) || 0;
+
+        if (isCif) {
+          // Entregas CIF usam DIRETO o valor de Frete + Descarga extraído do Gestão de Fretes
+          if (d.freteDescarga !== undefined && d.freteDescarga !== null && Number(d.freteDescarga) > 0) {
+            freight = Number(d.freteDescarga);
+          }
+          aliquot = weight > 0 ? freight / weight : 0;
+        } else {
+          // Entregas FOB continuam calculadas através da tabela FOB do site
+          if (!freight || freight === 0) {
+            aliquot = getAliquot(d.city, d.uf, 'FOB', weight);
+            freight = weight * aliquot;
+          }
+        }
+
+        return {
+          ...d,
+          type: isCif ? 'CIF' : 'FOB',
+          weight,
+          freight,
+          aliquot
+        };
+      });
+
+      const totalFreight = parsed.reduce((acc: number, d: any) => acc + (d.freight || 0), 0) || Number(load.totalToPay) || 0;
+
+      let statusFormatted = load.status || '';
+      const stNorm = normalizeText(statusFormatted);
+      if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
+        statusFormatted = 'Aguardando Analise Transportadora';
+      } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
+        statusFormatted = 'Cotação encerrada';
+      }
+
+      return {
+        ...load,
+        id: load.id || `load-${idx}-${Date.now()}`,
+        status: statusFormatted,
+        parsedDeliveries: parsed,
+        totalToPay: totalFreight,
+        manualDeliveryCount: parsed.length,
+        useEqualizationTable: false
+      };
+    });
+  };
+
   const fetchSavedLoads = async () => {
     try {
       const { data, error } = await supabase
@@ -758,60 +812,6 @@ const ExternalLoads = () => {
     }
 
     return strVal;
-  };
-
-  // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
-  const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
-    return (rawLoads || []).map((load: any, idx: number) => {
-      const parsed = (load.parsedDeliveries || []).map((d: any) => {
-        const isCif = String(d.type || 'CIF').toUpperCase().includes('CIF');
-        const weight = Number(d.weight) || 0;
-        let freight = Number(d.freight) || 0;
-        let aliquot = Number(d.aliquot) || 0;
-
-        if (isCif) {
-          // Entregas CIF usam DIRETO o valor de Frete + Descarga extraído do Gestão de Fretes
-          if (d.freteDescarga !== undefined && d.freteDescarga !== null && Number(d.freteDescarga) > 0) {
-            freight = Number(d.freteDescarga);
-          }
-          aliquot = weight > 0 ? freight / weight : 0;
-        } else {
-          // Entregas FOB continuam calculadas através da tabela FOB do site
-          if (!freight || freight === 0) {
-            aliquot = getAliquot(d.city, d.uf, 'FOB', weight);
-            freight = weight * aliquot;
-          }
-        }
-
-        return {
-          ...d,
-          type: isCif ? 'CIF' : 'FOB',
-          weight,
-          freight,
-          aliquot
-        };
-      });
-
-      const totalFreight = parsed.reduce((acc: number, d: any) => acc + (d.freight || 0), 0) || Number(load.totalToPay) || 0;
-
-      let statusFormatted = load.status || '';
-      const stNorm = normalizeText(statusFormatted);
-      if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
-        statusFormatted = 'Aguardando Analise Transportadora';
-      } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
-        statusFormatted = 'Cotação encerrada';
-      }
-
-      return {
-        ...load,
-        id: load.id || `load-${idx}-${Date.now()}`,
-        status: statusFormatted,
-        parsedDeliveries: parsed,
-        totalToPay: totalFreight,
-        manualDeliveryCount: parsed.length,
-        useEqualizationTable: false
-      };
-    });
   };
 
   // Atualiza as cargas buscando a versão mais recente sincronizada pela extensão no Supabase

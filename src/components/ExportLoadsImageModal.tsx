@@ -145,17 +145,20 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
     return todayStr.replace(/\//g, '-');
   }, [todayStr]);
 
-  // FILTRO OBRIGATÓRIO: Conforme solicitado pelo usuário, nas imagens para os motoristas
-  // vão apenas as cargas com status "Agenciando" (disponíveis para contratação)
+  // FILTRO: Nas imagens para os motoristas vão as cargas disponíveis para contratação
   const targetLoads = useMemo(() => {
-    return loads.filter(l => normalizeText(l.status).includes('agenciando'));
+    return (loads || []).filter(l => {
+      const s = normalizeText(l?.status || '');
+      return s.includes('aguardando') || s.includes('analise') || s.includes('agenciando');
+    });
   }, [loads]);
 
-  // Lista de UFs disponíveis nas cargas com status Agenciando
+  // Lista de UFs disponíveis nas cargas com status disponível
   const availableUFs = useMemo(() => {
     const ufs = new Set<string>();
     targetLoads.forEach(l => {
-      if (l.uf) ufs.add(l.uf.trim().toUpperCase());
+      const u = (l?.uf || '').trim().toUpperCase();
+      if (u) ufs.add(u);
     });
     return Array.from(ufs).sort();
   }, [targetLoads]);
