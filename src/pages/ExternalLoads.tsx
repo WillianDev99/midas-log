@@ -407,12 +407,13 @@ const ExternalLoads = () => {
       .replace(/\s+/g, ' ');
   };
 
-  const formatCurrency = (val: number) => {
-    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatCurrency = (val: number | undefined | null) => {
+    const num = typeof val === 'number' && !isNaN(val) ? val : Number(val) || 0;
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const parseValue = (val: any) => {
-    if (typeof val === 'number') return val;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
     const str = String(val || '0').replace('R$', '').trim();
     if (str.includes(',')) {
       return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
@@ -420,8 +421,8 @@ const ExternalLoads = () => {
     return parseFloat(str) || 0;
   };
 
-  const parseWeightNumber = (weight: string | number): number => {
-    if (typeof weight === 'number') return weight;
+  const parseWeightNumber = (weight: string | number | undefined | null): number => {
+    if (typeof weight === 'number') return isNaN(weight) ? 0 : weight;
     const str = String(weight || '0').trim();
     if (str.includes(',')) {
       return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
@@ -429,8 +430,8 @@ const ExternalLoads = () => {
     return parseFloat(str.replace(/[^0-9.]/g, '')) || 0;
   };
 
-  const formatWeight = (weight: string | number): string => {
-    const num = parseWeightNumber(weight);
+  const formatWeight = (weight: string | number | undefined | null): string => {
+    const num = parseWeightNumber(weight ?? 0);
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
   };
 
@@ -443,10 +444,22 @@ const ExternalLoads = () => {
     'RODOTREM 4 TAMPAS'
   ];
 
+  const normalizeVehicleType = (raw: string | undefined | null): string | undefined => {
+    if (!raw) return undefined;
+    const up = String(raw).toUpperCase();
+    if (up.includes('RODOTREM')) return up.includes('4') ? 'RODOTREM 4 TAMPAS' : 'RODOTREM 3 TAMPAS';
+    if (up.includes('BITREM')) return 'BITREM';
+    if (up.includes('CARRETA')) return 'CARRETA';
+    if (up.includes('BITRUCK')) return 'BITRUCK';
+    if (up.includes('TRUCK')) return 'TRUCK';
+    return undefined;
+  };
+
   const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string } | string | number): string => {
     if (typeof load === 'object' && load !== null) {
       if (load.manualVehicleType && load.manualVehicleType !== 'AUTO') {
-        return load.manualVehicleType;
+        const norm = normalizeVehicleType(load.manualVehicleType);
+        if (norm) return norm;
       }
       return getVehicleType(load.peso);
     }
@@ -464,7 +477,7 @@ const ExternalLoads = () => {
     try {
       const response = await fetch('/TABELA_MIDAS_2025.xlsx');
       const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       
       const cifSheet = workbook.Sheets[workbook.SheetNames[0]];
       const cifData = XLSX.utils.sheet_to_json(cifSheet, { header: 'A' });
@@ -484,7 +497,7 @@ const ExternalLoads = () => {
 
       const eqResponse = await fetch('/TABELA_EQUALIZACAO.xlsx');
       const eqArrayBuffer = await eqResponse.arrayBuffer();
-      const eqWorkbook = XLSX.read(eqArrayBuffer, { type: 'buffer' });
+      const eqWorkbook = XLSX.read(eqArrayBuffer, { type: 'array' });
       const eqSheet = eqWorkbook.Sheets[eqWorkbook.SheetNames[0]];
       const eqData = XLSX.utils.sheet_to_json(eqSheet, { header: 'A' });
 
@@ -498,7 +511,7 @@ const ExternalLoads = () => {
       try {
         const spResponse = await fetch('/Clientes Especiais Hidracor.XLSM');
         const spArrayBuffer = await spResponse.arrayBuffer();
-        const spWorkbook = XLSX.read(spArrayBuffer, { type: 'buffer' });
+        const spWorkbook = XLSX.read(spArrayBuffer, { type: 'array' });
         const spSheet = spWorkbook.Sheets[spWorkbook.SheetNames[0]];
         const spData = XLSX.utils.sheet_to_json(spSheet, { header: 'A' });
         cleanSpecial = spData.filter((row: any) => {
@@ -561,10 +574,41 @@ const ExternalLoads = () => {
     return parseValue(entry['K']) / 1000;
   };
 
+  // Persiste cargas no cache local instantâneo e no Supabase
+  const persistLoads = async (loadsToSave: ExternalLoad[]) => {
+    try {
+      // 1. Sempre salva no localStorage para persistência imediata e offline
+      try {
+        localStorage.setItem('midas_external_loads_cache', JSON.stringify(loadsToSave));
+        localStorage.setItem('midas_external_loads_cache_time', new Date().toISOString());
+      } catch (e) {
+        console.warn("Aviso ao salvar no localStorage:", e);
+      }
+
+      // 2. Tenta persistir no Supabase (se RLS bloquear, dados locais continuam seguros)
+      try {
+        await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
+        if (currentLoadsRef.current.length > 0) {
+          await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
+        }
+        await supabase.from('hidracor_external_loads').insert([{
+          user_id: user?.id || null,
+          loads: loadsToSave,
+          version: 'current',
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (sbErr) {
+        console.warn("Aviso ao persistir no Supabase (dados salvos localmente):", sbErr);
+      }
+    } catch (e) {
+      console.warn("Erro ao persistir cargas:", e);
+    }
+  };
+
   // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
   const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
     return (rawLoads || []).map((load: any, idx: number) => {
-      const parsed = (load.parsedDeliveries || []).map((d: any) => {
+      const parsed = (load.parsedDeliveries || []).map((d: any, dIdx: number) => {
         const isCif = String(d.type || 'CIF').toUpperCase().includes('CIF');
         const weight = Number(d.weight) || 0;
         let freight = Number(d.freight) || 0;
@@ -585,11 +629,21 @@ const ExternalLoads = () => {
         }
 
         return {
-          ...d,
+          deliveryNum: d.deliveryNum || (dIdx + 1),
+          city: String(d.city || ''),
+          uf: String(d.uf || 'CE').toUpperCase(),
           type: isCif ? 'CIF' : 'FOB',
           weight,
           freight,
-          aliquot
+          aliquot,
+          tax_rate: d.tax_rate ?? 0.07,
+          clientCode: String(d.clientCode || ''),
+          clientName: String(d.clientName || ''),
+          romaneioERP: String(d.romaneioERP || ''),
+          embarquesERP: String(d.embarquesERP || ''),
+          pedidosERP: String(d.pedidosERP || ''),
+          valorNF: Number(d.valorNF) || 0,
+          freteDescarga: Number(d.freteDescarga) || freight
         };
       });
 
@@ -599,38 +653,71 @@ const ExternalLoads = () => {
       const stNorm = normalizeText(statusFormatted);
       if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
         statusFormatted = 'Aguardando Analise Transportadora';
-      } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
+      } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada') || stNorm.includes('cotacao encerrada')) {
         statusFormatted = 'Cotação encerrada';
       }
 
       return {
         ...load,
-        id: load.id || `load-${idx}-${Date.now()}`,
+        id: String(load.id || `load-${idx}-${Date.now()}`),
+        data: String(load.data || new Date().toLocaleDateString('pt-BR')),
+        rota: String(load.rota || 'Carga'),
+        entregas: String(parsed.length || load.entregas || 1),
+        uf: String(load.uf || parsed[0]?.uf || 'CE').toUpperCase(),
+        peso: String(load.peso || parsed.reduce((acc: number, d: any) => acc + d.weight, 0)),
+        frete: String(load.frete || 'CIF'),
+        observacoes: String(load.observacoes || ''),
         status: statusFormatted,
         parsedDeliveries: parsed,
         totalToPay: totalFreight,
         manualDeliveryCount: parsed.length,
-        useEqualizationTable: false
+        useEqualizationTable: false,
+        manualVehicleType: normalizeVehicleType(load.manualVehicleType)
       };
     });
   };
 
   const fetchSavedLoads = async () => {
     try {
-      const { data, error } = await supabase
-        .from('hidracor_external_loads')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      setLoading(true);
+      let loadedCurrent: ExternalLoad[] | null = null;
+      let loadedPrevious: ExternalLoad[] | null = null;
 
-      if (error) {
-        console.warn("Aviso ao carregar dados do Supabase:", error);
+      try {
+        const { data, error } = await supabase
+          .from('hidracor_external_loads')
+          .select('*')
+          .order('updated_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const current = data.find(d => d.version === 'current');
+          const previous = data.find(d => d.version === 'previous');
+          if (current?.loads && Array.isArray(current.loads) && current.loads.length > 0) {
+            loadedCurrent = current.loads;
+          }
+          if (previous?.loads && Array.isArray(previous.loads)) {
+            loadedPrevious = previous.loads;
+          }
+        }
+      } catch (sbErr) {
+        console.warn("Aviso ao carregar dados do Supabase:", sbErr);
       }
 
-      const current = data?.find(d => d.version === 'current');
-      const previous = data?.find(d => d.version === 'previous');
+      // Se o Supabase ainda não tem dados gravados ou falhou por RLS, lê do localStorage
+      if (!loadedCurrent || loadedCurrent.length === 0) {
+        try {
+          const cached = localStorage.getItem('midas_external_loads_cache');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              loadedCurrent = parsed;
+            }
+          }
+        } catch (e) {}
+      }
 
-      if (current && current.loads && Array.isArray(current.loads) && current.loads.length > 0) {
-        const enriched = processAndEnrichLoads(current.loads);
+      if (loadedCurrent && loadedCurrent.length > 0) {
+        const enriched = processAndEnrichLoads(loadedCurrent);
         const storedTimestamps = getStoredSeguradoraTimestamps();
         const mergedLoads = enriched.map((l: ExternalLoad) => {
           const isSeguradora = normalizeText(l.status).includes('seguradora');
@@ -654,8 +741,8 @@ const ExternalLoads = () => {
         setCurrentLoads([]);
       }
 
-      if (previous?.loads && Array.isArray(previous.loads)) {
-        setPreviousLoads(processAndEnrichLoads(previous.loads));
+      if (loadedPrevious?.loads && Array.isArray(loadedPrevious.loads)) {
+        setPreviousLoads(processAndEnrichLoads(loadedPrevious.loads));
       }
     } catch (error: any) {
       console.error("Erro ao carregar dados salvos:", error);
@@ -664,28 +751,15 @@ const ExternalLoads = () => {
     }
   };
 
-  // Listener de sincronização em tempo real vindo da extensão Chrome
+  // Listener de sincronização em tempo real vindo da extensão Chrome (CustomEvent, PostMessage e Storage)
   useEffect(() => {
-    const handleExtensionSync = async (event: any) => {
-      const extractedLoads = event.detail;
+    const applySyncLoads = async (extractedLoads: any[]) => {
       if (!Array.isArray(extractedLoads) || extractedLoads.length === 0) return;
 
       try {
         setUpdating(true);
         const enriched = processAndEnrichLoads(extractedLoads);
-
-        await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
-        if (currentLoadsRef.current.length > 0) {
-          await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
-        }
-
-        await supabase.from('hidracor_external_loads').insert([{
-          user_id: user?.id,
-          loads: enriched,
-          version: 'current',
-          updated_at: new Date().toISOString()
-        }]);
-
+        await persistLoads(enriched);
         setCurrentLoads(enriched);
         setLastCheckTime(new Date().toLocaleTimeString('pt-BR'));
         showSuccess(`⚡ ${enriched.length} cargas sincronizadas diretamente da extensão!`);
@@ -696,9 +770,37 @@ const ExternalLoads = () => {
       }
     };
 
-    window.addEventListener('midas-sync-loads', handleExtensionSync);
+    const handleCustomEvent = (event: any) => {
+      applySyncLoads(event.detail);
+    };
+
+    const handleWindowMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'midas-sync-loads' && Array.isArray(event.data.loads)) {
+        applySyncLoads(event.data.loads);
+      }
+    };
+
+    const handleStorageEvent = (event: StorageEvent) => {
+      if (event.key === 'midas_external_loads_cache' && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            applySyncLoads(parsed);
+          }
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('midas-sync-loads', handleCustomEvent);
+    document.addEventListener('midas-sync-loads', handleCustomEvent);
+    window.addEventListener('message', handleWindowMessage);
+    window.addEventListener('storage', handleStorageEvent);
+
     return () => {
-      window.removeEventListener('midas-sync-loads', handleExtensionSync);
+      window.removeEventListener('midas-sync-loads', handleCustomEvent);
+      document.removeEventListener('midas-sync-loads', handleCustomEvent);
+      window.removeEventListener('message', handleWindowMessage);
+      window.removeEventListener('storage', handleStorageEvent);
     };
   }, [user]);
 
@@ -814,28 +916,54 @@ const ExternalLoads = () => {
     return strVal;
   };
 
-  // Atualiza as cargas buscando a versão mais recente sincronizada pela extensão no Supabase
+  // Atualiza as cargas buscando a versão mais recente sincronizada pela extensão ou cache
   const updateFromGoogleSheets = async (isAuto: boolean = false) => {
     setUpdating(true);
     try {
-      const { data, error } = await supabase
-        .from('hidracor_external_loads')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      let currentLoadsRaw: any[] | null = null;
+      let previousLoadsRaw: any[] | null = null;
 
-      if (error) throw error;
+      try {
+        const { data, error } = await supabase
+          .from('hidracor_external_loads')
+          .select('*')
+          .order('updated_at', { ascending: false });
 
-      const current = data?.find(d => d.version === 'current');
-      const previous = data?.find(d => d.version === 'previous');
+        if (!error && data && data.length > 0) {
+          const current = data.find(d => d.version === 'current');
+          const previous = data.find(d => d.version === 'previous');
+          if (current?.loads && Array.isArray(current.loads) && current.loads.length > 0) {
+            currentLoadsRaw = current.loads;
+          }
+          if (previous?.loads && Array.isArray(previous.loads)) {
+            previousLoadsRaw = previous.loads;
+          }
+        }
+      } catch (sbErr) {
+        console.warn("Aviso ao buscar Supabase:", sbErr);
+      }
 
-      if (!current || !current.loads || current.loads.length === 0) {
+      // Se o banco estiver vazio ou inacessível, lê do cache local
+      if (!currentLoadsRaw || currentLoadsRaw.length === 0) {
+        try {
+          const cached = localStorage.getItem('midas_external_loads_cache');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              currentLoadsRaw = parsed;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!currentLoadsRaw || currentLoadsRaw.length === 0) {
         if (!isAuto) {
-          showError("Nenhuma carga encontrada no banco. Utilize a extensão no site Gestão de Fretes para sincronizar ou importe um arquivo Excel.");
+          showError("Nenhuma carga encontrada. Utilize o botão 'Sincronizar com Midas Log' na extensão ou clique em 'Importar Excel'.");
         }
         return;
       }
 
-      const previousList = currentLoadsRef.current.length > 0 ? currentLoadsRef.current : (previous?.loads || []);
+      const previousList = currentLoadsRef.current.length > 0 ? currentLoadsRef.current : (previousLoadsRaw || []);
       const prevMap = new Map<string, ExternalLoad>();
       if (previousList && previousList.length > 0) {
         previousList.forEach(l => {
@@ -848,7 +976,7 @@ const ExternalLoads = () => {
       const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
       const newSeguradoraLoads: ExternalLoad[] = [];
 
-      const newLoads: ExternalLoad[] = processAndEnrichLoads(current.loads).map((loadItem) => {
+      const newLoads: ExternalLoad[] = processAndEnrichLoads(currentLoadsRaw).map((loadItem) => {
         const key = getLoadKey(loadItem);
         const statusStr = loadItem.status || '';
         const isSeguradora = normalizeText(statusStr).includes('seguradora');
@@ -1012,7 +1140,7 @@ const ExternalLoads = () => {
     }
   };
 
-  // Importação manual de arquivo Excel (.xlsx) gerado pela extensão
+  // Importação manual de arquivo Excel (.xlsx) gerado pela extensão ou pelo Gestão de Fretes
   const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1020,39 +1148,47 @@ const ExternalLoads = () => {
     try {
       setUpdating(true);
       const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'buffer' });
+      const wb = XLSX.read(buffer, { type: 'array' });
 
-      const entregasSheet = wb.Sheets['Entregas Detalhadas'] || wb.Sheets[wb.SheetNames[0]];
-      const resumoSheet = wb.Sheets['Resumo Embarques'];
+      const sheetNames = wb.SheetNames;
+      const entregasSheetName = sheetNames.find(n => n.toLowerCase().includes('entrega')) || sheetNames[0];
+      const resumoSheetName = sheetNames.find(n => n.toLowerCase().includes('resumo'));
 
-      const rawEntregas: any[] = XLSX.utils.sheet_to_json(entregasSheet);
+      const entregasSheet = wb.Sheets[entregasSheetName];
+      const resumoSheet = resumoSheetName ? wb.Sheets[resumoSheetName] : null;
+
+      const rawEntregas: any[] = entregasSheet ? XLSX.utils.sheet_to_json(entregasSheet) : [];
       let rawResumo: any[] = resumoSheet ? XLSX.utils.sheet_to_json(resumoSheet) : [];
 
-      if (rawResumo.length === 0) {
+      if (rawResumo.length === 0 || !rawResumo[0]?.['Embarque']) {
         const map = new Map<string, any>();
         rawEntregas.forEach((r: any) => {
           const emb = r['Embarque'] || r['Romaneio'];
-          if (!map.has(emb)) {
+          if (emb && !map.has(emb)) {
             map.set(emb, {
               Embarque: r['Embarque'],
               Romaneio: r['Romaneio'],
               'Veículo / Eixos': r['Veículo / Eixos'],
               Empresa: r['Empresa'],
               Transportadora: r['Transportadora'],
-              Status: r['Status']
+              Status: r['Status'],
+              'Peso (kg)': r['Peso (kg)'],
+              'Frete + Descarga (R$)': r['Frete + Descarga (R$)']
             });
           }
         });
         rawResumo = Array.from(map.values());
       }
 
-      const newLoads: ExternalLoad[] = rawResumo.map((carga: any, idx: number) => {
+      const generatedLoads: ExternalLoad[] = rawResumo.map((carga: any, idx: number) => {
         const entregasDaCarga = rawEntregas.filter((e: any) =>
-          (e['Embarque'] && e['Embarque'] === carga['Embarque']) ||
-          (e['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']))
+          (e['Embarque'] && carga['Embarque'] && e['Embarque'] === carga['Embarque']) ||
+          (e['Romaneio'] && carga['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']))
         );
 
-        const parsedDeliveries = entregasDaCarga.map((e: any, dIdx: number) => {
+        const targetEntregas = entregasDaCarga.length > 0 ? entregasDaCarga : [carga];
+
+        const parsedDeliveries = targetEntregas.map((e: any, dIdx: number) => {
           const isCif = String(e['CIF / FOB'] || 'CIF').toUpperCase().includes('CIF');
           const weight = parseWeightNumber(e['Peso (kg)']);
           let freight = isCif ? parseValue(e['Frete + Descarga (R$)']) : 0;
@@ -1066,7 +1202,7 @@ const ExternalLoads = () => {
           return {
             deliveryNum: e['Entrega'] || (dIdx + 1),
             city: String(e['Cidade'] || ''),
-            uf: String(e['UF'] || ''),
+            uf: String(e['UF'] || 'CE').toUpperCase(),
             type: isCif ? 'CIF' : 'FOB',
             weight: weight,
             aliquot: aliquot,
@@ -1084,10 +1220,11 @@ const ExternalLoads = () => {
 
         const cityGroups: Record<string, string[]> = {};
         parsedDeliveries.forEach((d: any) => {
-          if (!cityGroups[d.city]) cityGroups[d.city] = [];
-          cityGroups[d.city].push(`${d.weight} KG ${d.type}`);
+          const cityName = d.city || 'Destino';
+          if (!cityGroups[cityName]) cityGroups[cityName] = [];
+          cityGroups[cityName].push(`${d.weight} KG ${d.type}`);
         });
-        const rotaFormatted = Object.entries(cityGroups).map(([c, ws]) => `${c} (${ws.join(' / ')})`).join(', ') || carga['Embarque'];
+        const rotaFormatted = Object.entries(cityGroups).map(([c, ws]) => `${c} (${ws.join(' / ')})`).join(', ') || String(carga['Embarque'] || 'Carga');
 
         const mainUF = parsedDeliveries[0]?.uf || 'CE';
         const hasCif = parsedDeliveries.some((d: any) => d.type === 'CIF');
@@ -1098,7 +1235,9 @@ const ExternalLoads = () => {
         const stNorm = normalizeText(statusFormatted);
         if (stNorm.includes('aguardando') || stNorm.includes('analise transportadora')) {
           statusFormatted = 'Aguardando Analise Transportadora';
-        } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada')) {
+        } else if (stNorm.includes('encerrada') || stNorm.includes('cotacao_encerrada') || stNorm.includes('cotacao encerrada')) {
+          statusFormatted = 'Cotação encerrada';
+        } else {
           statusFormatted = 'Cotação encerrada';
         }
 
@@ -1106,7 +1245,7 @@ const ExternalLoads = () => {
         const totalFreight = parsedDeliveries.reduce((acc: number, d: any) => acc + d.freight, 0) || parseValue(carga['Frete + Descarga (R$)']);
 
         return {
-          id: carga['Embarque'] || `EMB-${carga['Romaneio']}`,
+          id: String(carga['Embarque'] || `EMB-${carga['Romaneio'] || idx}`),
           data: new Date().toLocaleDateString('pt-BR'),
           rota: rotaFormatted,
           entregas: String(parsedDeliveries.length || 1),
@@ -1119,25 +1258,20 @@ const ExternalLoads = () => {
           totalToPay: totalFreight,
           manualDeliveryCount: parsedDeliveries.length,
           useEqualizationTable: false,
-          manualVehicleType: carga['Veículo / Eixos'] || 'TRUCK'
+          manualVehicleType: normalizeVehicleType(carga['Veículo / Eixos'])
         };
       });
 
-      await supabase.from('hidracor_external_loads').delete().eq('version', 'previous');
-      if (currentLoadsRef.current.length > 0) {
-        await supabase.from('hidracor_external_loads').update({ version: 'previous' }).eq('version', 'current');
+      if (generatedLoads.length === 0) {
+        showError("Nenhuma carga encontrada no arquivo selecionado.");
+        return;
       }
 
-      await supabase.from('hidracor_external_loads').insert([{
-        user_id: user?.id,
-        loads: newLoads,
-        version: 'current',
-        updated_at: new Date().toISOString()
-      }]);
-
-      setCurrentLoads(newLoads);
-      showSuccess(`✅ ${newLoads.length} cargas importadas e sincronizadas com sucesso!`);
+      await persistLoads(generatedLoads);
+      setCurrentLoads(generatedLoads);
+      showSuccess(`✅ ${generatedLoads.length} cargas importadas e sincronizadas com sucesso!`);
     } catch (err: any) {
+      console.error("Erro na importação:", err);
       showError("Erro ao importar planilha: " + err.message);
     } finally {
       setUpdating(false);
