@@ -674,11 +674,11 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                 <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2e8f0' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#f8fafc' }}>
-                      <th style={{ width: '48%', padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>ROTA</th>
-                      <th style={{ width: '9%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>ENTREGAS</th>
-                      <th style={{ width: '7%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>UF</th>
-                      <th style={{ width: '14%', padding: '10px 10px', textAlign: 'right', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>PESO TOTAL</th>
-                      <th style={{ width: '12%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>VEÍCULO</th>
+                      <th style={{ width: '45%', padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>ROTA</th>
+                      <th style={{ width: '8%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>ENTREGAS</th>
+                      <th style={{ width: '6%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>UF</th>
+                      <th style={{ width: '13%', padding: '10px 10px', textAlign: 'right', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>PESO TOTAL</th>
+                      <th style={{ width: '18%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>VEÍCULOS/EIXOS</th>
                       <th style={{ width: '10%', padding: '10px 6px', textAlign: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', border: '1px solid #e2e8f0' }}>FRETE</th>
                     </tr>
                   </thead>
@@ -697,8 +697,8 @@ export const ExportLoadsImageModal: React.FC<ExportLoadsImageModalProps> = ({
                         <td style={{ padding: '9px 10px', fontSize: '12px', fontWeight: '600', color: '#0f172a', textAlign: 'right', whiteSpace: 'nowrap', border: '1px solid #e2e8f0' }}>
                           {formatWeight(load.peso)}
                         </td>
-                        <td style={{ padding: '9px 6px', fontSize: '11px', fontWeight: '800', color: '#0f172a', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                          {getVehicleType(load)}
+                        <td style={{ padding: '9px 6px', fontSize: '10px', fontWeight: '800', color: '#0f172a', textAlign: 'center', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                          {load.veiculo || load.manualVehicleType || getVehicleType(load)}
                         </td>
                         <td style={{ padding: '9px 6px', fontSize: '11px', fontWeight: '700', color: '#334155', textAlign: 'center', border: '1px solid #e2e8f0' }}>
                           {load.frete}

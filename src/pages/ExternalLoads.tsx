@@ -93,6 +93,7 @@ interface ExternalLoad {
   manualDeliveryCount?: number;
   useEqualizationTable?: boolean;
   manualVehicleType?: string;
+  veiculo?: string;
   complementaryValue?: number;
   seguradoraEnteredAt?: string;
   seguradoraAlerted2h?: boolean;
@@ -466,22 +467,22 @@ const ExternalLoads = () => {
     return up;
   };
 
-  const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string } | string | number): string => {
+  const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string; veiculo?: string } | string | number): string => {
     if (typeof load === 'object' && load !== null) {
-      if (load.manualVehicleType && load.manualVehicleType !== 'AUTO') {
-        const norm = normalizeVehicleType(load.manualVehicleType);
-        if (norm) return norm;
+      const explicit = String(load.veiculo || load.manualVehicleType || '').trim();
+      if (explicit && explicit !== 'AUTO') {
+        return explicit;
       }
       return getVehicleType(load.peso);
     }
     const num = parseWeightNumber(load);
     const ton = num / 1000;
-    if (ton < 18) return 'TRUCK';
-    if (ton <= 22) return 'BITRUCK';
-    if (ton <= 30) return 'CARRETA';
-    if (ton <= 38) return 'BITREM';
-    if (ton <= 40) return 'RODOTREM 3 TAMPAS';
-    return 'RODOTREM 4 TAMPAS';
+    if (ton < 18) return 'TRUCK | 3 EIXOS';
+    if (ton <= 22) return 'BITRUCK | 4 EIXOS';
+    if (ton <= 30) return 'CARRETA | 5 EIXOS';
+    if (ton <= 38) return 'BITREM | 7 EIXOS';
+    if (ton <= 40) return 'RODOTREM | 9 EIXOS';
+    return 'RODOTREM | 9 EIXOS';
   };
 
   const loadFreightTables = async () => {
@@ -725,20 +726,32 @@ const ExternalLoads = () => {
 
       const mainUF = parsed.find((d: any) => d.uf && d.uf !== 'CE')?.uf || parsed.find((d: any) => d.uf)?.uf || load.uf || 'CE';
 
-      // Extrai e preserva o tipo de veículo oficial do site / planilha
-      const rawVeh = load.manualVehicleType 
+      // Extrai e preserva o texto oficial de Veículo / Eixos tal qual vem do site / relatório
+      let rawVeh = String(
+        load.veiculo 
         || load['Veículo / Eixos'] 
         || load['Veiculo / Eixos'] 
+        || load['Veículo/Eixos'] 
+        || load['Veiculo/Eixos'] 
         || load['Veículo'] 
-        || load.veiculo;
-      
-      let detectedVehicle = normalizeVehicleType(rawVeh);
-      if (!detectedVehicle && load.observacoes) {
-        const mVehObs = String(load.observacoes).match(/\b(RODOTREM(?:\s+[34]\s+TAMPAS)?|BITREM|CARRETA|BITRUCK|TRUCK|TOCO|3\/4|VLC)\b/i);
-        if (mVehObs) {
-          detectedVehicle = normalizeVehicleType(mVehObs[1]);
+        || load['Veiculo']
+        || load.manualVehicleType 
+        || ''
+      ).trim();
+
+      if ((!rawVeh || rawVeh === 'TRUCK') && load.observacoes) {
+        const mPipeObs = String(load.observacoes).match(/\b(TRUCK|BITRUCK|CARRETA(?:\s+LS|\s+VANDERLEIA)?|BITREM|RODOTREM(?:\s+[34]\s+TAMPAS)?|TOCO|3\/4|VLC|VAN)\s*\|\s*(\d+\s*EIXOS)\b/i);
+        if (mPipeObs) {
+          rawVeh = `${mPipeObs[1].toUpperCase()} | ${mPipeObs[2].toUpperCase()}`;
+        } else {
+          const mVehObs = String(load.observacoes).match(/\b(RODOTREM(?:\s+[34]\s+TAMPAS)?|BITREM|CARRETA|BITRUCK|TRUCK|TOCO|3\/4|VLC)\b/i);
+          if (mVehObs && (!rawVeh || rawVeh === 'TRUCK')) {
+            rawVeh = mVehObs[1].toUpperCase();
+          }
         }
       }
+
+      const finalVeh = rawVeh || getVehicleType(load.peso);
 
       return {
         ...load,
@@ -755,7 +768,8 @@ const ExternalLoads = () => {
         totalToPay: totalFreight,
         manualDeliveryCount: parsed.length,
         useEqualizationTable: false,
-        manualVehicleType: detectedVehicle || normalizeVehicleType(load.manualVehicleType)
+        veiculo: finalVeh,
+        manualVehicleType: finalVeh
       };
     });
   };
@@ -1347,7 +1361,7 @@ const ExternalLoads = () => {
         const totalWeight = parseWeightNumber(carga['Peso (kg)']) || parsedDeliveries.reduce((acc: number, d: any) => acc + d.weight, 0);
         const totalFreight = parsedDeliveries.reduce((acc: number, d: any) => acc + d.freight, 0) || parseValue(carga['Frete + Descarga (R$)']);
 
-        const rawVeh = carga['Veículo / Eixos'] 
+        const rawVeh = String(carga['Veículo / Eixos'] 
           || carga['Veiculo / Eixos'] 
           || carga['Veículo/Eixos'] 
           || carga['Veiculo/Eixos'] 
@@ -1360,8 +1374,9 @@ const ExternalLoads = () => {
           || targetEntregas[0]?.['Veículo/Eixos']
           || targetEntregas[0]?.['Veiculo/Eixos']
           || targetEntregas[0]?.['Veículo']
-          || targetEntregas[0]?.['Veiculo'];
-        const vehNormalized = normalizeVehicleType(rawVeh);
+          || targetEntregas[0]?.['Veiculo']
+          || '').trim();
+        const finalVeh = rawVeh || getVehicleType(totalWeight);
 
         return {
           id: String(carga['Embarque'] || `EMB-${carga['Romaneio'] || idx}`),
@@ -1377,7 +1392,8 @@ const ExternalLoads = () => {
           totalToPay: totalFreight,
           manualDeliveryCount: parsedDeliveries.length,
           useEqualizationTable: false,
-          manualVehicleType: vehNormalized
+          veiculo: finalVeh,
+          manualVehicleType: finalVeh
         };
       });
 
@@ -1482,8 +1498,8 @@ const ExternalLoads = () => {
           aValue = parseWeightNumber(String(aValue));
           bValue = parseWeightNumber(String(bValue));
         } else if (sortConfig.key === 'veiculo') {
-          aValue = getVehicleType(a.peso);
-          bValue = getVehicleType(b.peso);
+          aValue = String(a.veiculo || getVehicleType(a)).toUpperCase();
+          bValue = String(b.veiculo || getVehicleType(b)).toUpperCase();
         }
 
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -1549,7 +1565,7 @@ const ExternalLoads = () => {
       const matchesFilters = Object.entries(columnFilters).every(([col, value]) => {
         if (!value) return true;
         if (col === 'veiculo') {
-          const vehicle = getVehicleType(row.peso);
+          const vehicle = String(row.veiculo || getVehicleType(row));
           return vehicle.toLowerCase().includes(value.toLowerCase());
         }
         if (col === 'peso') {
@@ -1864,7 +1880,7 @@ const ExternalLoads = () => {
                 <th>Entregas</th>
                 <th>UF</th>
                 <th>Peso Total</th>
-                <th>Veículo</th>
+                <th>Veículos/Eixos</th>
                 <th>Frete</th>
               </tr>
             </thead>
@@ -1875,7 +1891,7 @@ const ExternalLoads = () => {
                   <td style="text-align: center">${load.entregas}</td>
                   <td style="text-align: center"><strong>${load.uf}</strong></td>
                   <td style="text-align: right">${formatWeight(load.peso)}</td>
-                  <td style="text-align: center"><strong>${getVehicleType(load.peso)}</strong></td>
+                  <td style="text-align: center"><strong>${load.veiculo || getVehicleType(load)}</strong></td>
                   <td style="text-align: center">${load.frete}</td>
                 </tr>
               `).join('')}
@@ -2400,31 +2416,10 @@ const ExternalLoads = () => {
                               <span className="text-xs font-black text-slate-800 truncate block">{formatWeight(load.peso)}</span>
                             </div>
                             <div>
-                              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Veículo</span>
-                              <Select 
-                                value={getVehicleType(load)} 
-                                onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
-                              >
-                                <SelectTrigger className={`h-6 text-[10px] font-bold border rounded px-1.5 w-full flex justify-between items-center ${
-                                  load.manualVehicleType 
-                                    ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-2xs' 
-                                    : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-50'
-                                }`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {VEHICLE_OPTIONS.map(option => (
-                                    <SelectItem key={option} value={option} className="text-xs font-bold">
-                                      {option}
-                                    </SelectItem>
-                                  ))}
-                                  {load.manualVehicleType && (
-                                    <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
-                                      ↺ Automático
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
+                              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Veículos/Eixos</span>
+                              <span className="text-[10px] font-extrabold text-slate-900 uppercase block truncate px-1" title={load.veiculo || getVehicleType(load)}>
+                                {load.veiculo || getVehicleType(load)}
+                              </span>
                             </div>
                           </div>
 
@@ -2592,7 +2587,7 @@ const ExternalLoads = () => {
                       <TableHead className="min-w-[140px] py-4 px-4 bg-white">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between cursor-pointer" onClick={() => handleSort('veiculo')}>
-                            <span className="text-[10px] font-bold uppercase text-slate-500">Veículo</span>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Veículos/Eixos</span>
                             {renderSortIcon('veiculo')}
                           </div>
                           <Input placeholder="Filtrar..." className="h-7 text-[10px]" onChange={(e) => handleFilterChange('veiculo', e.target.value)} />
@@ -2645,31 +2640,8 @@ const ExternalLoads = () => {
                         <TableCell className="text-[11px] text-center">{load.entregas}</TableCell>
                         <TableCell className="text-[11px] text-center font-bold">{load.uf}</TableCell>
                         <TableCell className="text-[11px] text-right font-medium whitespace-nowrap">{formatWeight(load.peso)}</TableCell>
-                        <TableCell className="text-[11px] text-center font-semibold">
-                          <Select 
-                            value={getVehicleType(load)} 
-                            onValueChange={(value) => handleUpdateLoad(load.id, { manualVehicleType: value === 'AUTO' ? undefined : value })}
-                          >
-                            <SelectTrigger className={`h-7 text-[10px] font-bold border rounded px-2 w-[145px] mx-auto flex justify-between items-center ${
-                              load.manualVehicleType 
-                                ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs' 
-                                : 'bg-amber-50/80 text-amber-800 border-amber-200/80 hover:bg-amber-100/60'
-                            }`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {VEHICLE_OPTIONS.map(option => (
-                                <SelectItem key={option} value={option} className="text-xs font-bold">
-                                  {option}
-                                </SelectItem>
-                              ))}
-                              {load.manualVehicleType && (
-                                <SelectItem value="AUTO" className="text-xs text-slate-500 italic border-t mt-1 pt-1">
-                                  ↺ Restaurar Automático
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
+                        <TableCell className="text-[11px] text-center font-extrabold uppercase whitespace-nowrap text-slate-900">
+                          {load.veiculo || getVehicleType(load)}
                         </TableCell>
                         <TableCell className="text-[11px] text-center"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold">{load.frete}</span></TableCell>
                         <TableCell className="text-[11px]">
