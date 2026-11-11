@@ -152,6 +152,12 @@ const AdminDashboard = () => {
                 href="/admin/external-loads"
               />
               <ToolCard 
+                title="Cargas Externas Hidracor FOB" 
+                description="Monitoramento automático de cargas via Google Sheets com tabela CIF Equalizada e FOB."
+                icon={Truck}
+                href="/admin/external-loads-fob"
+              />
+              <ToolCard 
                 title="Gerar Romaneio" 
                 description="Geração automática de romaneios para cargas externas contratadas."
                 icon={FileText}

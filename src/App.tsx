@@ -17,6 +17,7 @@ import CerbrasFormatter from "./pages/CerbrasFormatter";
 import CerbrasWeightsByCity from "./pages/CerbrasWeightsByCity";
 import CerbrasCollectionForecast from "./pages/CerbrasCollectionForecast";
 import ExternalLoads from "./pages/ExternalLoads";
+import ExternalLoadsFOB from "./pages/ExternalLoadsFOB";
 import SavedExternalLoads from "./pages/SavedExternalLoads";
 import LuzarteBudgets from "./pages/LuzarteBudgets";
 import CerbrasFreightCalculator from "./pages/CerbrasFreightCalculator";
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/admin/cerbras-weights" element={<CerbrasWeightsByCity />} />
               <Route path="/admin/cerbras-collection" element={<CerbrasCollectionForecast />} />
               <Route path="/admin/external-loads" element={<ExternalLoads />} />
+              <Route path="/admin/external-loads-fob" element={<ExternalLoadsFOB />} />
               <Route path="/admin/external-loads/saved" element={<SavedExternalLoads />} />
               <Route path="/admin/luzarte-budgets" element={<LuzarteBudgets />} />
               <Route path="/admin/cerbras-freight" element={<CerbrasFreightCalculator />} />
