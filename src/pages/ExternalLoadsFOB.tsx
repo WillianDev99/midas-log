@@ -545,31 +545,84 @@ const ExternalLoadsFOB = () => {
     return val / 1000;
   };
 
+  const persistLoads = async (loadsToSave: ExternalLoad[]) => {
+    // 1. Sempre salva no localStorage para persistência imediata e offline
+    try {
+      localStorage.setItem('midas_external_loads_fob_cache', JSON.stringify(loadsToSave));
+      localStorage.setItem('midas_external_loads_fob_cache_time', new Date().toISOString());
+    } catch (e) {
+      console.warn("Aviso ao salvar no localStorage:", e);
+    }
+
+    // 2. Tenta persistir no Supabase (se RLS bloquear, dados locais continuam seguros)
+    try {
+      await supabase.from('hidracor_external_loads').delete().eq('version', 'fob_previous');
+      if (currentLoadsRef.current.length > 0) {
+        await supabase.from('hidracor_external_loads').update({ version: 'fob_previous' }).eq('version', 'fob_current');
+      }
+      await supabase.from('hidracor_external_loads').insert([{
+        user_id: user?.id || null,
+        loads: loadsToSave,
+        version: 'fob_current',
+        updated_at: new Date().toISOString()
+      }]);
+    } catch (sbErr) {
+      console.warn("Aviso ao persistir no Supabase (dados salvos localmente):", sbErr);
+    }
+  };
+
   const fetchSavedLoads = async () => {
     try {
-      const { data, error } = await supabase
-        .from('hidracor_external_loads')
-        .select('*')
-        .in('version', ['fob_current', 'fob_previous'])
-        .order('updated_at', { ascending: false });
+      setLoading(true);
+      let loadedCurrent: ExternalLoad[] | null = null;
+      let loadedPrevious: ExternalLoad[] | null = null;
 
-      if (error) throw error;
+      try {
+        const { data, error } = await supabase
+          .from('hidracor_external_loads')
+          .select('*')
+          .in('version', ['fob_current', 'fob_previous'])
+          .order('updated_at', { ascending: false });
 
-      const current = data?.find(d => d.version === 'fob_current');
-      const previous = data?.find(d => d.version === 'fob_previous');
+        if (!error && data && data.length > 0) {
+          const current = data.find(d => d.version === 'fob_current');
+          const previous = data.find(d => d.version === 'fob_previous');
+          if (current?.loads && Array.isArray(current.loads) && current.loads.length > 0) {
+            loadedCurrent = current.loads;
+          }
+          if (previous?.loads && Array.isArray(previous.loads)) {
+            loadedPrevious = previous.loads;
+          }
+        }
+      } catch (sbErr) {
+        console.warn("Aviso ao carregar dados do Supabase:", sbErr);
+      }
 
-      const isDataCorrupted = current?.loads && current.loads.length > 0 && (
-        current.loads.some((l: ExternalLoad) => (l.data && l.data.includes('(')) || l.peso === 'CIF' || l.peso === 'FOB' || l.peso === 'CIF/FOB')
+      // Se o Supabase ainda não tem dados gravados ou falhou por RLS, lê do localStorage
+      if (!loadedCurrent || loadedCurrent.length === 0) {
+        try {
+          const cached = localStorage.getItem('midas_external_loads_fob_cache');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              loadedCurrent = parsed;
+            }
+          }
+        } catch (e) {}
+      }
+
+      const isDataCorrupted = loadedCurrent && loadedCurrent.length > 0 && (
+        loadedCurrent.some((l: ExternalLoad) => (l.data && l.data.includes('(')) || l.peso === 'CIF' || l.peso === 'FOB' || l.peso === 'CIF/FOB')
       );
 
-      if (isDataCorrupted || !current) {
+      if (isDataCorrupted || !loadedCurrent || loadedCurrent.length === 0) {
         await updateFromGoogleSheets();
         return;
       }
 
-      if (current) {
+      if (loadedCurrent) {
         const storedTimestamps = getStoredSeguradoraTimestamps();
-        const mergedLoads = (current.loads || []).map((l: ExternalLoad) => {
+        const mergedLoads = (loadedCurrent || []).map((l: ExternalLoad) => {
           const isSeguradora = normalizeText(l.status).includes('seguradora');
           if (isSeguradora) {
             const key = getLoadKey(l);
@@ -588,7 +641,7 @@ const ExternalLoadsFOB = () => {
         saveStoredSeguradoraTimestamps(storedTimestamps);
         setCurrentLoads(mergedLoads);
       }
-      if (previous) setPreviousLoads(previous.loads);
+      if (loadedPrevious) setPreviousLoads(loadedPrevious);
     } catch (error: any) {
       console.error("Erro ao carregar dados salvos:", error);
     } finally {
@@ -865,19 +918,7 @@ const ExternalLoadsFOB = () => {
 
       saveStoredSeguradoraTimestamps(storedTimestamps);
 
-      await supabase.from('hidracor_external_loads').delete().eq('version', 'fob_previous');
-      if (previousList.length > 0) {
-        await supabase.from('hidracor_external_loads').update({ version: 'fob_previous' }).eq('version', 'fob_current');
-      }
-
-      const { error: insertError } = await supabase.from('hidracor_external_loads').insert([{
-        user_id: user?.id,
-        loads: newLoads,
-        version: 'fob_current',
-        updated_at: new Date().toISOString()
-      }]);
-
-      if (insertError) throw insertError;
+      await persistLoads(newLoads);
 
       setPreviousLoads(previousList);
       setCurrentLoads(newLoads);
@@ -1271,12 +1312,16 @@ const ExternalLoadsFOB = () => {
     }
 
     try {
+      localStorage.setItem('midas_external_loads_fob_cache', JSON.stringify(updatedLoadsList));
+    } catch (e) {}
+
+    try {
       await supabase.from('hidracor_external_loads').update({
         loads: updatedLoadsList,
         updated_at: new Date().toISOString()
       }).eq('version', viewMode === 'current' ? 'fob_current' : 'fob_previous');
     } catch (err) {
-      console.error("Erro ao salvar atualização no Supabase:", err);
+      console.warn("Aviso ao salvar atualização no Supabase:", err);
     }
   };
 
