@@ -209,6 +209,7 @@ const ExternalLoadsFOB = () => {
   const [selectedUFs, setSelectedUFs] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: '', direction: null });
   const [freightTables, setFreightTables] = useState<{ cif: any[], fob: any[], equalization: any[], special: any[] }>({ cif: [], fob: [], equalization: [], special: [] });
+  const freightTablesRef = useRef<{ cif: any[], fob: any[], equalization: any[], special: any[] }>({ cif: [], fob: [], equalization: [], special: [] });
   const [manualSearch, setManualSearch] = useState("");
   // Modo de exibição: Cards (perfeito para iPhone XR/Mobile) ou Tabela (Desktop)
   const [displayMode, setDisplayMode] = useState<'cards' | 'table'>(() => {
@@ -460,6 +461,9 @@ const ExternalLoadsFOB = () => {
   };
 
   const loadFreightTables = async () => {
+    if (freightTablesRef.current.fob.length > 0 && freightTablesRef.current.equalization.length > 0) {
+      return freightTablesRef.current;
+    }
     try {
       const response = await fetch('/TABELA_MIDAS_2025.xlsx');
       const arrayBuffer = await response.arrayBuffer();
@@ -508,18 +512,30 @@ const ExternalLoadsFOB = () => {
         console.error("Erro ao carregar clientes especiais:", e);
       }
 
-      setFreightTables({ cif: cleanCIF, fob: cleanFOB, equalization: cleanEQ, special: cleanSpecial });
+      const tables = { cif: cleanCIF, fob: cleanFOB, equalization: cleanEQ, special: cleanSpecial };
+      freightTablesRef.current = tables;
+      setFreightTables(tables);
+      return tables;
     } catch (error) {
       console.error("Erro ao carregar tabelas de frete:", error);
+      return freightTablesRef.current;
     }
   };
 
-  const getAliquot = (city: string, uf: string, type: string, weight: number, totalDeliveries: number = 1) => {
+  const getAliquot = (
+    city: string, 
+    uf: string, 
+    type: string, 
+    weight: number, 
+    totalDeliveries: number = 1,
+    tablesOverride?: { cif: any[], fob: any[], equalization: any[], special: any[] }
+  ) => {
+    const tables = tablesOverride || (freightTablesRef.current.fob.length > 0 ? freightTablesRef.current : freightTables);
     const normCity = normalizeText(city);
     const cleanUF = uf.substring(0, 2).toUpperCase();
 
     if (type === 'FOB') {
-      const matches = freightTables.fob.filter(row => normalizeText(String(row['A'] || '')) === normCity);
+      const matches = tables.fob.filter(row => normalizeText(String(row['A'] || '')) === normCity);
       const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['B'] || '').toUpperCase().includes(cleanUF));
       
       if (!entry) return 0;
@@ -531,7 +547,7 @@ const ExternalLoadsFOB = () => {
     }
 
     // CIF: Utiliza diretamente a Tabela Equalizada (Nova Tabela CIF)
-    const matches = freightTables.equalization.filter(row => normalizeText(String(row['B'] || '')) === normCity);
+    const matches = tables.equalization.filter(row => normalizeText(String(row['B'] || '')) === normCity);
     const entry = matches.length === 1 ? matches[0] : matches.find(row => String(row['E'] || '').toUpperCase().includes(cleanUF));
 
     if (!entry) return 0;
@@ -574,6 +590,7 @@ const ExternalLoadsFOB = () => {
   const fetchSavedLoads = async () => {
     try {
       setLoading(true);
+      const tables = await loadFreightTables();
       let loadedCurrent: ExternalLoad[] | null = null;
       let loadedPrevious: ExternalLoad[] | null = null;
 
@@ -620,6 +637,42 @@ const ExternalLoadsFOB = () => {
         return;
       }
 
+      // Se houver entregas salvas sem alíquota (aliquot === 0), recalcular com as tabelas carregadas
+      if (loadedCurrent && loadedCurrent.length > 0) {
+        loadedCurrent = loadedCurrent.map(l => {
+          if (!l.parsedDeliveries || l.parsedDeliveries.length === 0) return l;
+          const totalD = l.manualDeliveryCount || l.parsedDeliveries.length || 1;
+          let changed = false;
+          const enriched = l.parsedDeliveries.map(d => {
+            if (!d.aliquot || d.aliquot === 0) {
+              const newAliquot = getAliquot(d.city, d.uf, d.type, d.weight, totalD, tables);
+              if (newAliquot > 0) {
+                changed = true;
+                return {
+                  ...d,
+                  aliquot: newAliquot,
+                  freight: d.weight * newAliquot
+                };
+              }
+            }
+            return d;
+          });
+          if (changed) {
+            const baseFreight = enriched.reduce((acc, d) => acc + d.freight, 0);
+            const totalReceived = baseFreight + (l.complementaryValue || 0);
+            return {
+              ...l,
+              parsedDeliveries: enriched,
+              totalToPay: l.totalToPay && l.totalToPay > 0 ? l.totalToPay : totalReceived * 0.7
+            };
+          }
+          return l;
+        });
+        try {
+          localStorage.setItem('midas_external_loads_fob_cache', JSON.stringify(loadedCurrent));
+        } catch (e) {}
+      }
+
       if (loadedCurrent) {
         const storedTimestamps = getStoredSeguradoraTimestamps();
         const mergedLoads = (loadedCurrent || []).map((l: ExternalLoad) => {
@@ -649,8 +702,14 @@ const ExternalLoadsFOB = () => {
     }
   };
 
-  const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
-    const deliveries: any[] = [];
+  const parseRota = (
+    rotaStr: string, 
+    defaultUF: string, 
+    mainWeightStr: string, 
+    mainFreightType: string,
+    tablesOverride?: { cif: any[], fob: any[], equalization: any[], special: any[] }
+  ) => {
+    const rawDeliveries: { city: string; uf: string; type: string; weight: number }[] = [];
     
     const splitCityUF = (str: string) => {
       let raw = str.trim().replace(/^[,.\s]+|[,.\s]+$/g, '');
@@ -688,54 +747,39 @@ const ExternalLoadsFOB = () => {
           foundWeights = true;
           const w = parseFloat(weightMatch[1].replace(/\./g, '').replace(',', '.')) || 0;
           const t = weightMatch[2].toUpperCase();
-          const aliquot = getAliquot(city, uf, t, w);
-          deliveries.push({
-            city,
-            uf,
-            type: t,
-            weight: w,
-            aliquot,
-            freight: w * aliquot,
-            tax_rate: TAX_RATE
-          });
+          rawDeliveries.push({ city, uf, type: t, weight: w });
         }
       });
 
       if (!foundWeights) {
         const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
-        const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
-        deliveries.push({
-          city,
-          uf,
-          type: mainFreightType,
-          weight: mainWeight,
-          aliquot,
-          freight: mainWeight * aliquot,
-          tax_rate: TAX_RATE
-        });
+        rawDeliveries.push({ city, uf, type: mainFreightType, weight: mainWeight });
       }
     }
 
-    if (deliveries.length === 0) {
+    if (rawDeliveries.length === 0) {
       const mainWeight = parseFloat(mainWeightStr.replace(/\./g, '').replace(',', '.')) || 0;
       const simpleBlocks = rotaStr.split(/[,.]/);
       simpleBlocks.forEach(b => {
         if (!b.trim()) return;
         const { city, uf } = splitCityUF(b);
-        const aliquot = getAliquot(city, uf, mainFreightType, mainWeight);
-        deliveries.push({
-          city,
-          uf,
-          type: mainFreightType,
-          weight: mainWeight,
-          aliquot,
-          freight: mainWeight * aliquot,
-          tax_rate: TAX_RATE
-        });
+        rawDeliveries.push({ city, uf, type: mainFreightType, weight: mainWeight });
       });
     }
-    
-    return deliveries;
+
+    const totalDeliveries = rawDeliveries.length;
+    return rawDeliveries.map(d => {
+      const aliquot = getAliquot(d.city, d.uf, d.type, d.weight, totalDeliveries, tablesOverride);
+      return {
+        city: d.city,
+        uf: d.uf,
+        type: d.type,
+        weight: d.weight,
+        aliquot,
+        freight: d.weight * aliquot,
+        tax_rate: TAX_RATE
+      };
+    });
   };
 
   const excelSerialToFormattedDate = (serialVal: any): string => {
@@ -764,6 +808,7 @@ const ExternalLoadsFOB = () => {
   const updateFromGoogleSheets = async (isAuto: boolean = false) => {
     setUpdating(true);
     try {
+      const tables = await loadFreightTables();
       const response = await fetch(SHEET_URL);
       const arrayBuffer = await response.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'buffer' });
@@ -835,7 +880,7 @@ const ExternalLoadsFOB = () => {
         const mainWeightStr = String(row[colPeso] || '0');
         const mainFreightType = String(row[colFrete] || 'CIF').toUpperCase();
         const cleanUF = rawUF.replace(/[^A-Z]/gi, '').substring(0, 2).toUpperCase();
-        const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType);
+        const parsed = parseRota(rota, cleanUF, mainWeightStr, mainFreightType, tables);
         const totalFreight = parsed.reduce((acc, d) => acc + d.freight, 0);
         const statusStr = colStatus !== -1 ? String(row[colStatus] || '').trim() : '';
 
@@ -2405,9 +2450,10 @@ const ExternalLoadsFOB = () => {
                                               const rawVal = row[col as keyof typeof row];
                                               finalVal = parseValue(rawVal) / 1000;
                                             } else {
-                                              if (weight <= 3000) finalVal = parseFloat(String(row['C'] || 0)) / 1000;
-                                              else if (weight <= 14000) finalVal = parseFloat(String(row['F'] || 0)) / 1000;
-                                              else finalVal = parseFloat(String(row['I'] || 0)) / 1000;
+                                              // FOB: valor já por kg na planilha, NÃO divide por 1000
+                                              if (weight <= 3000) finalVal = parseValue(row['C']);
+                                              else if (weight <= 14000) finalVal = parseValue(row['F']);
+                                              else finalVal = parseValue(row['I']);
                                             }
                                             handleUpdateDelivery(activeDetailLoad.id, dIdx, { aliquot: finalVal });
                                           }}
@@ -2434,7 +2480,23 @@ const ExternalLoadsFOB = () => {
                             type="number" 
                             className="h-7 w-16 text-xs font-bold bg-white" 
                             value={activeDetailLoad.manualDeliveryCount} 
-                            onChange={(e) => handleUpdateLoad(activeDetailLoad.id, { manualDeliveryCount: parseInt(e.target.value) || 0 })}
+                            onChange={(e) => {
+                              const newCount = parseInt(e.target.value) || 0;
+                              const updatedDeliveries = (activeDetailLoad.parsedDeliveries || []).map(d => {
+                                if (d.type === 'CIF') {
+                                  const al = getAliquot(d.city, d.uf, d.type, d.weight, newCount);
+                                  return { ...d, aliquot: al, freight: d.weight * al };
+                                }
+                                return d;
+                              });
+                              const baseFreight = updatedDeliveries.reduce((acc, d) => acc + d.freight, 0);
+                              const totalReceived = baseFreight + (activeDetailLoad.complementaryValue || 0);
+                              handleUpdateLoad(activeDetailLoad.id, { 
+                                manualDeliveryCount: newCount,
+                                parsedDeliveries: updatedDeliveries,
+                                totalToPay: totalReceived * 0.7
+                              });
+                            }}
                           />
                         </div>
                       </TableCell>
