@@ -107,6 +107,8 @@ const getLoadKey = (l: { rota?: string; observacoes?: string; data?: string; id?
   return `${data}__${rota}`;
 };
 
+// dedupeLoads defined earlier
+
 const playNotificationSound = () => {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -135,6 +137,8 @@ const playNotificationSound = () => {
     console.log("Audio notification not supported:", e);
   }
 };
+
+// dedupeLoads defined earlier
 
 const playWarningSound = () => {
   try {
@@ -167,14 +171,22 @@ const playWarningSound = () => {
   }
 };
 
+// dedupeLoads defined earlier
+
 const getStoredSeguradoraTimestamps = (): Record<string, { enteredAt: string; alerted2h?: boolean }> => {
   try {
     const data = localStorage.getItem('midas_seguradora_timestamps_v1');
     return data ? JSON.parse(data) : {};
+
+// dedupeLoads defined earlier
   } catch (e) {
     return {};
+
+// dedupeLoads defined earlier
   }
 };
+
+// dedupeLoads defined earlier
 
 const saveStoredSeguradoraTimestamps = (map: Record<string, { enteredAt: string; alerted2h?: boolean }>) => {
   try {
@@ -183,6 +195,8 @@ const saveStoredSeguradoraTimestamps = (map: Record<string, { enteredAt: string;
     console.error("Erro ao salvar timestamps no localStorage:", e);
   }
 };
+
+// dedupeLoads defined earlier
 
 const sendDesktopNotification = (title: string, body: string) => {
   if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -197,6 +211,8 @@ const sendDesktopNotification = (title: string, body: string) => {
     }
   }
 };
+
+// dedupeLoads defined earlier
 
 const ExternalLoads = () => {
   const { user } = useAuth();
@@ -235,6 +251,8 @@ const ExternalLoads = () => {
       window.removeEventListener('click', unlockAudio);
     };
 
+// dedupeLoads defined earlier
+
     window.addEventListener('touchstart', unlockAudio, { once: true });
     window.addEventListener('click', unlockAudio, { once: true });
 
@@ -242,6 +260,8 @@ const ExternalLoads = () => {
       window.removeEventListener('touchstart', unlockAudio);
       window.removeEventListener('click', unlockAudio);
     };
+
+// dedupeLoads defined earlier
   }, []);
 
   // Sistema de Notificações & Monitoramento de Mudanças
@@ -279,6 +299,8 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   const currentLoadsRef = useRef<ExternalLoad[]>([]);
   useEffect(() => {
     currentLoadsRef.current = currentLoads;
@@ -307,7 +329,11 @@ const ExternalLoads = () => {
       totalMinutes,
       isOverdue
     };
+
+// dedupeLoads defined earlier
   };
+
+// dedupeLoads defined earlier
 
   const handleEditSeguradoraTime = (load: ExternalLoad) => {
     const currentInfo = getSeguradoraTimeInfo(load);
@@ -335,11 +361,15 @@ const ExternalLoads = () => {
 
     const stored = getStoredSeguradoraTimestamps();
     stored[key] = { enteredAt: isoTime, alerted2h: false };
+
+// dedupeLoads defined earlier
     saveStoredSeguradoraTimestamps(stored);
 
     handleUpdateLoad(load.id, { seguradoraEnteredAt: isoTime, seguradoraAlerted2h: false });
     showSuccess(`Horário da seguradora ajustado para ${userTime}!`);
   };
+
+// dedupeLoads defined earlier
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -395,6 +425,8 @@ const ExternalLoads = () => {
       await loadFreightTables();
       await fetchSavedLoads();
     };
+
+// dedupeLoads defined earlier
     init();
   }, []);
 
@@ -408,10 +440,14 @@ const ExternalLoads = () => {
       .replace(/\s+/g, ' ');
   };
 
+// dedupeLoads defined earlier
+
   const formatCurrency = (val: number | undefined | null) => {
     const num = typeof val === 'number' && !isNaN(val) ? val : Number(val) || 0;
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+// dedupeLoads defined earlier
 
   const parseValue = (val: any) => {
     if (typeof val === 'number') return isNaN(val) ? 0 : val;
@@ -421,6 +457,8 @@ const ExternalLoads = () => {
     }
     return parseFloat(str) || 0;
   };
+
+// dedupeLoads defined earlier
 
   const parseWeightNumber = (weight: string | number | undefined | null): number => {
     if (typeof weight === 'number') return isNaN(weight) ? 0 : weight;
@@ -437,10 +475,14 @@ const ExternalLoads = () => {
     return parseFloat(str) || 0;
   };
 
+// dedupeLoads defined earlier
+
   const formatWeight = (weight: string | number | undefined | null): string => {
     const num = parseWeightNumber(weight ?? 0);
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
   };
+
+// dedupeLoads defined earlier
 
   const VEHICLE_OPTIONS = [
     'TRUCK',
@@ -467,6 +509,8 @@ const ExternalLoads = () => {
     return up;
   };
 
+// dedupeLoads defined earlier
+
   const getVehicleType = (load: ExternalLoad | { peso: string | number; manualVehicleType?: string; veiculo?: string } | string | number): string => {
     if (typeof load === 'object' && load !== null) {
       const explicit = String(load.veiculo || load.manualVehicleType || '').trim();
@@ -484,6 +528,8 @@ const ExternalLoads = () => {
     if (ton <= 40) return 'RODOTREM | 9 EIXOS';
     return 'RODOTREM | 9 EIXOS';
   };
+
+// dedupeLoads defined earlier
 
   const loadFreightTables = async () => {
     try {
@@ -540,6 +586,8 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   const getAliquot = (city: string, uf: string, type: string, weight: number, useEqualization: boolean = false, totalDeliveries: number = 1) => {
     const normCity = normalizeText(city);
     const cleanUF = uf.substring(0, 2).toUpperCase();
@@ -586,6 +634,8 @@ const ExternalLoads = () => {
     return parseValue(entry['K']) / 1000;
   };
 
+// dedupeLoads defined earlier
+
   // Persiste cargas no cache local instantâneo e no Supabase
   const persistLoads = async (loadsToSave: ExternalLoad[]) => {
     try {
@@ -617,10 +667,14 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   const UF_LIST_REGEX = /^(?:(\d+)[\s.\-–—]+)?\s*([A-Za-zÀ-ÿ0-9\s.\-–—']+?)\s*[\/\-–—]\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/i;
 
   const parseCityAndUFFromText = (text: string) => {
     if (!text) return { city: '', uf: '' };
+
+// dedupeLoads defined earlier
     const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
     for (const line of lines) {
       const m = line.match(UF_LIST_REGEX);
@@ -629,6 +683,8 @@ const ExternalLoads = () => {
         candCity = candCity.replace(/\b(CIF|FOB)\b/ig, '').trim();
         if (candCity) {
           return { city: candCity, uf: m[3].toUpperCase() };
+
+// dedupeLoads defined earlier
         }
       }
     }
@@ -638,10 +694,16 @@ const ExternalLoads = () => {
       candCity = candCity.replace(/\b(CIF|FOB)\b/ig, '').trim();
       if (candCity) {
         return { city: candCity, uf: mAll[3].toUpperCase() };
+
+// dedupeLoads defined earlier
       }
     }
     return { city: '', uf: '' };
+
+// dedupeLoads defined earlier
   };
+
+// dedupeLoads defined earlier
 
   // Processa e enriquece as cargas extraídas aplicando as regras de frete CIF e FOB
   const processAndEnrichLoads = (rawLoads: any[]): ExternalLoad[] => {
@@ -692,6 +754,8 @@ const ExternalLoads = () => {
           valorNF: Number(d.valorNF) || 0,
           freteDescarga: Number(d.freteDescarga) || freight
         };
+
+// dedupeLoads defined earlier
       });
 
       // Recria a rota caso esteja vazia, apenas "Destino" ou com o padrão antigo
@@ -699,6 +763,8 @@ const ExternalLoads = () => {
       const hasDestinoOnly = rota.startsWith('Destino (') || rota === 'Destino' || !rota || rota === 'Carga';
       
       const cityGroups: Record<string, string[]> = {};
+
+// dedupeLoads defined earlier
       parsed.forEach((d: any) => {
         const destKey = d.city ? (d.uf ? `${d.city}/${d.uf}` : d.city) : (d.uf || 'Destino');
         if (!cityGroups[destKey]) cityGroups[destKey] = [];
@@ -771,8 +837,12 @@ const ExternalLoads = () => {
         veiculo: finalVeh,
         manualVehicleType: finalVeh
       };
+
+// dedupeLoads defined earlier
     });
   };
+
+// dedupeLoads defined earlier
 
   const fetchSavedLoads = async () => {
     try {
@@ -824,16 +894,20 @@ const ExternalLoads = () => {
             const enteredAt = l.seguradoraEnteredAt || stored?.enteredAt || new Date().toISOString();
             const alerted2h = l.seguradoraAlerted2h ?? stored?.alerted2h ?? false;
             storedTimestamps[key] = { enteredAt, alerted2h };
+
+// dedupeLoads defined earlier
             return {
               ...l,
               seguradoraEnteredAt: enteredAt,
               seguradoraAlerted2h: alerted2h
             };
+
+// dedupeLoads defined earlier
           }
           return l;
         });
         saveStoredSeguradoraTimestamps(storedTimestamps);
-        setCurrentLoads(mergedLoads);
+        setCurrentLoads(dedupeLoads(mergedLoads));
       } else {
         setCurrentLoads([]);
       }
@@ -847,6 +921,8 @@ const ExternalLoads = () => {
       setLoading(false);
     }
   };
+
+// dedupeLoads defined earlier
 
   // Listener de sincronização em tempo real vindo da extensão Chrome (CustomEvent, PostMessage e Storage)
   useEffect(() => {
@@ -867,15 +943,21 @@ const ExternalLoads = () => {
       }
     };
 
+// dedupeLoads defined earlier
+
     const handleCustomEvent = (event: any) => {
       applySyncLoads(event.detail);
     };
+
+// dedupeLoads defined earlier
 
     const handleWindowMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'midas-sync-loads' && Array.isArray(event.data.loads)) {
         applySyncLoads(event.data.loads);
       }
     };
+
+// dedupeLoads defined earlier
 
     const handleStorageEvent = (event: StorageEvent) => {
       if (event.key === 'midas_external_loads_cache' && event.newValue) {
@@ -888,6 +970,8 @@ const ExternalLoads = () => {
       }
     };
 
+// dedupeLoads defined earlier
+
     window.addEventListener('midas-sync-loads', handleCustomEvent);
     document.addEventListener('midas-sync-loads', handleCustomEvent);
     window.addEventListener('message', handleWindowMessage);
@@ -899,6 +983,8 @@ const ExternalLoads = () => {
       window.removeEventListener('message', handleWindowMessage);
       window.removeEventListener('storage', handleStorageEvent);
     };
+
+// dedupeLoads defined earlier
   }, [user]);
 
   const parseRota = (rotaStr: string, defaultUF: string, mainWeightStr: string, mainFreightType: string) => {
@@ -921,7 +1007,11 @@ const ExternalLoads = () => {
         }
       }
       return { city: raw, uf };
+
+// dedupeLoads defined earlier
     };
+
+// dedupeLoads defined earlier
 
     const regex = /([^\(]+)\(([^\)]+)\)/g;
     let match;
@@ -990,6 +1080,8 @@ const ExternalLoads = () => {
     return deliveries;
   };
 
+// dedupeLoads defined earlier
+
   const excelSerialToFormattedDate = (serialVal: any): string => {
     if (!serialVal) return "";
     const serial = Number(serialVal);
@@ -1012,6 +1104,8 @@ const ExternalLoads = () => {
 
     return strVal;
   };
+
+// dedupeLoads defined earlier
 
   // Atualiza as cargas buscando a versão mais recente sincronizada pela extensão ou cache
   const updateFromGoogleSheets = async (isAuto: boolean = false) => {
@@ -1071,6 +1165,8 @@ const ExternalLoads = () => {
       const storedTimestamps = getStoredSeguradoraTimestamps();
       const detectedNewKeys = new Set<string>();
       const detectedStatusDiffs: Record<string, { oldStatus: string; newStatus: string }> = {};
+
+// dedupeLoads defined earlier
       const newSeguradoraLoads: ExternalLoad[] = [];
 
       const newLoads: ExternalLoad[] = processAndEnrichLoads(currentLoadsRaw).map((loadItem) => {
@@ -1099,6 +1195,8 @@ const ExternalLoads = () => {
             enteredAt: seguradoraEnteredAt,
             alerted2h: !!seguradoraAlerted2h
           };
+
+// dedupeLoads defined earlier
         }
 
         if (previousList && previousList.length > 0) {
@@ -1116,6 +1214,8 @@ const ExternalLoads = () => {
                 newStatus: newStatus || '(Vazio)'
               };
 
+// dedupeLoads defined earlier
+
               if (!normalizeText(oldStatus).includes('seguradora') && isSeguradora) {
                 newSeguradoraLoads.push(loadItem);
               }
@@ -1128,6 +1228,8 @@ const ExternalLoads = () => {
           seguradoraEnteredAt,
           seguradoraAlerted2h
         };
+
+// dedupeLoads defined earlier
       });
 
       saveStoredSeguradoraTimestamps(storedTimestamps);
@@ -1237,6 +1339,8 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   // Importação manual de arquivo Excel (.xlsx) gerado pela extensão ou pelo Gestão de Fretes
   const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1286,10 +1390,15 @@ const ExternalLoads = () => {
       }
 
       const generatedLoads: ExternalLoad[] = rawResumo.map((carga: any, idx: number) => {
-        const entregasDaCarga = rawEntregas.filter((e: any) =>
-          (e['Embarque'] && carga['Embarque'] && e['Embarque'] === carga['Embarque']) ||
-          (e['Romaneio'] && carga['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']))
-        );
+        // Filtra as entregas desta carga pelo número do Embarque (preferencial) ou Romaneio
+        // Usa Set para evitar duplicações quando uma linha satisfaz ambas as condições
+        const entregasSetIdx = new Set<number>();
+        rawEntregas.forEach((e: any, eIdx: number) => {
+          const matchEmbarque = e['Embarque'] && carga['Embarque'] && e['Embarque'] === carga['Embarque'];
+          const matchRomaneio = e['Romaneio'] && carga['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']);
+          if (matchEmbarque || matchRomaneio) entregasSetIdx.add(eIdx);
+        });
+        const entregasDaCarga = Array.from(entregasSetIdx).map(i => rawEntregas[i]);
 
         const targetEntregas = entregasDaCarga.length > 0 ? entregasDaCarga : [carga];
 
@@ -1333,9 +1442,13 @@ const ExternalLoads = () => {
             valorNF: parseValue(e['Valor da NF (R$)']),
             freteDescarga: parseValue(e['Frete + Descarga (R$)'])
           };
+
+// dedupeLoads defined earlier
         });
 
         const cityGroups: Record<string, string[]> = {};
+
+// dedupeLoads defined earlier
         parsedDeliveries.forEach((d: any) => {
           const destKey = d.city ? (d.uf ? `${d.city}/${d.uf}` : d.city) : 'Destino';
           if (!cityGroups[destKey]) cityGroups[destKey] = [];
@@ -1395,6 +1508,8 @@ const ExternalLoads = () => {
           veiculo: finalVeh,
           manualVehicleType: finalVeh
         };
+
+// dedupeLoads defined earlier
       });
 
       if (generatedLoads.length === 0) {
@@ -1413,6 +1528,8 @@ const ExternalLoads = () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+// dedupeLoads defined earlier
 
   useEffect(() => {
     if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
@@ -1452,6 +1569,8 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -1462,11 +1581,15 @@ const ExternalLoads = () => {
     setSortConfig({ key, direction });
   };
 
+// dedupeLoads defined earlier
+
   const renderSortIcon = (key: string) => {
     if (sortConfig.key !== key) return <ArrowUpDown size={12} className="text-slate-300" />;
     if (sortConfig.direction === 'asc') return <ArrowUp size={12} className="text-amber-600" />;
     return <ArrowDown size={12} className="text-amber-600" />;
   };
+
+// dedupeLoads defined earlier
 
   const activeData = viewMode === 'current' ? currentLoads : previousLoads;
 
@@ -1492,6 +1615,8 @@ const ExternalLoads = () => {
             }
             return new Date(dStr).getTime() || 0;
           };
+
+// dedupeLoads defined earlier
           aValue = parseDate(String(aValue));
           bValue = parseDate(String(bValue));
         } else if (sortConfig.key === 'peso') {
@@ -1541,6 +1666,8 @@ const ExternalLoads = () => {
       seguradora,
       seguradoraOverdue
     };
+
+// dedupeLoads defined earlier
   }, [activeData, newLoadKeys, currentTime]);
 
   const filteredData = useMemo(() => {
@@ -1662,6 +1789,8 @@ const ExternalLoads = () => {
     );
   };
 
+// dedupeLoads defined earlier
+
   const allUFs = useMemo(() => {
     const ufs = new Set<string>();
     (activeData || []).forEach(l => {
@@ -1681,6 +1810,8 @@ const ExternalLoads = () => {
       updatedLoadsList = loads.map(l => {
         if (l.id === loadId) {
           const updatedLoad = { ...l, ...updates };
+
+// dedupeLoads defined earlier
           
           if (
             updates.useEqualizationTable !== undefined || 
@@ -1697,6 +1828,8 @@ const ExternalLoads = () => {
                 updatedLoad.manualDeliveryCount
               );
               return { ...d, aliquot: newAliquot, freight: d.weight * newAliquot };
+
+// dedupeLoads defined earlier
             });
             updatedLoad.parsedDeliveries = newDeliveries;
             const baseFreight = newDeliveries?.reduce((acc, d) => acc + d.freight, 0) || 0;
@@ -1710,6 +1843,8 @@ const ExternalLoads = () => {
       });
       return updatedLoadsList;
     };
+
+// dedupeLoads defined earlier
 
     if (viewMode === 'current') {
       setCurrentLoads(updateFn);
@@ -1727,17 +1862,23 @@ const ExternalLoads = () => {
     }
   };
 
+// dedupeLoads defined earlier
+
   const handleUpdateDelivery = (loadId: string, deliveryIdx: number, updates: any) => {
     const updateFn = (loads: ExternalLoad[]) => loads.map(l => {
       if (l.id === loadId && l.parsedDeliveries) {
         const newDeliveries = [...l.parsedDeliveries];
         newDeliveries[deliveryIdx] = { ...newDeliveries[deliveryIdx], ...updates };
+
+// dedupeLoads defined earlier
         if (updates.weight !== undefined || updates.aliquot !== undefined) {
           newDeliveries[deliveryIdx].freight = newDeliveries[deliveryIdx].weight * newDeliveries[deliveryIdx].aliquot;
         }
         const baseFreight = newDeliveries.reduce((acc, d) => acc + d.freight, 0);
         const totalReceived = baseFreight + (l.complementaryValue || 0);
         return { ...l, parsedDeliveries: newDeliveries, totalToPay: totalReceived * 0.7 };
+
+// dedupeLoads defined earlier
       }
       return l;
     });
@@ -1745,9 +1886,13 @@ const ExternalLoads = () => {
     else setPreviousLoads(updateFn);
   };
 
+// dedupeLoads defined earlier
+
   const handleFilterChange = (col: string, value: string) => {
     setColumnFilters(prev => ({ ...prev, [col]: value }));
   };
+
+// dedupeLoads defined earlier
 
   const handlePrintDetailed = (load: ExternalLoad) => {
     const printWindow = window.open('', '_blank');
@@ -1842,6 +1987,8 @@ const ExternalLoads = () => {
     printWindow.document.close();
   };
 
+// dedupeLoads defined earlier
+
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -1907,6 +2054,8 @@ const ExternalLoads = () => {
     printWindow.document.write(content);
     printWindow.document.close();
   };
+
+// dedupeLoads defined earlier
 
   return (
     <div className="min-h-[100dvh] h-[100dvh] bg-slate-50 flex flex-col overflow-hidden">
@@ -3086,5 +3235,7 @@ const ExternalLoads = () => {
     </div>
   );
 };
+
+// dedupeLoads defined earlier
 
 export default ExternalLoads;
