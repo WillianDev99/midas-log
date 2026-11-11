@@ -1390,15 +1390,34 @@ const ExternalLoads = () => {
       }
 
       const generatedLoads: ExternalLoad[] = rawResumo.map((carga: any, idx: number) => {
-        // Filtra as entregas desta carga pelo número do Embarque (preferencial) ou Romaneio
-        // Usa Set para evitar duplicações quando uma linha satisfaz ambas as condições
+        // Filtra as entregas desta carga pelo Embarque (preferencial) ou Romaneio.
+        // Usa Set de índices para evitar que a mesma linha entre duas vezes (caso satisfaça ambas as condições).
         const entregasSetIdx = new Set<number>();
         rawEntregas.forEach((e: any, eIdx: number) => {
           const matchEmbarque = e['Embarque'] && carga['Embarque'] && e['Embarque'] === carga['Embarque'];
           const matchRomaneio = e['Romaneio'] && carga['Romaneio'] && String(e['Romaneio']) === String(carga['Romaneio']);
           if (matchEmbarque || matchRomaneio) entregasSetIdx.add(eIdx);
         });
-        const entregasDaCarga = Array.from(entregasSetIdx).map(i => rawEntregas[i]);
+        const todasEntregasMatch = Array.from(entregasSetIdx).map(i => rawEntregas[i]);
+
+        // Limite por peso declarado da carga: acumula entregas até atingir o peso informado no Resumo.
+        // Isso resolve casos em que o mesmo Romaneio aparece em múltiplas cargas (mesma chave, pesos distintos).
+        const declaredWeight = parseWeightNumber(carga['Peso (kg)']);
+        let entregasDaCarga: any[];
+        if (declaredWeight > 0 && todasEntregasMatch.length > 0) {
+          let accWeight = 0;
+          entregasDaCarga = [];
+          for (const e of todasEntregasMatch) {
+            const w = parseWeightNumber(e['Peso (kg)']);
+            // Adiciona a entrega se ainda não atingiu o peso ou se é a primeira (peso zero)
+            entregasDaCarga.push(e);
+            accWeight += w;
+            // Para quando o peso acumulado atingir (ou ultrapassar) o peso declarado
+            if (accWeight >= declaredWeight * 0.98) break;
+          }
+        } else {
+          entregasDaCarga = todasEntregasMatch;
+        }
 
         const targetEntregas = entregasDaCarga.length > 0 ? entregasDaCarga : [carga];
 
